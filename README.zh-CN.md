@@ -67,7 +67,7 @@ npm run doctor
 
 ## 数据来源
 
-TokenTrail 完全自包含，不依赖任何外部平台。数据如何到达取决于工具类型：
+TokenTrail 完全自包含，不依赖 VibeCafé 或任何外部平台。数据如何到达取决于工具类型：
 
 ### 本地文件扫描（TokenTrail 主动读取，工具无需配合）
 
@@ -78,124 +78,17 @@ TokenTrail 完全自包含，不依赖任何外部平台。数据如何到达取
 | Claude Code | `~/.claude/projects/*/sessions/*.jsonl` |
 | Codex | `~/.codex/sessions/**/*.jsonl` |
 
-### 主动上报（工具必须在每次模型调用后接入）
+### OpenClaw / Hermes 接入
 
-对于 OpenClaw、Hermes、Lobster 和自定义 Agent，TokenTrail 无法自行获取用量数据。**这些工具必须在每次模型 API 调用返回后，把真实的 `response.usage` 上报给 TokenTrail。** 不接入就没有数据。
+**核心原则：** TokenTrail 不负责猜测 token 用量。OpenClaw / Hermes 必须在模型响应完成后，读取模型服务商返回的真实 usage，再交给 TokenTrail。拿不到真实 usage 时，不要写 0，不要估算，直接跳过本次用量记录。
 
-工具从模型响应中读取 `response.usage`，上报到 TokenTrail。**如果本次响应没有 usage 数据，跳过上报 — 不要写 0。** 上报失败不能影响主业务。
+#### 推荐方式：本地 JSONL 文件
 
-#### 方式 1：写入本地 JSONL 文件（最简单，不需要 HTTP）
+OpenClaw 每次模型调用完成后，追加一行 JSON 到 `~/.openclaw/usage/YYYY-MM-DD.jsonl`。
+Hermes 每次模型调用完成后，追加一行 JSON 到 `~/.hermes/usage/YYYY-MM-DD.jsonl`。
+TokenTrail 在执行同步时会扫描这些文件并导入数据。
 
-工具在每次模型调用后，往 `~/.工具名/usage/YYYY-MM-DD.jsonl` 写一行 JSONL。TokenTrail 同步时自动扫描这些文件 — 不需要 HTTP 调用、不需要 SDK、没有额外依赖。
-
-```js
-const fs = require('fs')
-const path = require('path')
-
-function reportUsage(entry) {
-  if (!entry.input_tokens && !entry.output_tokens) return // 没有真实用量就跳过
-  const dir = path.join(process.env.HOME, '.openclaw', 'usage')
-  fs.mkdirSync(dir, { recursive: true })
-  const date = new Date().toISOString().slice(0, 10)
-  fs.appendFileSync(path.join(dir, `${date}.jsonl`), JSON.stringify(entry) + '\n')
-}
-
-// 模型响应返回后 — 读取真实用量，不要估算
-const res = await callModel(...)
-reportUsage({
-  source: 'openclaw',
-  provider: 'xiaomi',
-  model: res.model,
-  input_tokens: res.usage.prompt_tokens,
-  output_tokens: res.usage.completion_tokens,
-  cached_input_tokens: res.usage.prompt_tokens_details?.cached_tokens || 0,
-  request_id: res.id,
-  timestamp: Date.now()
-})
-```
-
-TokenTrail 自动扫描的目录：
-- `~/.openclaw/usage/*.jsonl`
-- `~/.hermes/usage/*.jsonl`
-
-#### 方式 2：包装 OpenAI 客户端（推荐，适用于使用 SDK 的工具）
-
-如果工具使用 OpenAI 兼容 SDK，启动时包装一次即可。之后每次 `chat.completions.create()` 调用自动从 `response.usage` 读取真实用量并上报。
-
-```js
-const OpenAI = require('openai')
-const { wrapOpenAI } = require('tokentrail-report')
-
-const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
-
-// 后续调用无需任何改动，用量自动上报
-const res = await client.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
-```
-
-#### 方式 3：每次模型调用后 HTTP 上报
-
-在模型 API 响应返回后手动上报。使用 `response.usage` 中的真实值，不要估算。
-
-```js
-const res = await callModel(...)
-fetch('http://localhost:3820/api/report', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    source: 'openclaw',
-    model: res.model,
-    input_tokens: res.usage.prompt_tokens,
-    output_tokens: res.usage.completion_tokens,
-    cached_input_tokens: res.usage.prompt_tokens_details?.cached_tokens || 0,
-    request_id: res.id,
-    timestamp: Date.now()
-  })
-}).catch(() => {})
-```
-
-**流式调用注意：** 需要开启 `stream_options: { include_usage: true }`，在流结束后从最后一个 chunk 读取 `usage`。
-
-#### 方式 4：本地 OpenAI 代理（工具零代码改动）
-
-如果工具支持修改 OpenAI `baseURL`，指向 TokenTrail 本地代理即可。TokenTrail 转发请求到真实 API，并从响应中记录用量。
-
-```bash
-OPENAI_BASE_URL=http://localhost:3820/proxy/openai
-```
-
-工具的 API Key 会透传给上游 API，不需要改代码。
-
-### 集成责任说明
-
-| 工具 | 谁负责采集数据 | 是否需要工具接入 |
-| --- | --- | --- |
-| Claude Code | TokenTrail 扫描本地 JSONL | 不需要 |
-| Codex | TokenTrail 扫描本地 JSONL | 不需要 |
-| OpenClaw | OpenClaw 读取 `response.usage` 并上报 | **必须接入** |
-| Hermes | Hermes 读取 `response.usage` 并上报 | **必须接入** |
-| 任意新工具 | 工具读取 `response.usage` 并上报 | **必须接入** |
-
-### 接入指令（可直接复制给其他工具）
-
-**给 OpenClaw：**
-
-> 请在 OpenClaw 的模型调用统一出口处，模型响应完成后读取真实 `response.usage`，并追加一行 JSON 到 `~/.openclaw/usage/YYYY-MM-DD.jsonl`。不要估算，不要写 0；如果本次响应拿不到 usage，就跳过写入。TokenTrail 会本地扫描这个文件。
-
-**给 Hermes：**
-
-> 请在 Hermes 的模型调用统一出口处，模型响应完成后读取真实 `response.usage`，并追加一行 JSON 到 `~/.hermes/usage/YYYY-MM-DD.jsonl`。不要估算，不要写 0；如果本次响应拿不到 usage，就跳过写入。TokenTrail 会本地扫描这个文件。
-
-**通用指令：**
-
-> 每次模型调用完成后，读取真实 `response.usage` 上报给 TokenTrail。如果拿不到真实 usage，跳过上报 — 0 值记录会被拒绝。上报失败不能影响主流程。
-
-最小 JSONL 一行：
-
-```json
-{"source":"openclaw","provider":"xiaomi","model":"mimo-v2.5-pro","input_tokens":5000,"output_tokens":1200,"request_id":"xxx","timestamp":1718000000000}
-```
-
-最小 HTTP 请求体：
+标准 JSONL 字段：
 
 ```json
 {
@@ -203,25 +96,109 @@ OPENAI_BASE_URL=http://localhost:3820/proxy/openai
   "provider": "xiaomi",
   "model": "mimo-v2.5-pro",
   "input_tokens": 5000,
-  "output_tokens": 1200
+  "output_tokens": 1200,
+  "cached_input_tokens": 0,
+  "reasoning_tokens": 0,
+  "request_id": "provider-response-id-or-generated-id",
+  "project": "optional-project-name",
+  "timestamp": 1718000000000
 }
 ```
 
-`source`、`model`、`input_tokens` 为必填。建议传入 `request_id` 用于去重。`provider` 可选（如 `openai`、`xiaomi`、`anthropic`）。
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `source` | 是 | 工具名：`openclaw` 或 `hermes` |
+| `provider` | 是 | 模型服务商：`openai`、`anthropic`、`xiaomi`、`zhipu`、`deepseek`、`qwen`、`google`、`minimax` 等 |
+| `model` | 是 | 实际请求或响应中的模型 ID，不要写死 |
+| `input_tokens` | 是 | 真实输入 token 数 |
+| `output_tokens` | 是 | 真实输出 token 数 |
+| `cached_input_tokens` | 否 | 缓存输入 token 数，没有则 0 |
+| `reasoning_tokens` | 否 | 推理 token 数，没有则 0 |
+| `request_id` | 强烈建议 | 用于去重；优先使用 provider response ID |
+| `project` | 否 | 当前项目或工作区名称 |
+| `timestamp` | 否 | 调用完成时间，Unix 毫秒时间戳 |
 
-#### 环境变量
+**重要要求：**
 
-设置 `TOKENTRAIL_URL` 让 SDK 和工具自动发现 TokenTrail 端点：
+1. 必须在模型响应完成后写入，不要在请求前写入。
+2. 必须使用真实 usage，不要估算。
+3. 如果 response 中没有 usage，跳过本次写入，不要写 `input_tokens=0`。
+4. 写入失败不能影响模型调用主流程。
+5. JSONL 每行必须是一个完整 JSON 对象。
+6. 多 provider 需要在 OpenClaw / Hermes 内部把不同字段归一化成 TokenTrail 标准字段。
+7. streaming 调用需要在流结束后读取最终 usage；如果 OpenAI-compatible provider 支持，请开启 `stream_options.include_usage`。
+8. TokenTrail 只扫描和导入标准记录，不依赖 VibeCafé 或任何外部服务。
 
-```bash
-export TOKENTRAIL_URL=http://localhost:3820
+#### 替代方式：包装 OpenAI 客户端（适用于使用 SDK 的工具）
+
+如果工具使用 OpenAI 兼容 SDK，包装一次后每次调用自动上报用量。
+
+```js
+const OpenAI = require('openai')
+const { wrapOpenAI } = require('tokentrail-report')
+
+const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
+const res = await client.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
 ```
 
-未设置时 SDK 默认使用 `http://localhost:3820`。
+#### 替代方式：本地 OpenAI 代理（工具零代码改动）
+
+如果工具支持修改 OpenAI `baseURL`，指向 TokenTrail 本地代理即可：
+
+```bash
+OPENAI_BASE_URL=http://localhost:3820/proxy/openai
+```
+
+工具的 API Key 会透传给上游 API，不需要改代码。
+
+#### Node.js 示例
+
+```js
+const fs = require('fs')
+const path = require('path')
+
+function writeTokenTrailUsage(entry, toolName) {
+  const home = process.env.HOME || process.env.USERPROFILE
+  if (!home) return
+  const dir = path.join(home, `.${toolName}`, 'usage')
+  fs.mkdirSync(dir, { recursive: true })
+  const date = new Date().toISOString().slice(0, 10)
+  fs.appendFileSync(path.join(dir, `${date}.jsonl`), JSON.stringify(entry) + '\n')
+}
+
+// 模型响应完成后调用
+const usage = response.usage
+if (usage && (usage.prompt_tokens || usage.completion_tokens)) {
+  writeTokenTrailUsage({
+    source: 'openclaw',
+    provider: providerName,
+    model: response.model || requestedModel,
+    input_tokens: usage.prompt_tokens ?? 0,
+    output_tokens: usage.completion_tokens ?? 0,
+    cached_input_tokens: usage.prompt_tokens_details?.cached_tokens ?? 0,
+    reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens ?? 0,
+    request_id: response.id || generatedRequestId,
+    project: projectName,
+    timestamp: Date.now()
+  }, 'openclaw')
+}
+```
+
+Hermes 只需要把 `source` 和 `toolName` 改成 `hermes`。
+
+### 集成总结
+
+| 工具 | 接入方式 | 谁负责 |
+| --- | --- | --- |
+| Claude Code | TokenTrail 扫描本地 JSONL | TokenTrail（自动） |
+| Codex | TokenTrail 扫描本地 JSONL | TokenTrail（自动） |
+| OpenClaw | 每次调用后写入 `~/.openclaw/usage/*.jsonl` | OpenClaw（必须接入） |
+| Hermes | 每次调用后写入 `~/.hermes/usage/*.jsonl` | Hermes（必须接入） |
+| 任意新工具 | 每次调用后写入 `~/.工具名/usage/*.jsonl` | 工具（必须接入） |
 
 ### 可选：VibeCafé API
 
-如果你有 VibeCafé 账号，TokenTrail 也可以从 VibeCafé API 拉取用量数据。这是为现有 VibeCafé 用户提供的便利功能，不是必须的。在 `~/.tokentrail/config.json` 中添加 API Key：
+如果你有 VibeCafé 账号，TokenTrail 也可以从 VibeCafé API 拉取用量数据。这是为现有 VibeCafé 用户提供的便利功能，不是主要接入方式。在 `~/.tokentrail/config.json` 中添加 API Key：
 
 ```json
 {

@@ -67,7 +67,7 @@ The service creates a runtime copy under `~/.tokentrail/runtime/TokenTrail`, kee
 
 ## Data Sources
 
-TokenTrail is self-contained. It does not depend on any external platform. How data arrives depends on the tool:
+TokenTrail is self-contained. It does not depend on VibeCafé or any external platform. How data arrives depends on the tool:
 
 ### Local file scan (TokenTrail reads, tool is unaware)
 
@@ -78,124 +78,17 @@ For tools that already store usage data locally, TokenTrail reads directly from 
 | Claude Code | `~/.claude/projects/*/sessions/*.jsonl` |
 | Codex | `~/.codex/sessions/**/*.jsonl` |
 
-### Active reporting (tool must integrate after each model call)
+### OpenClaw / Hermes integration
 
-For tools like OpenClaw, Hermes, Lobster, and custom agents, TokenTrail cannot read usage data on its own. **These tools must report usage to TokenTrail after each model API call returns.** Without integration, their data will not appear in the dashboard.
+**Core principle:** TokenTrail does not guess token usage. OpenClaw and Hermes must read the real `response.usage` from the model provider after each call, then hand it to TokenTrail. If real usage is not available, skip — do not write zeros, do not estimate.
 
-The tool reads `response.usage` from the actual model response and reports it to TokenTrail. **If the model response does not include usage data, skip the report — do not write zeros.** Reporting failures must not affect the tool's main flow.
+#### Recommended: local JSONL file
 
-#### Option 1: Write a local JSONL file (simplest, no HTTP needed)
+OpenClaw writes one JSONL line per call to `~/.openclaw/usage/YYYY-MM-DD.jsonl`.
+Hermes writes one JSONL line per call to `~/.hermes/usage/YYYY-MM-DD.jsonl`.
+TokenTrail scans these files during sync.
 
-The tool writes one JSONL line per model call to `~/.tool-name/usage/YYYY-MM-DD.jsonl`. TokenTrail scans these files during sync — no HTTP calls, no SDK, no dependencies.
-
-```js
-const fs = require('fs')
-const path = require('path')
-
-function reportUsage(entry) {
-  if (!entry.input_tokens && !entry.output_tokens) return // skip if no real usage
-  const dir = path.join(process.env.HOME, '.openclaw', 'usage')
-  fs.mkdirSync(dir, { recursive: true })
-  const date = new Date().toISOString().slice(0, 10)
-  fs.appendFileSync(path.join(dir, `${date}.jsonl`), JSON.stringify(entry) + '\n')
-}
-
-// After model response — read real usage, never estimate
-const res = await callModel(...)
-reportUsage({
-  source: 'openclaw',
-  provider: 'xiaomi',
-  model: res.model,
-  input_tokens: res.usage.prompt_tokens,
-  output_tokens: res.usage.completion_tokens,
-  cached_input_tokens: res.usage.prompt_tokens_details?.cached_tokens || 0,
-  request_id: res.id,
-  timestamp: Date.now()
-})
-```
-
-Supported directories (auto-scanned by TokenTrail):
-- `~/.openclaw/usage/*.jsonl`
-- `~/.hermes/usage/*.jsonl`
-
-#### Option 2: Wrap the OpenAI client (recommended for SDK-based tools)
-
-If the tool uses an OpenAI-compatible SDK, wrap it once. Every `chat.completions.create()` call then reports usage automatically by reading `response.usage`.
-
-```js
-const OpenAI = require('openai')
-const { wrapOpenAI } = require('tokentrail-report')
-
-const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
-
-// All subsequent calls report usage automatically
-const res = await client.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
-```
-
-#### Option 3: HTTP call after each model response
-
-Add a reporting call after each model API response. Use the real values from `response.usage`, not estimates.
-
-```js
-const res = await callModel(...)
-fetch('http://localhost:3820/api/report', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    source: 'openclaw',
-    model: res.model,
-    input_tokens: res.usage.prompt_tokens,
-    output_tokens: res.usage.completion_tokens,
-    cached_input_tokens: res.usage.prompt_tokens_details?.cached_tokens || 0,
-    request_id: res.id,
-    timestamp: Date.now()
-  })
-}).catch(() => {})
-```
-
-**Streaming note:** For streaming calls, enable `stream_options: { include_usage: true }` and read `usage` from the last chunk after the stream ends.
-
-#### Option 4: Local OpenAI proxy (zero code changes in the tool)
-
-If the tool supports changing the OpenAI `baseURL`, point it to TokenTrail's local proxy. TokenTrail forwards requests to the real API and records usage from the response.
-
-```bash
-OPENAI_BASE_URL=http://localhost:3820/proxy/openai
-```
-
-The tool's API key is forwarded to the upstream API. No code changes in the tool.
-
-### Integration requirements summary
-
-| Tool | What must happen | Who does the work |
-| --- | --- | --- |
-| Claude Code | TokenTrail scans local JSONL | TokenTrail (automatic) |
-| Codex | TokenTrail scans local JSONL | TokenTrail (automatic) |
-| OpenClaw | Tool reports `response.usage` after each call | OpenClaw (must integrate) |
-| Hermes | Tool reports `response.usage` after each call | Hermes (must integrate) |
-| Any new tool | Tool reports `response.usage` after each call | The tool (must integrate) |
-
-### Integration instruction (copy-paste for other tools)
-
-**For OpenClaw:**
-
-> At the model call exit point in OpenClaw, read real `response.usage` after the model responds, and append one JSON line to `~/.openclaw/usage/YYYY-MM-DD.jsonl`. Do not estimate. Do not write zeros. If this response has no usage data, skip writing. TokenTrail scans this file locally.
-
-**For Hermes:**
-
-> At the model call exit point in Hermes, read real `response.usage` after the model responds, and append one JSON line to `~/.hermes/usage/YYYY-MM-DD.jsonl`. Do not estimate. Do not write zeros. If this response has no usage data, skip writing. TokenTrail scans this file locally.
-
-**For any tool (universal):**
-
-> After each model call, read the real `response.usage` and report it to TokenTrail. If you can't get real usage, skip reporting — zero values are rejected. Reporting failures must not affect the main flow.
-
-Minimal JSONL line:
-
-```json
-{"source":"openclaw","provider":"xiaomi","model":"mimo-v2.5-pro","input_tokens":5000,"output_tokens":1200,"request_id":"xxx","timestamp":1718000000000}
-```
-
-Minimal HTTP payload:
+Standard JSONL fields:
 
 ```json
 {
@@ -203,52 +96,109 @@ Minimal HTTP payload:
   "provider": "xiaomi",
   "model": "mimo-v2.5-pro",
   "input_tokens": 5000,
-  "output_tokens": 1200
+  "output_tokens": 1200,
+  "cached_input_tokens": 0,
+  "reasoning_tokens": 0,
+  "request_id": "provider-response-id-or-generated-id",
+  "project": "optional-project-name",
+  "timestamp": 1718000000000
 }
 ```
 
-`source`, `model`, and `input_tokens` are required. `request_id` is recommended for deduplication. `provider` is optional (e.g. `openai`, `xiaomi`, `anthropic`).
+| Field | Required | Description |
+| --- | --- | --- |
+| `source` | Yes | Tool name: `openclaw` or `hermes` |
+| `provider` | Yes | Model provider: `openai`, `anthropic`, `xiaomi`, `zhipu`, `deepseek`, `qwen`, `google`, `minimax`, etc. |
+| `model` | Yes | Actual model ID from request or response — do not hardcode |
+| `input_tokens` | Yes | Real input token count |
+| `output_tokens` | Yes | Real output token count |
+| `cached_input_tokens` | No | Cached input tokens (default 0) |
+| `reasoning_tokens` | No | Reasoning tokens (default 0) |
+| `request_id` | Recommended | For deduplication; prefer provider response ID |
+| `project` | No | Current project or workspace name |
+| `timestamp` | No | Call completion time, Unix ms |
 
-#### Option 4: Local OpenAI-compatible proxy (zero code changes)
+**Requirements:**
 
-If the tool supports changing the OpenAI `baseURL`, point it to TokenTrail's local proxy. TokenTrail forwards requests to the real API and records usage automatically — the tool needs zero code changes.
+1. Write after the model response completes — never before the request.
+2. Use real usage values — never estimate.
+3. If the response has no usage data, skip writing. Do not write `input_tokens=0`.
+4. Write failures must not affect the model call.
+5. Each JSONL line must be a complete JSON object.
+6. Multi-provider tools must normalize different field names to the standard format.
+7. For streaming calls, read usage after the stream ends. Enable `stream_options.include_usage` for OpenAI-compatible providers.
+8. TokenTrail only scans and imports standard records — no VibeCafé or external service dependency.
+
+#### Alternative: wrap OpenAI client (for SDK-based tools)
+
+If the tool uses an OpenAI-compatible SDK, wrap it once and every call reports usage automatically.
+
+```js
+const OpenAI = require('openai')
+const { wrapOpenAI } = require('tokentrail-report')
+
+const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
+const res = await client.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
+```
+
+#### Alternative: local OpenAI proxy (zero code changes)
+
+If the tool supports changing the OpenAI `baseURL`, point it to TokenTrail's local proxy:
 
 ```bash
-# Set the base URL in your tool's config
 OPENAI_BASE_URL=http://localhost:3820/proxy/openai
 ```
 
-Or in code:
+The tool's API key is forwarded to the upstream API. No code changes in the tool.
+
+#### Node.js example for OpenClaw / Hermes
 
 ```js
-const openai = new OpenAI({ baseURL: 'http://localhost:3820/proxy/openai' })
+const fs = require('fs')
+const path = require('path')
+
+function writeTokenTrailUsage(entry, toolName) {
+  const home = process.env.HOME || process.env.USERPROFILE
+  if (!home) return
+  const dir = path.join(home, `.${toolName}`, 'usage')
+  fs.mkdirSync(dir, { recursive: true })
+  const date = new Date().toISOString().slice(0, 10)
+  fs.appendFileSync(path.join(dir, `${date}.jsonl`), JSON.stringify(entry) + '\n')
+}
+
+// After model response
+const usage = response.usage
+if (usage && (usage.prompt_tokens || usage.completion_tokens)) {
+  writeTokenTrailUsage({
+    source: 'openclaw',
+    provider: providerName,
+    model: response.model || requestedModel,
+    input_tokens: usage.prompt_tokens ?? 0,
+    output_tokens: usage.completion_tokens ?? 0,
+    cached_input_tokens: usage.prompt_tokens_details?.cached_tokens ?? 0,
+    reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens ?? 0,
+    request_id: response.id || generatedRequestId,
+    project: projectName,
+    timestamp: Date.now()
+  }, 'openclaw')
+}
 ```
 
-TokenTrail uses the caller's `Authorization` header to forward to the upstream API. You can also set `OPENAI_API_KEY` in the environment or in `~/.tokentrail/config.json`.
+For Hermes, change `source: 'hermes'` and `toolName: 'hermes'`.
 
-To identify the source, add a custom header:
+### Integration summary
 
-```bash
-curl http://localhost:3820/proxy/openai/v1/chat/completions \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -H "x-tokentrail-source: hermes" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}'
-```
-
-#### Environment variable
-
-Set `TOKENTRAIL_URL` so the SDK and tools can auto-discover the TokenTrail endpoint:
-
-```bash
-export TOKENTRAIL_URL=http://localhost:3820
-```
-
-If not set, the SDK defaults to `http://localhost:3820`.
+| Tool | Method | Who does the work |
+| --- | --- | --- |
+| Claude Code | TokenTrail scans local JSONL | TokenTrail (automatic) |
+| Codex | TokenTrail scans local JSONL | TokenTrail (automatic) |
+| OpenClaw | Writes `~/.openclaw/usage/*.jsonl` after each call | OpenClaw (must integrate) |
+| Hermes | Writes `~/.hermes/usage/*.jsonl` after each call | Hermes (must integrate) |
+| Any new tool | Writes to `~/.tool/usage/*.jsonl` after each call | The tool (must integrate) |
 
 ### Optional: VibeCafé API
 
-If you have a VibeCafé account, TokenTrail can also pull usage data from the VibeCafé API. This is a convenience for existing VibeCafé users — it is not required. Add the API key to `~/.tokentrail/config.json`:
+If you have a VibeCafé account, TokenTrail can also pull usage data from the VibeCafé API. This is a convenience for existing VibeCafé users — not a primary integration method. Add the API key to `~/.tokentrail/config.json`:
 
 ```json
 {
