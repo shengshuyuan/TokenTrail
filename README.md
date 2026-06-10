@@ -184,7 +184,8 @@ npm run restart       # Restart the service
 ```bash
 npm run sync          # Manual sync
 # Check logs
-cat ~/.tokentrail/logs/com.shengshuyuan.tokentrail.sync.out.log
+ls ~/.tokentrail/logs/
+cat ~/.tokentrail/logs/*sync.out.log
 ```
 
 ### Data not updating
@@ -192,7 +193,7 @@ cat ~/.tokentrail/logs/com.shengshuyuan.tokentrail.sync.out.log
 If the dashboard shows stale data:
 1. Check if the service is running: `npm run doctor`
 2. Run a manual sync: `npm run sync`
-3. Check sync logs for errors: `cat ~/.tokentrail/logs/com.shengshuyuan.tokentrail.sync.err.log`
+3. Check sync logs for errors: `cat ~/.tokentrail/logs/*sync.err.log`
 
 ### Reset everything
 

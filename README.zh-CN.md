@@ -184,7 +184,8 @@ npm run restart       # 重启服务
 ```bash
 npm run sync          # 手动同步
 # 查看日志
-cat ~/.tokentrail/logs/com.shengshuyuan.tokentrail.sync.out.log
+ls ~/.tokentrail/logs/
+cat ~/.tokentrail/logs/*sync.out.log
 ```
 
 ### 数据不更新
@@ -192,7 +193,7 @@ cat ~/.tokentrail/logs/com.shengshuyuan.tokentrail.sync.out.log
 如果 Dashboard 显示陈旧数据：
 1. 检查服务是否运行：`npm run doctor`
 2. 手动同步：`npm run sync`
-3. 检查同步日志：`cat ~/.tokentrail/logs/com.shengshuyuan.tokentrail.sync.err.log`
+3. 检查同步日志：`cat ~/.tokentrail/logs/*sync.err.log`
 
 ### 完全重置
 
