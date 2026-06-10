@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Local AI token usage dashboard for developers**
+**Local-first AI token usage dashboard for Claude Code, Codex, and custom AI tools.**
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
@@ -10,108 +10,98 @@
 
 ---
 
-TokenTrail is a local-first tool that tracks and visualizes your AI programming token usage across multiple tools and providers. It reads usage data from Claude Code, Codex, and VibeCafé, stores everything in a local SQLite database, and provides a real-time dashboard with trend charts, cost breakdowns, and system health monitoring.
+TokenTrail helps developers understand where their AI coding tokens go. It reads local usage data from Claude Code and Codex, accepts usage reports from other tools, stores everything in SQLite on your machine, and turns it into a dashboard for cost trends, model breakdowns, source health, project attribution, and raw-record inspection.
 
-**Key advantages:**
-- 100% local — all data stays on your machine, no cloud services required
-- Multi-source — unifies usage from Claude Code, Codex, VibeCafé (OpenClaw, Hermes, etc.)
-- Auto-sync — macOS LaunchAgent runs in the background, syncing data every 4 hours
-- EVA-themed dashboard — dark/light mode with real-time charts
+![TokenTrail dashboard](./docs/assets/tokentrail-dashboard.png)
 
-## Features
+## Why TokenTrail
 
-- **Multi-source aggregation** — Syncs from Claude Code local JSONL logs, Codex session files, and VibeCafé API
-- **Dashboard** — Interactive charts: cost trends, per-model breakdowns, source comparisons, daily/monthly stats
-- **System health** — Real-time service status, data source health, sync history, and backup monitoring
-- **CLI tool** — Full command-line interface for setup, sync, status, backup, diagnostics
-- **macOS native service** — LaunchAgent for persistent background service and scheduled sync
-- **Manual sync with feedback** — One-click SYNC button shows scanned/new/duplicate/error counts per source
-- **Backup management** — Manual and automatic database backups with rotation
-- **Cost tracking** — Built-in pricing table for 50+ AI models, auto-registers unknown models
-- **Bilingual UI** — Chinese and English interface with language toggle
-- **EVA-inspired design** — Terminal aesthetic with green/amber color scheme
+- **Local-first by default** — usage data stays on your machine; no cloud account is required.
+- **Built for AI coding workflows** — tracks Claude Code, Codex, VibeCafe-style tools, and any tool that can call an HTTP API or CLI.
+- **Cost and token visibility** — compare spend by day, model, source, and project instead of guessing from provider bills.
+- **Inspectable data** — review raw records, sync results, duplicate counts, and source health when numbers look suspicious.
+- **Background sync on macOS** — LaunchAgent keeps the dashboard and sync job running after login.
+- **Privacy-friendly project display** — project names can be hidden in the dashboard when you want a safer screen-share view.
 
-## Prerequisites
+## What You Get
 
-- **Node.js** >= 18 (tested with v20.x)
-- **macOS** (LaunchAgent service requires macOS; the app itself runs on any OS)
-- **Claude Code** and/or **Codex** installed locally (optional, for local data sources)
-- **VibeCafé API key** (optional, for VibeCafé data)
+| Area | What it shows |
+| --- | --- |
+| Usage dashboard | Daily/monthly token and cost trends, model mix, source comparison |
+| Project stats | Usage by project, with optional project-name hiding |
+| Source health | Claude Code, Codex, API sync status, last sync result, duplicate/error counts |
+| Raw records | Searchable usage records for auditing and debugging |
+| Pricing | Built-in model pricing table and auto-registration for unknown models |
+| API and CLI | Report custom usage from scripts, agents, local services, or other tools |
 
 ## Quick Start
 
-### 1. Clone and install
+### 1. Install and run locally
 
 ```bash
 git clone https://github.com/shengshuyuan/TokenTrail.git
 cd TokenTrail
 npm install
-```
-
-### 2. Start the development server
-
-```bash
 npm run dev
 ```
 
-The dashboard is now available at **http://localhost:3820**.
+Open **http://localhost:3820**.
 
-### 3. Configure the CLI
+### 2. Configure and sync
 
 ```bash
 npm run setup
-```
-
-This creates `~/.tokentrail/config.json` and tests the connection to the local server.
-
-### 4. Run initial sync
-
-```bash
 npm run sync
 ```
 
-Scans Claude Code logs (`~/.claude/projects/`), Codex sessions (`~/.codex/sessions/`), and optionally VibeCafé API. Results are displayed with scanned/new/duplicate counts per source.
+This scans Claude Code logs (`~/.claude/projects/`), Codex sessions (`~/.codex/sessions/`), and optional VibeCafe-compatible usage data.
 
-### 5. Install persistent service (macOS)
+### 3. Install the macOS background service
 
 ```bash
 npm run install-service
-```
-
-This:
-- Creates a runtime copy at `~/.tokentrail/runtime/TokenTrail` (isolated from cloud sync paths)
-- Installs two LaunchAgents:
-  - **Server** — persistent service on port 3820 (auto-restarts on crash)
-  - **Sync** — automatic data sync every 4 hours
-- Opens the dashboard in your browser
-
-After installation, TokenTrail runs automatically on login. No manual steps needed.
-
-### 6. Verify everything works
-
-```bash
 npm run doctor
 ```
 
-All checks should show green.
+The service creates a runtime copy under `~/.tokentrail/runtime/TokenTrail`, keeps the dashboard available on port `3820`, and runs scheduled sync in the background.
 
-## CLI Commands
+## Data Sources
 
-| Command | Description |
-|---------|-------------|
-| `npm run setup` | Configure CLI and test server connection |
-| `npm run sync` | Sync all data sources now |
-| `npm run status` | Show server status and data statistics |
-| `npm run doctor` | Full system health diagnosis |
-| `npm run open` | Open dashboard in browser |
-| `npm run backup` | Create a manual database backup |
-| `npm run restart` | Restart the persistent service |
-| `npm run install-service` | Install macOS LaunchAgent service |
-| `npm run uninstall-service` | Remove service (data preserved) |
+TokenTrail has three ways to collect data. The first two run automatically during sync; the third requires the source tool to actively call an API.
 
-### Reporting usage from other tools
+### Automatic local scan (no setup needed from the tool)
 
-Any tool can report usage via the HTTP API or CLI:
+TokenTrail reads usage records directly from local files. This works out of the box — Claude Code and Codex do not need to know about TokenTrail.
+
+| Tool | Files scanned |
+| --- | --- |
+| Claude Code | `~/.claude/projects/*/sessions/*.jsonl` |
+| Codex | `~/.codex/sessions/**/*.jsonl` |
+
+### VibeCafé API (requires a VibeCafé account)
+
+OpenClaw, Hermes, Lobster, and other VibeCafé-compatible tools already report their usage to VibeCafé. TokenTrail pulls this data from the VibeCafé API — the source tools do not need any extra configuration.
+
+| Tool | How it works |
+| --- | --- |
+| OpenClaw | Reports to VibeCafé automatically; TokenTrail fetches from API |
+| Hermes | Reports to VibeCafé automatically; TokenTrail fetches from API |
+| Lobster | Reports to VibeCafé automatically; TokenTrail fetches from API |
+
+**Prerequisites:** a VibeCafé account with an API key, added to `~/.tokentrail/config.json`:
+
+```json
+{
+  "server_url": "http://localhost:3820",
+  "vibecafe_api_key": "your-api-key"
+}
+```
+
+**Without a VibeCafé account:** OpenClaw, Hermes, and similar tools will not appear in the dashboard unless they report usage directly (see below).
+
+### Direct HTTP / CLI report (tool must actively call TokenTrail)
+
+Any tool can report usage directly to TokenTrail by calling the HTTP API or the CLI command. This is the fallback when a tool is not supported by local scan and does not report to VibeCafé.
 
 ```bash
 # CLI
@@ -123,145 +113,79 @@ curl -X POST http://localhost:3820/api/report \
   -d '{"source":"openclaw","model":"gpt-4.1","input_tokens":5000,"output_tokens":1200}'
 ```
 
-See [API Reference](#api-reference) for full field list.
-
-## Data Sources
-
-TokenTrail collects data from multiple sources:
-
-| Source | Method | Description |
-|--------|--------|-------------|
-| **Claude Code** | Local file scan | Reads `~/.claude/projects/*/sessions/*.jsonl` |
-| **Codex** | Local file scan | Reads `~/.codex/sessions/**/*.jsonl` |
-| **VibeCafé** | API | Fetches OpenClaw, Hermes, Lobster, and other tools' usage via `vibecafe.ai/api/usage` (requires API key) |
-| **Any tool** | HTTP report | POST to `/api/report` or use `tokentrail report` CLI |
-
-Unknown models are auto-registered with price $0. Update pricing via the `/api/pricing` endpoint.
-
-## API Reference
-
-### `POST /api/report`
-
-Report token usage from any tool.
+Minimal API payload:
 
 ```json
 {
-  "source": "openclaw",
+  "source": "custom-agent",
   "model": "gpt-4.1",
   "input_tokens": 5000,
   "output_tokens": 1200,
-  "cached_input_tokens": 0,
-  "reasoning_tokens": 0,
   "request_id": "unique-id-for-dedup",
   "project": "my-project",
   "timestamp": 1718000000000
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `source` | string | Yes | Tool name (e.g. `openclaw`, `hermes`, `custom-agent`) |
-| `model` | string | Yes | Model ID (e.g. `gpt-4.1`, `claude-sonnet-4-6`) |
-| `input_tokens` | number | Yes | Input token count |
-| `output_tokens` | number | No | Output token count (default 0) |
-| `cached_input_tokens` | number | No | Cached input tokens (default 0) |
-| `reasoning_tokens` | number | No | Reasoning tokens (default 0) |
-| `request_id` | string | No | Unique ID for deduplication |
-| `project` | string | No | Project name |
-| `timestamp` | number | No | Unix timestamp in ms (default: now) |
+`source`, `model`, and `input_tokens` are required. `request_id` is recommended for deduplication. Unknown models are created with price `$0` until you update pricing through the pricing API.
 
-### `GET /api/health`
+## CLI Commands
 
-Health check. Returns record count, source count, model count.
-
-### `GET /api/status`
-
-System status with per-source health, last sync details, and backup info.
-
-### `POST /api/sync`
-
-Trigger data sync. Returns scanned/new/duplicate/error counts per source.
+| Command | Description |
+| --- | --- |
+| `npm run setup` | Configure CLI and test server connection |
+| `npm run sync` | Sync all data sources now |
+| `npm run status` | Show server status and data statistics |
+| `npm run doctor` | Run full local health diagnosis |
+| `npm run open` | Open the dashboard in your browser |
+| `npm run backup` | Create a manual SQLite database backup |
+| `npm run restart` | Restart the persistent service |
+| `npm run install-service` | Install macOS LaunchAgent service |
+| `npm run uninstall-service` | Remove service while preserving data |
 
 ## Architecture
 
-```
+```text
 TokenTrail/
-├── bin/tokentrail.js          # CLI tool
-├── scripts/serve.js           # Custom server (dev/prod)
+├── bin/tokentrail.js          # CLI
+├── scripts/serve.js           # Local server entry
 ├── src/
-│   ├── app/
-│   │   ├── page.tsx           # Main dashboard page
-│   │   ├── api/
-│   │   │   ├── health/        # Health check endpoint
-│   │   │   ├── status/        # System status + source health
-│   │   │   ├── sync/          # Data sync trigger
-│   │   │   ├── stats/         # Usage statistics
-│   │   │   ├── backup/        # Manual backup
-│   │   │   ├── pricing/       # Model pricing management
-│   │   │   └── report/        # Manual usage reporting
-│   │   └── ...
-│   ├── components/dashboard/  # UI components
+│   ├── app/                   # Next.js dashboard and API routes
+│   ├── components/dashboard/  # Dashboard UI
 │   └── lib/
-│       ├── db.ts              # SQLite database layer
+│       ├── db.ts              # SQLite data layer
 │       ├── sync.ts            # Multi-source sync engine
-│       ├── pricing.ts         # Cost calculation
-│       └── ...
-└── data/
-    └── token-trail.db         # SQLite database (gitignored)
+│       └── pricing.ts         # Cost calculation
+└── data/token-trail.db        # Local SQLite database, gitignored
 ```
 
-## File Locations
-
-After installation, TokenTrail stores data in these locations:
+## Local Files
 
 | Path | Description |
-|------|-------------|
+| --- | --- |
 | `~/.tokentrail/config.json` | CLI configuration |
-| `~/.tokentrail/runtime/TokenTrail/` | Runtime copy (isolated from project) |
+| `~/.tokentrail/runtime/TokenTrail/` | Runtime copy isolated from project/cloud-sync paths |
 | `~/.tokentrail/backups/` | Database backups |
 | `~/.tokentrail/logs/` | Service and sync logs |
 | `~/Library/LaunchAgents/*tokentrail*` | macOS service definitions |
-| `data/token-trail.db` | SQLite database (in project root) |
+| `data/token-trail.db` | Project-local SQLite database |
 
 ## Troubleshooting
 
-### Service won't start
-
 ```bash
-npm run doctor        # Check all components
-npm run restart       # Restart the service
+npm run doctor      # Check server, database, service, sync, and config
+npm run sync        # Run a manual sync
+npm run restart     # Restart the persistent macOS service
 ```
 
-### Sync not working
+If data looks wrong, check the raw records and sync result first. TokenTrail keeps duplicate/error counts visible so you can distinguish missing data, duplicate imports, and pricing gaps.
 
-```bash
-npm run sync          # Manual sync
-# Check logs
-ls ~/.tokentrail/logs/
-cat ~/.tokentrail/logs/*sync.out.log
-```
+## Tech Stack
 
-### Data not updating
-
-If the dashboard shows stale data:
-1. Check if the service is running: `npm run doctor`
-2. Run a manual sync: `npm run sync`
-3. Check sync logs for errors: `cat ~/.tokentrail/logs/*sync.err.log`
-
-### Reset everything
-
-```bash
-npm run uninstall-service
-rm -rf ~/.tokentrail
-npm run install-service
-```
-
-## Technology Stack
-
-- **Frontend**: Next.js 14, React 18, Recharts, Tailwind CSS
-- **Database**: SQLite via better-sqlite3
-- **Service**: macOS LaunchAgent (persistent process + scheduled sync)
-- **CLI**: Node.js (zero external CLI dependencies)
+- Next.js 14, React 18, Recharts, Tailwind CSS
+- SQLite via better-sqlite3
+- macOS LaunchAgent for the optional persistent service
+- Node.js CLI with no external CLI framework dependency
 
 ## License
 
