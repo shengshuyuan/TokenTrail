@@ -67,144 +67,99 @@ The service creates a runtime copy under `~/.tokentrail/runtime/TokenTrail`, kee
 
 ## Data Sources
 
-TokenTrail is self-contained. It does not depend on VibeCafé or any external platform. How data arrives depends on the tool:
+TokenTrail is self-contained. No external platform dependency.
 
-### Local file scan (TokenTrail reads, tool is unaware)
+### Local scan (automatic, no integration needed)
 
-For tools that already store usage data locally, TokenTrail reads directly from their files. The tool does not need to know about TokenTrail.
-
-| Tool | Files scanned |
+| Tool | Scanned path |
 | --- | --- |
 | Claude Code | `~/.claude/projects/*/sessions/*.jsonl` |
 | Codex | `~/.codex/sessions/**/*.jsonl` |
 
-### OpenClaw / Hermes integration
+### Other tools (must integrate)
 
-**Core principle:** TokenTrail does not guess token usage. OpenClaw and Hermes must read the real `response.usage` from the model provider after each call, then hand it to TokenTrail. If real usage is not available, skip — do not write zeros, do not estimate.
+OpenClaw, Hermes, and any other tool must write one JSONL line per model call to `~/.<tool>/usage/YYYY-MM-DD.jsonl`. TokenTrail scans these files during sync.
 
-#### Recommended: local JSONL file
+**Core rule:** Read real `response.usage` after the model responds. If no usage data is available, skip — do not write zeros.
 
-OpenClaw writes one JSONL line per call to `~/.openclaw/usage/YYYY-MM-DD.jsonl`.
-Hermes writes one JSONL line per call to `~/.hermes/usage/YYYY-MM-DD.jsonl`.
-TokenTrail scans these files during sync.
-
-Standard JSONL fields:
+Standard line format:
 
 ```json
-{
-  "source": "openclaw",
-  "provider": "xiaomi",
-  "model": "mimo-v2.5-pro",
-  "input_tokens": 5000,
-  "output_tokens": 1200,
-  "cached_input_tokens": 0,
-  "reasoning_tokens": 0,
-  "request_id": "provider-response-id-or-generated-id",
-  "project": "optional-project-name",
-  "timestamp": 1718000000000
-}
+{"source":"openclaw","provider":"xiaomi","model":"mimo-v2.5-pro","input_tokens":5000,"output_tokens":1200,"request_id":"id","timestamp":1718000000000}
 ```
 
-| Field | Required | Description |
+| Field | Required | Note |
 | --- | --- | --- |
-| `source` | Yes | Tool name: `openclaw` or `hermes` |
-| `provider` | Yes | Model provider: `openai`, `anthropic`, `xiaomi`, `zhipu`, `deepseek`, `qwen`, `google`, `minimax`, etc. |
-| `model` | Yes | Actual model ID from request or response — do not hardcode |
+| `source` | Yes | Tool name (`openclaw`, `hermes`, etc.) |
+| `provider` | Yes | Model provider (`openai`, `anthropic`, `xiaomi`, etc.) |
+| `model` | Yes | Actual model ID from response, never hardcoded |
 | `input_tokens` | Yes | Real input token count |
 | `output_tokens` | Yes | Real output token count |
-| `cached_input_tokens` | No | Cached input tokens (default 0) |
-| `reasoning_tokens` | No | Reasoning tokens (default 0) |
-| `request_id` | Recommended | For deduplication; prefer provider response ID |
-| `project` | No | Current project or workspace name |
-| `timestamp` | No | Call completion time, Unix ms |
+| `cached_input_tokens` | No | Default 0 |
+| `reasoning_tokens` | No | Default 0 |
+| `request_id` | Recommended | For deduplication, prefer provider response ID |
+| `project` | No | Project/workspace name |
+| `timestamp` | No | Unix ms, defaults to current time |
 
-**Requirements:**
-
-1. Write after the model response completes — never before the request.
-2. Use real usage values — never estimate.
-3. If the response has no usage data, skip writing. Do not write `input_tokens=0`.
-4. Write failures must not affect the model call.
-5. Each JSONL line must be a complete JSON object.
-6. Multi-provider tools must normalize different field names to the standard format.
-7. For streaming calls, read usage after the stream ends. Enable `stream_options.include_usage` for OpenAI-compatible providers.
-8. TokenTrail only scans and imports standard records — no VibeCafé or external service dependency.
-
-#### Alternative: wrap OpenAI client (for SDK-based tools)
-
-If the tool uses an OpenAI-compatible SDK, wrap it once and every call reports usage automatically.
-
-```js
-const OpenAI = require('openai')
-const { wrapOpenAI } = require('tokentrail-report')
-
-const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
-const res = await client.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
-```
-
-#### Alternative: local OpenAI proxy (zero code changes)
-
-If the tool supports changing the OpenAI `baseURL`, point it to TokenTrail's local proxy:
-
-```bash
-OPENAI_BASE_URL=http://localhost:3820/proxy/openai
-```
-
-The tool's API key is forwarded to the upstream API. No code changes in the tool.
-
-#### Node.js example for OpenClaw / Hermes
+Node.js helper:
 
 ```js
 const fs = require('fs')
 const path = require('path')
 
-function writeTokenTrailUsage(entry, toolName) {
-  const home = process.env.HOME || process.env.USERPROFILE
-  if (!home) return
-  const dir = path.join(home, `.${toolName}`, 'usage')
+function reportUsage(toolName, data) {
+  if (!data.input_tokens && !data.output_tokens) return
+  const dir = path.join(process.env.HOME, `.${toolName}`, 'usage')
   fs.mkdirSync(dir, { recursive: true })
-  const date = new Date().toISOString().slice(0, 10)
-  fs.appendFileSync(path.join(dir, `${date}.jsonl`), JSON.stringify(entry) + '\n')
+  fs.appendFileSync(
+    path.join(dir, `${new Date().toISOString().slice(0, 10)}.jsonl`),
+    JSON.stringify(data) + '\n'
+  )
 }
 
 // After model response
-const usage = response.usage
-if (usage && (usage.prompt_tokens || usage.completion_tokens)) {
-  writeTokenTrailUsage({
-    source: 'openclaw',
-    provider: providerName,
-    model: response.model || requestedModel,
-    input_tokens: usage.prompt_tokens ?? 0,
-    output_tokens: usage.completion_tokens ?? 0,
-    cached_input_tokens: usage.prompt_tokens_details?.cached_tokens ?? 0,
-    reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens ?? 0,
-    request_id: response.id || generatedRequestId,
-    project: projectName,
-    timestamp: Date.now()
-  }, 'openclaw')
-}
+reportUsage('openclaw', {
+  source: 'openclaw',
+  provider: 'xiaomi',
+  model: response.model,
+  input_tokens: response.usage.prompt_tokens,
+  output_tokens: response.usage.completion_tokens,
+  request_id: response.id,
+  timestamp: Date.now()
+})
 ```
 
-For Hermes, change `source: 'hermes'` and `toolName: 'hermes'`.
+For Hermes, use `reportUsage('hermes', { ... })`.
 
-### Integration summary
+### Alternatives (for SDK-based tools)
 
-| Tool | Method | Who does the work |
-| --- | --- | --- |
-| Claude Code | TokenTrail scans local JSONL | TokenTrail (automatic) |
-| Codex | TokenTrail scans local JSONL | TokenTrail (automatic) |
-| OpenClaw | Writes `~/.openclaw/usage/*.jsonl` after each call | OpenClaw (must integrate) |
-| Hermes | Writes `~/.hermes/usage/*.jsonl` after each call | Hermes (must integrate) |
-| Any new tool | Writes to `~/.tool/usage/*.jsonl` after each call | The tool (must integrate) |
+If the tool uses an OpenAI-compatible SDK, wrap the client instead:
+
+```js
+const { wrapOpenAI } = require('tokentrail-report')
+const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
+```
+
+Or point `baseURL` to TokenTrail's local proxy (zero code changes):
+
+```bash
+OPENAI_BASE_URL=http://localhost:3820/proxy/openai
+```
+
+### Summary
+
+| Tool | Method |
+| --- | --- |
+| Claude Code | TokenTrail scans local JSONL (automatic) |
+| Codex | TokenTrail scans local JSONL (automatic) |
+| OpenClaw / Hermes / others | Tool writes `~/.tool/usage/*.jsonl` after each call |
 
 ### Optional: VibeCafé API
 
-If you have a VibeCafé account, TokenTrail can also pull usage data from the VibeCafé API. This is a convenience for existing VibeCafé users — not a primary integration method. Add the API key to `~/.tokentrail/config.json`:
+Convenience for existing VibeCafé users. Not a primary method. Add API key to `~/.tokentrail/config.json`:
 
 ```json
-{
-  "server_url": "http://localhost:3820",
-  "vibecafe_api_key": "your-api-key"
-}
+{ "server_url": "http://localhost:3820", "vibecafe_api_key": "your-api-key" }
 ```
 
 ## CLI Commands

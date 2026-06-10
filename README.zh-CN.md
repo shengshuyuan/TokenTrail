@@ -67,144 +67,99 @@ npm run doctor
 
 ## 数据来源
 
-TokenTrail 完全自包含，不依赖 VibeCafé 或任何外部平台。数据如何到达取决于工具类型：
+TokenTrail 完全自包含，不依赖外部平台。
 
-### 本地文件扫描（TokenTrail 主动读取，工具无需配合）
-
-对于已经在本地存储用量数据的工具，TokenTrail 直接读取文件，工具本身不需要知道 TokenTrail 的存在。
+### 本地扫描（自动，无需接入）
 
 | 工具 | 扫描路径 |
 | --- | --- |
 | Claude Code | `~/.claude/projects/*/sessions/*.jsonl` |
 | Codex | `~/.codex/sessions/**/*.jsonl` |
 
-### OpenClaw / Hermes 接入
+### 其他工具（需要接入）
 
-**核心原则：** TokenTrail 不负责猜测 token 用量。OpenClaw / Hermes 必须在模型响应完成后，读取模型服务商返回的真实 usage，再交给 TokenTrail。拿不到真实 usage 时，不要写 0，不要估算，直接跳过本次用量记录。
+OpenClaw、Hermes 及其他工具，必须在每次模型调用完成后写一行 JSONL 到 `~/.<工具名>/usage/YYYY-MM-DD.jsonl`。TokenTrail 同步时自动扫描。
 
-#### 推荐方式：本地 JSONL 文件
+**核心规则：** 在模型响应完成后读取真实 `response.usage`。没有 usage 数据就跳过，不要写 0。
 
-OpenClaw 每次模型调用完成后，追加一行 JSON 到 `~/.openclaw/usage/YYYY-MM-DD.jsonl`。
-Hermes 每次模型调用完成后，追加一行 JSON 到 `~/.hermes/usage/YYYY-MM-DD.jsonl`。
-TokenTrail 在执行同步时会扫描这些文件并导入数据。
-
-标准 JSONL 字段：
+标准格式：
 
 ```json
-{
-  "source": "openclaw",
-  "provider": "xiaomi",
-  "model": "mimo-v2.5-pro",
-  "input_tokens": 5000,
-  "output_tokens": 1200,
-  "cached_input_tokens": 0,
-  "reasoning_tokens": 0,
-  "request_id": "provider-response-id-or-generated-id",
-  "project": "optional-project-name",
-  "timestamp": 1718000000000
-}
+{"source":"openclaw","provider":"xiaomi","model":"mimo-v2.5-pro","input_tokens":5000,"output_tokens":1200,"request_id":"id","timestamp":1718000000000}
 ```
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `source` | 是 | 工具名：`openclaw` 或 `hermes` |
-| `provider` | 是 | 模型服务商：`openai`、`anthropic`、`xiaomi`、`zhipu`、`deepseek`、`qwen`、`google`、`minimax` 等 |
-| `model` | 是 | 实际请求或响应中的模型 ID，不要写死 |
+| `source` | 是 | 工具名（`openclaw`、`hermes` 等） |
+| `provider` | 是 | 模型服务商（`openai`、`anthropic`、`xiaomi` 等） |
+| `model` | 是 | 响应中的实际模型 ID，不要写死 |
 | `input_tokens` | 是 | 真实输入 token 数 |
 | `output_tokens` | 是 | 真实输出 token 数 |
-| `cached_input_tokens` | 否 | 缓存输入 token 数，没有则 0 |
-| `reasoning_tokens` | 否 | 推理 token 数，没有则 0 |
-| `request_id` | 强烈建议 | 用于去重；优先使用 provider response ID |
-| `project` | 否 | 当前项目或工作区名称 |
-| `timestamp` | 否 | 调用完成时间，Unix 毫秒时间戳 |
+| `cached_input_tokens` | 否 | 默认 0 |
+| `reasoning_tokens` | 否 | 默认 0 |
+| `request_id` | 建议 | 用于去重，优先用 provider response ID |
+| `project` | 否 | 项目/工作区名称 |
+| `timestamp` | 否 | Unix 毫秒，默认当前时间 |
 
-**重要要求：**
-
-1. 必须在模型响应完成后写入，不要在请求前写入。
-2. 必须使用真实 usage，不要估算。
-3. 如果 response 中没有 usage，跳过本次写入，不要写 `input_tokens=0`。
-4. 写入失败不能影响模型调用主流程。
-5. JSONL 每行必须是一个完整 JSON 对象。
-6. 多 provider 需要在 OpenClaw / Hermes 内部把不同字段归一化成 TokenTrail 标准字段。
-7. streaming 调用需要在流结束后读取最终 usage；如果 OpenAI-compatible provider 支持，请开启 `stream_options.include_usage`。
-8. TokenTrail 只扫描和导入标准记录，不依赖 VibeCafé 或任何外部服务。
-
-#### 替代方式：包装 OpenAI 客户端（适用于使用 SDK 的工具）
-
-如果工具使用 OpenAI 兼容 SDK，包装一次后每次调用自动上报用量。
-
-```js
-const OpenAI = require('openai')
-const { wrapOpenAI } = require('tokentrail-report')
-
-const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
-const res = await client.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
-```
-
-#### 替代方式：本地 OpenAI 代理（工具零代码改动）
-
-如果工具支持修改 OpenAI `baseURL`，指向 TokenTrail 本地代理即可：
-
-```bash
-OPENAI_BASE_URL=http://localhost:3820/proxy/openai
-```
-
-工具的 API Key 会透传给上游 API，不需要改代码。
-
-#### Node.js 示例
+Node.js 辅助函数：
 
 ```js
 const fs = require('fs')
 const path = require('path')
 
-function writeTokenTrailUsage(entry, toolName) {
-  const home = process.env.HOME || process.env.USERPROFILE
-  if (!home) return
-  const dir = path.join(home, `.${toolName}`, 'usage')
+function reportUsage(toolName, data) {
+  if (!data.input_tokens && !data.output_tokens) return
+  const dir = path.join(process.env.HOME, `.${toolName}`, 'usage')
   fs.mkdirSync(dir, { recursive: true })
-  const date = new Date().toISOString().slice(0, 10)
-  fs.appendFileSync(path.join(dir, `${date}.jsonl`), JSON.stringify(entry) + '\n')
+  fs.appendFileSync(
+    path.join(dir, `${new Date().toISOString().slice(0, 10)}.jsonl`),
+    JSON.stringify(data) + '\n'
+  )
 }
 
-// 模型响应完成后调用
-const usage = response.usage
-if (usage && (usage.prompt_tokens || usage.completion_tokens)) {
-  writeTokenTrailUsage({
-    source: 'openclaw',
-    provider: providerName,
-    model: response.model || requestedModel,
-    input_tokens: usage.prompt_tokens ?? 0,
-    output_tokens: usage.completion_tokens ?? 0,
-    cached_input_tokens: usage.prompt_tokens_details?.cached_tokens ?? 0,
-    reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens ?? 0,
-    request_id: response.id || generatedRequestId,
-    project: projectName,
-    timestamp: Date.now()
-  }, 'openclaw')
-}
+// 模型响应完成后
+reportUsage('openclaw', {
+  source: 'openclaw',
+  provider: 'xiaomi',
+  model: response.model,
+  input_tokens: response.usage.prompt_tokens,
+  output_tokens: response.usage.completion_tokens,
+  request_id: response.id,
+  timestamp: Date.now()
+})
 ```
 
-Hermes 只需要把 `source` 和 `toolName` 改成 `hermes`。
+Hermes 用 `reportUsage('hermes', { ... })`。
 
-### 集成总结
+### 替代方式（适用于 SDK 工具）
 
-| 工具 | 接入方式 | 谁负责 |
-| --- | --- | --- |
-| Claude Code | TokenTrail 扫描本地 JSONL | TokenTrail（自动） |
-| Codex | TokenTrail 扫描本地 JSONL | TokenTrail（自动） |
-| OpenClaw | 每次调用后写入 `~/.openclaw/usage/*.jsonl` | OpenClaw（必须接入） |
-| Hermes | 每次调用后写入 `~/.hermes/usage/*.jsonl` | Hermes（必须接入） |
-| 任意新工具 | 每次调用后写入 `~/.工具名/usage/*.jsonl` | 工具（必须接入） |
+OpenAI 兼容 SDK 可以直接包装：
+
+```js
+const { wrapOpenAI } = require('tokentrail-report')
+const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
+```
+
+或把 `baseURL` 指向本地代理（零代码改动）：
+
+```bash
+OPENAI_BASE_URL=http://localhost:3820/proxy/openai
+```
+
+### 总结
+
+| 工具 | 方式 |
+| --- | --- |
+| Claude Code | TokenTrail 扫描本地 JSONL（自动） |
+| Codex | TokenTrail 扫描本地 JSONL（自动） |
+| OpenClaw / Hermes / 其他 | 每次调用后写 `~/.工具名/usage/*.jsonl` |
 
 ### 可选：VibeCafé API
 
-如果你有 VibeCafé 账号，TokenTrail 也可以从 VibeCafé API 拉取用量数据。这是为现有 VibeCafé 用户提供的便利功能，不是主要接入方式。在 `~/.tokentrail/config.json` 中添加 API Key：
+给已有 VibeCafé 账号的用户提供的便利功能，不是主要接入方式。在 `~/.tokentrail/config.json` 添加 API Key：
 
 ```json
-{
-  "server_url": "http://localhost:3820",
-  "vibecafe_api_key": "your-api-key"
-}
+{ "server_url": "http://localhost:3820", "vibecafe_api_key": "your-api-key" }
 ```
 
 ## CLI 命令
