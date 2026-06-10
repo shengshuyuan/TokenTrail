@@ -1,0 +1,42 @@
+{
+  "name": "tokentrail",
+  "version": "1.0.0",
+  "private": true,
+  "bin": {
+    "tokentrail": "./bin/tokentrail.js"
+  },
+  "scripts": {
+    "dev": "node scripts/serve.js --dev",
+    "build": "node -r ./preload.js node_modules/next/dist/bin/next build",
+    "start": "node -r ./preload.js node_modules/next/dist/bin/next start -p 3820",
+    "serve": "node scripts/serve.js --dev",
+    "lint": "next lint",
+    "setup": "node bin/tokentrail.js setup",
+    "sync": "node bin/tokentrail.js sync",
+    "status": "node bin/tokentrail.js status",
+    "doctor": "node bin/tokentrail.js doctor",
+    "open": "node bin/tokentrail.js open",
+    "restart": "node bin/tokentrail.js restart",
+    "backup": "node bin/tokentrail.js backup",
+    "install-service": "node bin/tokentrail.js install-service",
+    "uninstall-service": "node bin/tokentrail.js uninstall-service",
+    "verify-local": "node scripts/verify-local.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "next": "^14.2.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.15.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.7.0"
+  }
+}

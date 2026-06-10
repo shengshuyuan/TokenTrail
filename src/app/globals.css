@@ -1,0 +1,314 @@
+/* Google Fonts loaded via <link> in layout.tsx */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --eva-bg: #0c0f14;
+    --eva-bg-rgb: 12 15 20;
+    --eva-page-0: #111722;
+    --eva-page-1: #0a0d13;
+    --eva-page-2: #10141b;
+    --eva-panel: #141923;
+    --eva-panel-rgb: 20 25 35;
+    --eva-border: #243041;
+    --eva-border-rgb: 36 48 65;
+    --eva-border-light: #34445a;
+    --eva-border-light-rgb: 52 68 90;
+    --eva-green: #39ff14;
+    --eva-green-rgb: 57 255 20;
+    --eva-green-dim: #2ab80e;
+    --eva-green-dim-rgb: 42 184 14;
+    --eva-purple: #7b2fbe;
+    --eva-purple-rgb: 123 47 190;
+    --eva-purple-dark: #4a1d8a;
+    --eva-purple-dark-rgb: 74 29 138;
+    --eva-orange: #ff642b;
+    --eva-orange-rgb: 255 100 43;
+    --eva-text: #eef4ef;
+    --eva-text-rgb: 238 244 239;
+    --eva-text-dim: #95a3b4;
+    --eva-text-dim-rgb: 149 163 180;
+    --eva-grid-green: rgba(57, 255, 20, 0.035);
+    --eva-grid-green-strong: rgba(57, 255, 20, 0.1);
+    --eva-header-bg: rgba(14, 18, 26, 0.82);
+    --eva-panel-shadow: 0 18px 45px rgba(0, 0, 0, 0.2);
+    --eva-hover-shadow: 0 22px 56px rgba(0, 0, 0, 0.28);
+    --eva-row-hover: rgba(255, 255, 255, 0.035);
+  }
+
+  :root[data-theme='light'] {
+    color-scheme: light;
+    --eva-bg: #f3f6f8;
+    --eva-bg-rgb: 243 246 248;
+    --eva-page-0: #fbfcf7;
+    --eva-page-1: #edf2f5;
+    --eva-page-2: #f7f9fb;
+    --eva-panel: #ffffff;
+    --eva-panel-rgb: 255 255 255;
+    --eva-border: #d8e0e7;
+    --eva-border-rgb: 216 224 231;
+    --eva-border-light: #b8c7d3;
+    --eva-border-light-rgb: 184 199 211;
+    --eva-green: #168a42;
+    --eva-green-rgb: 22 138 66;
+    --eva-green-dim: #2b7c49;
+    --eva-green-dim-rgb: 43 124 73;
+    --eva-purple: #6255b8;
+    --eva-purple-rgb: 98 85 184;
+    --eva-purple-dark: #4a2674;
+    --eva-purple-dark-rgb: 74 38 116;
+    --eva-orange: #c85d25;
+    --eva-orange-rgb: 200 93 37;
+    --eva-text: #1b242f;
+    --eva-text-rgb: 27 36 47;
+    --eva-text-dim: #647386;
+    --eva-text-dim-rgb: 100 115 134;
+    --eva-grid-green: rgba(22, 138, 66, 0.055);
+    --eva-grid-green-strong: rgba(22, 138, 66, 0.11);
+    --eva-header-bg: rgba(251, 252, 247, 0.86);
+    --eva-panel-shadow: 0 16px 40px rgba(54, 73, 92, 0.11);
+    --eva-hover-shadow: 0 20px 48px rgba(54, 73, 92, 0.15);
+    --eva-row-hover: rgba(22, 138, 66, 0.045);
+  }
+
+  html {
+    background: var(--eva-page-1);
+  }
+
+  body {
+    @apply bg-eva-bg text-eva-text font-sans;
+    min-height: 100vh;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--eva-page-0) 92%, var(--eva-green) 8%) 0%, var(--eva-page-1) 42%, var(--eva-page-2) 100%);
+    letter-spacing: 0;
+    text-rendering: geometricPrecision;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--eva-green) 70%, white 30%);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--eva-green) 24%, transparent);
+    color: var(--eva-text);
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--eva-bg);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--eva-border-light);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--eva-purple);
+  }
+}
+
+@layer components {
+  .dashboard-shell {
+    position: relative;
+  }
+
+  .dashboard-shell::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.28;
+    background-image:
+      linear-gradient(var(--eva-grid-green) 1px, transparent 1px),
+      linear-gradient(90deg, var(--eva-grid-green) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: linear-gradient(to bottom, black 0%, transparent 78%);
+  }
+
+  /* EVA Panel - card-like container */
+  .eva-panel {
+    @apply bg-eva-panel/90 border border-eva-border rounded-lg relative overflow-hidden;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 42%),
+      rgba(var(--eva-panel-rgb), 0.9);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.055),
+      var(--eva-panel-shadow);
+    backdrop-filter: blur(14px);
+  }
+
+  .eva-panel::before {
+    content: '';
+    @apply absolute inset-0 opacity-[0.03] pointer-events-none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      var(--eva-grid-green-strong) 2px,
+      var(--eva-grid-green-strong) 4px
+    );
+  }
+
+  /* EVA Glow border on hover */
+  .eva-panel-hover {
+    @apply transition-all duration-300;
+  }
+
+  .eva-panel-hover:hover {
+    border-color: rgba(var(--eva-green-rgb), 0.36);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      0 0 20px rgba(var(--eva-green-rgb), 0.07),
+      var(--eva-hover-shadow);
+  }
+
+  /* Green terminal text */
+  .text-terminal {
+    @apply text-eva-green font-mono;
+  }
+
+  /* EVA badge/tag */
+  .eva-badge {
+    @apply inline-flex items-center whitespace-nowrap px-2.5 py-1.5 rounded-md text-xs font-mono
+           border border-eva-border bg-eva-bg/50 text-eva-text-dim
+           transition-all duration-200 cursor-pointer select-none;
+    min-height: 30px;
+  }
+
+  .eva-badge-active {
+    @apply border-eva-green/50 bg-eva-green/10 text-eva-green;
+    box-shadow: 0 0 10px rgba(57, 255, 20, 0.15);
+  }
+
+  .eva-badge:hover {
+    @apply border-eva-green/30 text-eva-text;
+  }
+
+  /* Stat number */
+  .stat-value {
+    @apply text-2xl lg:text-[1.7rem] font-mono font-semibold text-eva-green tracking-normal;
+  }
+
+  /* Section title */
+  .section-title {
+    @apply text-xs font-mono uppercase tracking-[0.12em] text-eva-text-dim mb-3;
+  }
+
+  .control-label {
+    @apply text-[10px] font-mono uppercase tracking-[0.12em] text-eva-text-dim;
+  }
+
+  .glass-header {
+    background: var(--eva-header-bg);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.045), 0 14px 32px rgba(0, 0, 0, 0.18);
+  }
+
+  .control-cluster {
+    @apply flex items-center gap-1 rounded-md border border-eva-border bg-eva-bg/65 p-0.5;
+  }
+
+  .control-button {
+    @apply rounded px-2.5 py-1.5 text-xs font-mono transition-all;
+    min-height: 30px;
+  }
+
+  .control-button-active {
+    @apply border border-eva-green/30 bg-eva-green/10 text-eva-green shadow-eva-green;
+  }
+
+  .control-button-idle {
+    @apply border border-transparent text-eva-text-dim hover:text-eva-text;
+  }
+
+  .table-shell {
+    @apply overflow-x-auto rounded-lg border border-eva-border bg-eva-bg/35;
+  }
+
+  .data-table thead {
+    background: rgba(var(--eva-bg-rgb), 0.58);
+  }
+
+  .data-table th {
+    @apply py-2.5 pr-4 font-normal uppercase tracking-[0.08em];
+  }
+
+  .data-table td {
+    @apply py-2.5 pr-4 align-middle;
+  }
+
+  .data-table tbody tr {
+    transition: background 0.18s ease;
+  }
+
+  .data-table tbody tr:hover {
+    background: var(--eva-row-hover);
+  }
+}
+
+/* ─── Animations ─────────────────────────────────────────── */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+.animate-modal-in {
+  animation: modal-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-toast-in {
+  animation: toast-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2.5s ease-in-out infinite;
+}
