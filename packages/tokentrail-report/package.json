@@ -1,0 +1,12 @@
+{
+  "name": "tokentrail-report",
+  "version": "1.0.0",
+  "description": "Zero-dependency SDK for reporting AI token usage to TokenTrail. Auto-discovers endpoint via TOKENTRAIL_URL env var.",
+  "main": "index.js",
+  "files": ["index.js"],
+  "keywords": ["tokentrail", "token-usage", "llm", "ai", "cost-tracking"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}

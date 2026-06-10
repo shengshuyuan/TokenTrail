@@ -17,7 +17,7 @@ TokenTrail helps developers understand where their AI coding tokens go. It reads
 ## Why TokenTrail
 
 - **Local-first by default** — usage data stays on your machine; no cloud account is required.
-- **Built for AI coding workflows** — tracks Claude Code, Codex, VibeCafe-style tools, and any tool that can call an HTTP API or CLI.
+- **Built for AI coding workflows** — tracks Claude Code, Codex, and any tool that integrates via the included SDK or HTTP API.
 - **Cost and token visibility** — compare spend by day, model, source, and project instead of guessing from provider bills.
 - **Inspectable data** — review raw records, sync results, duplicate counts, and source health when numbers look suspicious.
 - **Background sync on macOS** — LaunchAgent keeps the dashboard and sync job running after login.
@@ -67,47 +67,60 @@ The service creates a runtime copy under `~/.tokentrail/runtime/TokenTrail`, kee
 
 ## Data Sources
 
-TokenTrail has three ways to collect data. The first two run automatically during sync; the third requires the source tool to actively call an API.
+TokenTrail is self-contained. It collects data in two ways: automatic local file scanning, and active reporting via the included SDK or HTTP API. No external services are required.
 
-### Automatic local scan (no setup needed from the tool)
+### Automatic local scan
 
-TokenTrail reads usage records directly from local files. This works out of the box — Claude Code and Codex do not need to know about TokenTrail.
+TokenTrail reads usage records directly from local files. The source tools do not need to know about TokenTrail.
 
 | Tool | Files scanned |
 | --- | --- |
 | Claude Code | `~/.claude/projects/*/sessions/*.jsonl` |
 | Codex | `~/.codex/sessions/**/*.jsonl` |
 
-### VibeCafé API (requires a VibeCafé account)
+### SDK and API integration for other tools
 
-OpenClaw, Hermes, Lobster, and other VibeCafé-compatible tools already report their usage to VibeCafé. TokenTrail pulls this data from the VibeCafé API — the source tools do not need any extra configuration.
+For tools whose usage data is not available as local files (OpenClaw, Hermes, Lobster, custom agents, etc.), TokenTrail provides a lightweight SDK and a plain HTTP API. The source tool reports usage directly to TokenTrail — no third-party service involved.
 
-| Tool | How it works |
-| --- | --- |
-| OpenClaw | Reports to VibeCafé automatically; TokenTrail fetches from API |
-| Hermes | Reports to VibeCafé automatically; TokenTrail fetches from API |
-| Lobster | Reports to VibeCafé automatically; TokenTrail fetches from API |
+#### Option 1: `tokentrail-report` npm package (recommended)
 
-**Prerequisites:** a VibeCafé account with an API key, added to `~/.tokentrail/config.json`:
-
-```json
-{
-  "server_url": "http://localhost:3820",
-  "vibecafe_api_key": "your-api-key"
-}
-```
-
-**Without a VibeCafé account:** OpenClaw, Hermes, and similar tools will not appear in the dashboard unless they report usage directly (see below).
-
-### Direct HTTP / CLI report (tool must actively call TokenTrail)
-
-Any tool can report usage directly to TokenTrail by calling the HTTP API or the CLI command. This is the fallback when a tool is not supported by local scan and does not report to VibeCafé.
+Zero-dependency SDK. Auto-discovers the TokenTrail endpoint via the `TOKENTRAIL_URL` environment variable (defaults to `http://localhost:3820`).
 
 ```bash
-# CLI
-npx tokentrail report --source openclaw --model gpt-4.1 --input 5000 --output 1200
+npm install tokentrail-report
+```
 
-# HTTP API
+```js
+const { report } = require('tokentrail-report')
+
+await report({
+  source: 'openclaw',
+  model: 'gpt-4.1',
+  input_tokens: 5000,
+  output_tokens: 1200,
+  project: 'my-project',
+})
+```
+
+#### Option 2: Wrap an OpenAI-compatible client
+
+If the tool uses an OpenAI-compatible SDK, wrap it once and every `chat.completions.create()` call automatically reports usage.
+
+```js
+const OpenAI = require('openai')
+const { wrapOpenAI } = require('tokentrail-report')
+
+const openai = wrapOpenAI(new OpenAI(), { source: 'openclaw' })
+
+// Usage is now reported automatically on every call
+const res = await openai.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
+```
+
+#### Option 3: Plain HTTP API
+
+Any tool that can make an HTTP request can report usage directly.
+
+```bash
 curl -X POST http://localhost:3820/api/report \
   -H 'Content-Type: application/json' \
   -d '{"source":"openclaw","model":"gpt-4.1","input_tokens":5000,"output_tokens":1200}'
@@ -129,6 +142,27 @@ Minimal API payload:
 
 `source`, `model`, and `input_tokens` are required. `request_id` is recommended for deduplication. Unknown models are created with price `$0` until you update pricing through the pricing API.
 
+#### Environment variable
+
+Set `TOKENTRAIL_URL` so the SDK and tools can auto-discover the TokenTrail endpoint:
+
+```bash
+export TOKENTRAIL_URL=http://localhost:3820
+```
+
+If not set, the SDK defaults to `http://localhost:3820`.
+
+### Optional: VibeCafé API
+
+If you have a VibeCafé account, TokenTrail can also pull usage data from the VibeCafé API. This is a convenience for existing VibeCafé users — it is not required. Add the API key to `~/.tokentrail/config.json`:
+
+```json
+{
+  "server_url": "http://localhost:3820",
+  "vibecafe_api_key": "your-api-key"
+}
+```
+
 ## CLI Commands
 
 | Command | Description |
@@ -149,6 +183,8 @@ Minimal API payload:
 TokenTrail/
 ├── bin/tokentrail.js          # CLI
 ├── scripts/serve.js           # Local server entry
+├── packages/
+│   └── tokentrail-report/     # Lightweight SDK for tools to report usage
 ├── src/
 │   ├── app/                   # Next.js dashboard and API routes
 │   ├── components/dashboard/  # Dashboard UI

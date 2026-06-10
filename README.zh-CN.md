@@ -17,7 +17,7 @@ TokenTrail 帮你看清 AI 编程工具的 token 消耗流向。它可以读取 
 ## 为什么需要 TokenTrail
 
 - **默认本地优先**：用量数据留在你的电脑上，不需要云账号。
-- **适配 AI 编程工作流**：支持 Claude Code、Codex、VibeCafe 类工具，以及任何能调用 API/CLI 的本地工具。
+- **适配 AI 编程工作流**：支持 Claude Code、Codex，以及任何通过 SDK 或 HTTP API 接入的本地工具。
 - **费用和 token 可见**：按日期、模型、来源、项目查看消耗，不再只靠账单猜测。
 - **数据可检查**：可以查看原始记录、同步结果、重复数、错误数和来源健康状态。
 - **macOS 后台常驻**：通过 LaunchAgent 登录后自动启动服务和定时同步。
@@ -67,47 +67,60 @@ npm run doctor
 
 ## 数据来源
 
-TokenTrail 有三种采集方式。前两种在同步时自动执行；第三种需要来源工具主动调用 API。
+TokenTrail 完全自包含。数据采集有两种方式：本地文件自动扫描，和通过 SDK 或 HTTP API 主动上报。不需要依赖任何外部服务。
 
-### 本地文件自动扫描（无需工具配合）
+### 本地文件自动扫描
 
-TokenTrail 直接读取本地用量记录文件，开箱即用 — Claude Code 和 Codex 本身不需要做任何配置。
+TokenTrail 直接读取本地用量记录文件，来源工具不需要知道 TokenTrail 的存在。
 
 | 工具 | 扫描路径 |
 | --- | --- |
 | Claude Code | `~/.claude/projects/*/sessions/*.jsonl` |
 | Codex | `~/.codex/sessions/**/*.jsonl` |
 
-### VibeCafé API（需要 VibeCafé 账号）
+### SDK 和 API 集成（用于其他工具）
 
-OpenClaw、Hermes、Lobster 等 VibeCafé 兼容工具会自动向 VibeCafé 上报用量，TokenTrail 再从 VibeCafé API 拉取 — 来源工具本身不需要做额外配置。
+对于用量数据不在本地文件中的工具（OpenClaw、Hermes、Lobster、自定义 Agent 等），TokenTrail 提供轻量 SDK 和 HTTP API，由来源工具直接上报 — 不经过任何第三方服务。
 
-| 工具 | 说明 |
-| --- | --- |
-| OpenClaw | 自动上报到 VibeCafé；TokenTrail 从 API 拉取 |
-| Hermes | 自动上报到 VibeCafé；TokenTrail 从 API 拉取 |
-| Lobster | 自动上报到 VibeCafé；TokenTrail 从 API 拉取 |
+#### 方式 1：`tokentrail-report` npm 包（推荐）
 
-**前提条件：** 需要 VibeCafé 账号和 API Key，添加到 `~/.tokentrail/config.json`：
-
-```json
-{
-  "server_url": "http://localhost:3820",
-  "vibecafe_api_key": "your-api-key"
-}
-```
-
-**没有 VibeCafé 账号：** OpenClaw、Hermes 等工具的数据不会出现在 Dashboard 中，除非它们直接向 TokenTrail 上报（见下文）。
-
-### HTTP / CLI 直接上报（工具需主动调用）
-
-任何工具都可以通过 HTTP API 或 CLI 命令直接向 TokenTrail 上报用量。适用于本地扫描不支持、也没有接入 VibeCafé 的工具。
+零依赖 SDK，通过 `TOKENTRAIL_URL` 环境变量自动发现 TokenTrail 端点（默认 `http://localhost:3820`）。
 
 ```bash
-# CLI
-npx tokentrail report --source openclaw --model gpt-4.1 --input 5000 --output 1200
+npm install tokentrail-report
+```
 
-# HTTP API
+```js
+const { report } = require('tokentrail-report')
+
+await report({
+  source: 'openclaw',
+  model: 'gpt-4.1',
+  input_tokens: 5000,
+  output_tokens: 1200,
+  project: 'my-project',
+})
+```
+
+#### 方式 2：包装 OpenAI 兼容客户端
+
+如果工具使用 OpenAI 兼容 SDK，包装一次后每次 `chat.completions.create()` 调用都会自动上报用量。
+
+```js
+const OpenAI = require('openai')
+const { wrapOpenAI } = require('tokentrail-report')
+
+const openai = wrapOpenAI(new OpenAI(), { source: 'openclaw' })
+
+// 之后每次调用自动上报
+const res = await openai.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
+```
+
+#### 方式 3：HTTP API
+
+任何能发 HTTP 请求的工具都可以直接上报。
+
+```bash
 curl -X POST http://localhost:3820/api/report \
   -H 'Content-Type: application/json' \
   -d '{"source":"openclaw","model":"gpt-4.1","input_tokens":5000,"output_tokens":1200}'
@@ -129,6 +142,27 @@ curl -X POST http://localhost:3820/api/report \
 
 `source`、`model`、`input_tokens` 为必填。建议传入 `request_id` 用于去重。未知模型会先以 `$0` 价格创建，之后可以通过定价接口补充价格。
 
+#### 环境变量
+
+设置 `TOKENTRAIL_URL` 让 SDK 和工具自动发现 TokenTrail 端点：
+
+```bash
+export TOKENTRAIL_URL=http://localhost:3820
+```
+
+未设置时 SDK 默认使用 `http://localhost:3820`。
+
+### 可选：VibeCafé API
+
+如果你有 VibeCafé 账号，TokenTrail 也可以从 VibeCafé API 拉取用量数据。这是为现有 VibeCafé 用户提供的便利功能，不是必须的。在 `~/.tokentrail/config.json` 中添加 API Key：
+
+```json
+{
+  "server_url": "http://localhost:3820",
+  "vibecafe_api_key": "your-api-key"
+}
+```
+
 ## CLI 命令
 
 | 命令 | 说明 |
@@ -149,6 +183,8 @@ curl -X POST http://localhost:3820/api/report \
 TokenTrail/
 ├── bin/tokentrail.js          # CLI
 ├── scripts/serve.js           # 本地服务入口
+├── packages/
+│   └── tokentrail-report/     # 轻量 SDK，供其他工具上报用量
 ├── src/
 │   ├── app/                   # Next.js Dashboard 和 API 路由
 │   ├── components/dashboard/  # Dashboard UI
