@@ -109,25 +109,78 @@ npm run doctor
 | `npm run install-service` | 安装 macOS LaunchAgent 服务 |
 | `npm run uninstall-service` | 移除服务（保留数据） |
 
-### 手动上报用量
+### 从其他工具上报用量
+
+任何工具都可以通过 HTTP API 或 CLI 上报用量：
 
 ```bash
-# 使用独立参数上报
-npx tokentrail report --source my-tool --model gpt-4.1 --input 5000 --output 1200
+# CLI 方式
+npx tokentrail report --source openclaw --model gpt-4.1 --input 5000 --output 1200
 
-# 使用 JSON 上报
-npx tokentrail report --json '{"source":"my-tool","model":"gpt-4.1","input_tokens":5000,"output_tokens":1200}'
+# HTTP API 方式
+curl -X POST http://localhost:3820/api/report \
+  -H 'Content-Type: application/json' \
+  -d '{"source":"openclaw","model":"gpt-4.1","input_tokens":5000,"output_tokens":1200}'
 ```
 
+完整字段说明见 [API 参考](#api-参考)。
+
 ## 数据来源
+
+TokenTrail 从多个来源采集数据：
 
 | 来源 | 采集方式 | 说明 |
 |------|----------|------|
 | **Claude Code** | 本地文件扫描 | 读取 `~/.claude/projects/*/sessions/*.jsonl` |
 | **Codex** | 本地文件扫描 | 读取 `~/.codex/sessions/**/*.jsonl` |
-| **VibeCafé** | API | 从 `vibecafe.ai/api/usage` 拉取（需要 API Key） |
+| **VibeCafé** | API | 从 `vibecafe.ai/api/usage` 拉取 OpenClaw、Hermes、Lobster 等工具的用量（需要 API Key） |
+| **任意工具** | HTTP 上报 | POST 到 `/api/report` 或使用 `tokentrail report` CLI |
 
 未知模型会自动注册，价格默认 $0。可通过 `/api/pricing` 端点更新定价。
+
+## API 参考
+
+### `POST /api/report`
+
+上报任意工具的 token 用量。
+
+```json
+{
+  "source": "openclaw",
+  "model": "gpt-4.1",
+  "input_tokens": 5000,
+  "output_tokens": 1200,
+  "cached_input_tokens": 0,
+  "reasoning_tokens": 0,
+  "request_id": "unique-id-for-dedup",
+  "project": "my-project",
+  "timestamp": 1718000000000
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `source` | string | 是 | 工具名称（如 `openclaw`、`hermes`、`custom-agent`） |
+| `model` | string | 是 | 模型 ID（如 `gpt-4.1`、`claude-sonnet-4-6`） |
+| `input_tokens` | number | 是 | 输入 token 数 |
+| `output_tokens` | number | 否 | 输出 token 数（默认 0） |
+| `cached_input_tokens` | number | 否 | 缓存输入 token 数（默认 0） |
+| `reasoning_tokens` | number | 否 | 推理 token 数（默认 0） |
+| `request_id` | string | 否 | 唯一 ID，用于去重 |
+| `project` | string | 否 | 项目名称 |
+| `timestamp` | number | 否 | Unix 时间戳（毫秒），默认当前时间 |
+
+### `GET /api/health`
+
+健康检查。返回记录数、来源数、模型数。
+
+### `GET /api/status`
+
+系统状态，包含各数据源健康状况、最近同步详情和备份信息。
+
+### `POST /api/sync`
+
+触发数据同步。返回每个来源的扫描数/新增数/重复数/错误数。
 
 ## 项目结构
 

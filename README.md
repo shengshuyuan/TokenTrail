@@ -109,25 +109,78 @@ All checks should show green.
 | `npm run install-service` | Install macOS LaunchAgent service |
 | `npm run uninstall-service` | Remove service (data preserved) |
 
-### Reporting usage manually
+### Reporting usage from other tools
+
+Any tool can report usage via the HTTP API or CLI:
 
 ```bash
-# Report with individual flags
-npx tokentrail report --source my-tool --model gpt-4.1 --input 5000 --output 1200
+# CLI
+npx tokentrail report --source openclaw --model gpt-4.1 --input 5000 --output 1200
 
-# Report with JSON
-npx tokentrail report --json '{"source":"my-tool","model":"gpt-4.1","input_tokens":5000,"output_tokens":1200}'
+# HTTP API
+curl -X POST http://localhost:3820/api/report \
+  -H 'Content-Type: application/json' \
+  -d '{"source":"openclaw","model":"gpt-4.1","input_tokens":5000,"output_tokens":1200}'
 ```
 
+See [API Reference](#api-reference) for full field list.
+
 ## Data Sources
+
+TokenTrail collects data from multiple sources:
 
 | Source | Method | Description |
 |--------|--------|-------------|
 | **Claude Code** | Local file scan | Reads `~/.claude/projects/*/sessions/*.jsonl` |
 | **Codex** | Local file scan | Reads `~/.codex/sessions/**/*.jsonl` |
-| **VibeCafé** | API | Fetches from `vibecafe.ai/api/usage` (requires API key) |
+| **VibeCafé** | API | Fetches OpenClaw, Hermes, Lobster, and other tools' usage via `vibecafe.ai/api/usage` (requires API key) |
+| **Any tool** | HTTP report | POST to `/api/report` or use `tokentrail report` CLI |
 
 Unknown models are auto-registered with price $0. Update pricing via the `/api/pricing` endpoint.
+
+## API Reference
+
+### `POST /api/report`
+
+Report token usage from any tool.
+
+```json
+{
+  "source": "openclaw",
+  "model": "gpt-4.1",
+  "input_tokens": 5000,
+  "output_tokens": 1200,
+  "cached_input_tokens": 0,
+  "reasoning_tokens": 0,
+  "request_id": "unique-id-for-dedup",
+  "project": "my-project",
+  "timestamp": 1718000000000
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `source` | string | Yes | Tool name (e.g. `openclaw`, `hermes`, `custom-agent`) |
+| `model` | string | Yes | Model ID (e.g. `gpt-4.1`, `claude-sonnet-4-6`) |
+| `input_tokens` | number | Yes | Input token count |
+| `output_tokens` | number | No | Output token count (default 0) |
+| `cached_input_tokens` | number | No | Cached input tokens (default 0) |
+| `reasoning_tokens` | number | No | Reasoning tokens (default 0) |
+| `request_id` | string | No | Unique ID for deduplication |
+| `project` | string | No | Project name |
+| `timestamp` | number | No | Unix timestamp in ms (default: now) |
+
+### `GET /api/health`
+
+Health check. Returns record count, source count, model count.
+
+### `GET /api/status`
+
+System status with per-source health, last sync details, and backup info.
+
+### `POST /api/sync`
+
+Trigger data sync. Returns scanned/new/duplicate/error counts per source.
 
 ## Architecture
 
