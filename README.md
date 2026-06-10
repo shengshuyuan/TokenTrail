@@ -82,9 +82,46 @@ For tools that already store usage data locally, TokenTrail reads directly from 
 
 For tools like OpenClaw, Hermes, Lobster, and custom agents, TokenTrail cannot read usage data on its own. **These tools must report usage to TokenTrail after each model API call returns.** Without integration, their data will not appear in the dashboard.
 
-The tool reads `response.usage` from the actual model response and POSTs it to TokenTrail. Reporting failures must not affect the tool's main flow.
+The tool reads `response.usage` from the actual model response and reports it to TokenTrail. Reporting failures must not affect the tool's main flow.
 
-#### Option 1: Wrap the OpenAI client (recommended, automatic)
+#### Option 1: Write a local JSONL file (simplest, no HTTP needed)
+
+The tool writes one JSONL line per model call to `~/.tool-name/usage/YYYY-MM-DD.jsonl`. TokenTrail scans these files during sync — no HTTP calls, no SDK, no dependencies.
+
+```js
+// After each model call, append one line to the daily usage file
+const fs = require('fs')
+const path = require('path')
+
+function reportUsage(entry) {
+  const dir = path.join(process.env.HOME, '.openclaw', 'usage')
+  fs.mkdirSync(dir, { recursive: true })
+  const date = new Date().toISOString().slice(0, 10)
+  fs.appendFileSync(
+    path.join(dir, `${date}.jsonl`),
+    JSON.stringify(entry) + '\n'
+  )
+}
+
+// Call after each model response
+const res = await callModel(...)
+reportUsage({
+  source: 'openclaw',
+  provider: 'xiaomi',
+  model: res.model,
+  input_tokens: res.usage.prompt_tokens,
+  output_tokens: res.usage.completion_tokens,
+  cached_input_tokens: res.usage.prompt_tokens_details?.cached_tokens || 0,
+  request_id: res.id,
+  timestamp: Date.now()
+})
+```
+
+Supported directories (auto-scanned by TokenTrail):
+- `~/.openclaw/usage/*.jsonl`
+- `~/.hermes/usage/*.jsonl`
+
+#### Option 2: Wrap the OpenAI client (recommended for SDK-based tools)
 
 If the tool uses an OpenAI-compatible SDK, wrap it once. Every `chat.completions.create()` call then reports usage automatically by reading `response.usage`.
 

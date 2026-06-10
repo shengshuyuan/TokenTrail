@@ -217,6 +217,95 @@ function syncCodex(): SyncResult {
   return result
 }
 
+// ─── 本地 JSONL 用量文件扫描（OpenClaw、Hermes 等）────────────
+
+interface LocalUsageSource {
+  name: string
+  dir: string
+}
+
+const LOCAL_USAGE_SOURCES: LocalUsageSource[] = [
+  { name: 'openclaw', dir: path.join(process.env.HOME || '/root', '.openclaw', 'usage') },
+  { name: 'hermes', dir: path.join(process.env.HOME || '/root', '.hermes', 'usage') },
+]
+
+/**
+ * 扫描工具写入的本地 JSONL 用量文件。
+ * 文件格式：每行一个 JSON 对象，包含 model、input_tokens、output_tokens 等字段。
+ * 文件路径：~/.openclaw/usage/YYYY-MM-DD.jsonl
+ */
+function syncLocalUsageFiles(): SyncResult {
+  const start = Date.now()
+  const result: SyncResult = {
+    source: 'local-usage',
+    scanned: 0,
+    inserted: 0,
+    duplicates: 0,
+    errors: 0,
+    duration_ms: 0,
+  }
+
+  for (const { name, dir } of LOCAL_USAGE_SOURCES) {
+    if (!fs.existsSync(dir)) continue
+
+    const jsonlFiles = findAllJsonl(dir)
+    for (const filePath of jsonlFiles) {
+      try {
+        const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean)
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line)
+
+            // 必须有 model 和至少一个非零 token 字段
+            if (!entry.model) continue
+            const input = entry.input_tokens || 0
+            const output = entry.output_tokens || 0
+            const cached = entry.cached_input_tokens || 0
+            const reasoning = entry.reasoning_tokens || 0
+            if (input === 0 && output === 0 && cached === 0 && reasoning === 0) continue
+
+            const model = entry.model
+            ensureModelPricing(model)
+
+            const cost_usd = calculateCost({
+              model,
+              input_tokens: input,
+              cached_input_tokens: cached,
+              output_tokens: output,
+              reasoning_tokens: reasoning,
+            })
+
+            const insertResult = insertUsageRecord({
+              source: entry.source || name,
+              provider: entry.provider,
+              project: entry.project,
+              model,
+              input_tokens: input,
+              cached_input_tokens: cached,
+              output_tokens: output,
+              reasoning_tokens: reasoning,
+              cost_usd,
+              request_id: entry.request_id,
+              timestamp: entry.timestamp || Date.now(),
+            })
+
+            result.scanned++
+            if (insertResult.duplicate) result.duplicates++
+            else result.inserted++
+          } catch {
+            result.errors++
+          }
+        }
+      } catch {
+        result.errors++
+      }
+    }
+  }
+
+  result.duration_ms = Date.now() - start
+  return result
+}
+
 // ─── VibeCafé API 同步 ─────────────────────────────────────────
 
 interface VibeCafeBucket {
@@ -359,6 +448,14 @@ export async function syncAll(): Promise<SyncResult[]> {
       results.push(syncCodex())
     } catch {
       results.push({ source: 'codex', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
+    }
+
+    // 本地 JSONL 用量文件（OpenClaw、Hermes 等写入 ~/usage/*.jsonl）
+    try {
+      const localResult = syncLocalUsageFiles()
+      if (localResult.scanned > 0) results.push(localResult)
+    } catch {
+      results.push({ source: 'local-usage', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
     }
 
     // VibeCafé (OpenClaw, Hermes, etc.)

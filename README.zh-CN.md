@@ -82,21 +82,45 @@ TokenTrail 完全自包含，不依赖任何外部平台。数据如何到达取
 
 对于 OpenClaw、Hermes、Lobster 和自定义 Agent，TokenTrail 无法自行获取用量数据。**这些工具必须在每次模型 API 调用返回后，把真实的 `response.usage` 上报给 TokenTrail。** 不接入就没有数据。
 
-工具从模型响应中读取 `response.usage`，POST 到 TokenTrail。上报失败不能影响主业务。
+工具从模型响应中读取 `response.usage`，上报到 TokenTrail。上报失败不能影响主业务。
 
-#### 方式 1：包装 OpenAI 客户端（推荐，自动上报）
+#### 方式 1：写入本地 JSONL 文件（最简单，不需要 HTTP）
 
-如果工具使用 OpenAI 兼容 SDK，启动时包装一次即可。之后每次 `chat.completions.create()` 调用自动从 `response.usage` 读取真实用量并上报。
+工具在每次模型调用后，往 `~/.工具名/usage/YYYY-MM-DD.jsonl` 写一行 JSONL。TokenTrail 同步时自动扫描这些文件 — 不需要 HTTP 调用、不需要 SDK、没有额外依赖。
 
 ```js
-const OpenAI = require('openai')
-const { wrapOpenAI } = require('tokentrail-report')
+const fs = require('fs')
+const path = require('path')
 
-// 启动时包装一次
-const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
+function reportUsage(entry) {
+  const dir = path.join(process.env.HOME, '.openclaw', 'usage')
+  fs.mkdirSync(dir, { recursive: true })
+  const date = new Date().toISOString().slice(0, 10)
+  fs.appendFileSync(
+    path.join(dir, `${date}.jsonl`),
+    JSON.stringify(entry) + '\n'
+  )
+}
 
-// 后续调用无需任何改动，用量自动上报
-const res = await client.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
+// 模型响应返回后调用
+const res = await callModel(...)
+reportUsage({
+  source: 'openclaw',
+  provider: 'xiaomi',
+  model: res.model,
+  input_tokens: res.usage.prompt_tokens,
+  output_tokens: res.usage.completion_tokens,
+  cached_input_tokens: res.usage.prompt_tokens_details?.cached_tokens || 0,
+  request_id: res.id,
+  timestamp: Date.now()
+})
+```
+
+TokenTrail 自动扫描的目录：
+- `~/.openclaw/usage/*.jsonl`
+- `~/.hermes/usage/*.jsonl`
+
+#### 方式 2：包装 OpenAI 客户端（推荐，适用于使用 SDK 的工具）
 ```
 
 SDK 从响应中读取 `res.model`、`res.usage.prompt_tokens`、`res.usage.completion_tokens`、`res.id`。
