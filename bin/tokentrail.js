@@ -6,14 +6,14 @@
  * 用法:
  *   tokentrail setup            初始化配置
  *   tokentrail status           查看服务器状态和数据统计
- *   tokentrail sync             同步所有数据源（本地文件 + VibeCafé）
+ *   tokentrail sync             同步所有数据源（本地文件 + 可选 VibeCafé）
  *   tokentrail report           上报当前会话用量
  *   tokentrail health           健康检查
  *   tokentrail doctor           本机服务诊断
  *   tokentrail open             打开 Dashboard
  *   tokentrail restart          重启 LaunchAgent 常驻服务
  *   tokentrail backup           备份 SQLite 数据库
- *   tokentrail install-service  安装本机常驻服务 + 定时同步
+ *   tokentrail install-service  安装本机常驻服务 + 每 4 小时定时同步
  */
 
 const fs = require('fs')
@@ -612,14 +612,14 @@ function cmdHelp() {
   console.log('  命令:')
   console.log('    setup              初始化配置（连接服务器）')
   console.log('    status             查看服务器状态和数据统计')
-  console.log('    sync               同步所有数据源（本地文件 + VibeCafé）')
+  console.log('    sync               同步所有数据源（本地文件 + 可选 VibeCafé）')
   console.log('    report [选项]      上报用量数据')
   console.log('    health             健康检查（返回 healthy/unhealthy）')
   console.log('    doctor             本机服务、数据库、同步配置诊断')
   console.log('    open               打开 Dashboard')
   console.log('    restart            重启 LaunchAgent 常驻服务')
   console.log('    backup             备份 SQLite 数据库')
-  console.log('    install-service    安装常驻服务 + 每 30 分钟自动同步')
+  console.log('    install-service    安装常驻服务 + 每 4 小时自动同步')
   console.log('    uninstall-service  移除常驻服务（保留数据）')
   console.log('')
   console.log('  report 选项:')

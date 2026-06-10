@@ -43,7 +43,7 @@ npm run verify-local
 | --- | --- |
 | `npm run doctor` | 检查服务、数据库、LaunchAgent、同步任务和备份状态 |
 | `npm run open` | 打开 `http://localhost:3820` |
-| `npm run sync` | 手动同步 Claude Code、Codex、VibeCafe 等数据 |
+| `npm run sync` | 手动同步 Claude Code、Codex、OpenClaw/Hermes 本地 JSONL，以及可选 VibeCafé 数据 |
 | `npm run restart` | 重启本机常驻服务 |
 | `npm run backup` | 备份 SQLite 数据库 |
 | `npm run verify-local` | 一次性验收所有组件（服务、数据库、同步、备份） |
@@ -194,7 +194,7 @@ Dashboard（`http://localhost:3820`）顶部有"系统状态"面板，展示：
 - **服务状态**：运行中 / 需要关注
 - **最近同步**：时间、成功/失败、各数据源详情
 - **备份状态**：最近备份时间、备份数量、手动备份按钮
-- **数据源健康**：Claude Code / Codex / VibeCafé 各自最近数据时间和记录数
+- **数据源健康**：Claude Code / Codex / OpenClaw / Hermes 各自最近数据时间和记录数
 
 SYNC 按钮点击后会展示详细的同步结果表格，包含每个数据源的扫描数、新增数、重复数和错误数。
 

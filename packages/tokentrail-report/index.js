@@ -20,7 +20,8 @@
 const DEFAULT_URL = 'http://localhost:3820'
 
 function getEndpoint() {
-  return process.env.TOKENTRAIL_URL || DEFAULT_URL
+  const url = process.env.TOKENTRAIL_URL || DEFAULT_URL
+  return url.replace(/\/+$/, '') // strip trailing slashes
 }
 
 // ─── Core report function ──────────────────────────────────
@@ -46,14 +47,25 @@ async function report(record) {
     return { success: false, error: 'Missing required fields: source, model, input_tokens' }
   }
 
+  const input = Number(record.input_tokens) || 0
+  const output = Number(record.output_tokens) || 0
+  const cached = Number(record.cached_input_tokens) || 0
+  const reasoning = Number(record.reasoning_tokens) || 0
+
+  // Skip zero-token records — TokenTrail rejects them to prevent data pollution
+  if (input === 0 && output === 0 && cached === 0 && reasoning === 0) {
+    return { success: false, error: 'All token counts are zero. Report real response.usage values.' }
+  }
+
   const url = (record.url || getEndpoint()) + '/api/report'
   const payload = {
     source: String(record.source),
+    provider: record.provider ? String(record.provider) : undefined,
     model: String(record.model),
-    input_tokens: Number(record.input_tokens) || 0,
-    output_tokens: Number(record.output_tokens) || 0,
-    cached_input_tokens: Number(record.cached_input_tokens) || 0,
-    reasoning_tokens: Number(record.reasoning_tokens) || 0,
+    input_tokens: input,
+    output_tokens: output,
+    cached_input_tokens: cached,
+    reasoning_tokens: reasoning,
     request_id: record.request_id || undefined,
     project: record.project || undefined,
     timestamp: record.timestamp || Date.now(),
@@ -86,6 +98,7 @@ async function report(record) {
  * @param {Object} client       - An OpenAI SDK client instance
  * @param {Object} defaults     - Default fields for every report
  * @param {string} defaults.source - Tool name (required)
+ * @param {string} [defaults.provider] - Model provider
  * @param {string} [defaults.project] - Project name
  * @returns {Object} The wrapped client (same interface)
  */
@@ -105,6 +118,7 @@ function wrapOpenAI(client, defaults) {
     if (usage) {
       report({
         source: defaults.source,
+        provider: defaults.provider,
         project: defaults.project,
         model: response.model || args[0]?.model || 'unknown',
         input_tokens: usage.prompt_tokens || 0,
