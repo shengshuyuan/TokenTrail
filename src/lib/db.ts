@@ -118,6 +118,16 @@ function buildWhere(alias: string, filters: FilterParams): { sql: string; params
   return { sql: 'WHERE ' + conditions.join(' AND '), params }
 }
 
+// ─── 来源别名 ───────────────────────────────────────────────
+
+const SOURCE_ALIASES: Record<string, string> = {
+  'codex-review': 'codex',
+}
+
+function normalizeSource(source: string): string {
+  return SOURCE_ALIASES[source.toLowerCase()] || source
+}
+
 // ─── 插入用量记录 ─────────────────────────────────────────────
 
 export function insertUsageRecord(record: {
@@ -133,6 +143,7 @@ export function insertUsageRecord(record: {
   timestamp: number
 }) {
   const db = getDb()
+  const source = normalizeSource(record.source)
   const project = normalizeProjectName(record.project)
 
   if (record.request_id) {
@@ -149,7 +160,7 @@ export function insertUsageRecord(record: {
     ON CONFLICT(request_id) WHERE request_id IS NOT NULL DO NOTHING
   `)
 
-  const result = stmt.run({ ...record, project })
+  const result = stmt.run({ ...record, source, project })
 
   // changes === 0 表示因唯一约束冲突被忽略（即重复）
   if (result.changes === 0 && record.request_id) {
