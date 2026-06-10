@@ -142,6 +142,33 @@ Minimal API payload:
 
 `source`, `model`, and `input_tokens` are required. `request_id` is recommended for deduplication. Unknown models are created with price `$0` until you update pricing through the pricing API.
 
+#### Option 4: Local OpenAI-compatible proxy (zero code changes)
+
+If the tool supports changing the OpenAI `baseURL`, point it to TokenTrail's local proxy. TokenTrail forwards requests to the real API and records usage automatically — the tool needs zero code changes.
+
+```bash
+# Set the base URL in your tool's config
+OPENAI_BASE_URL=http://localhost:3820/proxy/openai
+```
+
+Or in code:
+
+```js
+const openai = new OpenAI({ baseURL: 'http://localhost:3820/proxy/openai' })
+```
+
+TokenTrail uses the caller's `Authorization` header to forward to the upstream API. You can also set `OPENAI_API_KEY` in the environment or in `~/.tokentrail/config.json`.
+
+To identify the source, add a custom header:
+
+```bash
+curl http://localhost:3820/proxy/openai/v1/chat/completions \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-tokentrail-source: hermes" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}'
+```
+
 #### Environment variable
 
 Set `TOKENTRAIL_URL` so the SDK and tools can auto-discover the TokenTrail endpoint:
@@ -186,7 +213,13 @@ TokenTrail/
 ├── packages/
 │   └── tokentrail-report/     # Lightweight SDK for tools to report usage
 ├── src/
-│   ├── app/                   # Next.js dashboard and API routes
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── proxy/openai/  # Local OpenAI-compatible proxy
+│   │   │   ├── report/        # Usage report endpoint
+│   │   │   ├── sync/          # Data sync trigger
+│   │   │   └── ...            # health, status, stats, backup, pricing
+│   │   └── ...
 │   ├── components/dashboard/  # Dashboard UI
 │   └── lib/
 │       ├── db.ts              # SQLite data layer

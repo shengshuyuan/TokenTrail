@@ -142,6 +142,33 @@ curl -X POST http://localhost:3820/api/report \
 
 `source`、`model`、`input_tokens` 为必填。建议传入 `request_id` 用于去重。未知模型会先以 `$0` 价格创建，之后可以通过定价接口补充价格。
 
+#### 方式 4：本地 OpenAI 兼容代理（零代码改动）
+
+如果工具支持修改 OpenAI `baseURL`，直接指向 TokenTrail 的本地代理即可。TokenTrail 自动转发请求到真实 API 并记录用量 — 工具本身不需要任何代码改动。
+
+```bash
+# 在工具配置中设置 base URL
+OPENAI_BASE_URL=http://localhost:3820/proxy/openai
+```
+
+或在代码中：
+
+```js
+const openai = new OpenAI({ baseURL: 'http://localhost:3820/proxy/openai' })
+```
+
+TokenTrail 使用调用方的 `Authorization` 头转发到上游 API。也可以在环境变量或 `~/.tokentrail/config.json` 中设置 `OPENAI_API_KEY`。
+
+通过自定义请求头标识来源：
+
+```bash
+curl http://localhost:3820/proxy/openai/v1/chat/completions \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "x-tokentrail-source: hermes" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}'
+```
+
 #### 环境变量
 
 设置 `TOKENTRAIL_URL` 让 SDK 和工具自动发现 TokenTrail 端点：
@@ -186,7 +213,13 @@ TokenTrail/
 ├── packages/
 │   └── tokentrail-report/     # 轻量 SDK，供其他工具上报用量
 ├── src/
-│   ├── app/                   # Next.js Dashboard 和 API 路由
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── proxy/openai/  # 本地 OpenAI 兼容代理
+│   │   │   ├── report/        # 用量上报端点
+│   │   │   ├── sync/          # 数据同步触发
+│   │   │   └── ...            # health, status, stats, backup, pricing
+│   │   └── ...
 │   ├── components/dashboard/  # Dashboard UI
 │   └── lib/
 │       ├── db.ts              # SQLite 数据层

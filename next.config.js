@@ -6,6 +6,14 @@ const nextConfig = {
     serverComponentsExternalPackages: ['better-sqlite3'],
   },
   generateBuildId: async () => 'tokentrail-' + Date.now(),
+  async rewrites() {
+    return [
+      {
+        source: '/proxy/openai/:path*',
+        destination: '/api/proxy/openai/:path*',
+      },
+    ]
+  },
 }
 
 module.exports = nextConfig
