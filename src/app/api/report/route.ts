@@ -54,6 +54,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 拒绝全部 token 为 0 的记录，避免污染统计数据
+    if (input_tokens === 0 && output_tokens === 0 && cachedInput === 0 && reasoning === 0) {
+      return NextResponse.json(
+        { success: false, error: 'All token counts are zero. Report real response.usage values, not estimates. If the provider does not return usage, do not report.' },
+        { status: 400 }
+      )
+    }
+
     const timestamp = body.timestamp ?? Date.now()
     if (!Number.isFinite(timestamp) || timestamp < 0) {
       return NextResponse.json(

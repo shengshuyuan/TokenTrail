@@ -156,6 +156,11 @@ export function insertUsageRecord(record: {
   const project = normalizeProjectName(record.project)
   const provider = record.provider || null
 
+  // 拒绝全部 token 为 0 的记录，避免污染统计数据
+  if (record.input_tokens === 0 && record.output_tokens === 0 && record.cached_input_tokens === 0 && record.reasoning_tokens === 0) {
+    return { success: false, cost_usd: 0, id: 0, duplicate: false, project_backfilled: false }
+  }
+
   if (record.request_id) {
     const existing = db.prepare('SELECT id, project FROM usage_records WHERE request_id = ?').get(record.request_id) as { id: number; project: string } | undefined
     if (existing) {
