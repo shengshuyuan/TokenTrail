@@ -82,7 +82,7 @@ TokenTrail 完全自包含，不依赖任何外部平台。数据如何到达取
 
 对于 OpenClaw、Hermes、Lobster 和自定义 Agent，TokenTrail 无法自行获取用量数据。**这些工具必须在每次模型 API 调用返回后，把真实的 `response.usage` 上报给 TokenTrail。** 不接入就没有数据。
 
-工具从模型响应中读取 `response.usage`，上报到 TokenTrail。上报失败不能影响主业务。
+工具从模型响应中读取 `response.usage`，上报到 TokenTrail。**如果本次响应没有 usage 数据，跳过上报 — 不要写 0。** 上报失败不能影响主业务。
 
 #### 方式 1：写入本地 JSONL 文件（最简单，不需要 HTTP）
 
@@ -93,16 +93,14 @@ const fs = require('fs')
 const path = require('path')
 
 function reportUsage(entry) {
+  if (!entry.input_tokens && !entry.output_tokens) return // 没有真实用量就跳过
   const dir = path.join(process.env.HOME, '.openclaw', 'usage')
   fs.mkdirSync(dir, { recursive: true })
   const date = new Date().toISOString().slice(0, 10)
-  fs.appendFileSync(
-    path.join(dir, `${date}.jsonl`),
-    JSON.stringify(entry) + '\n'
-  )
+  fs.appendFileSync(path.join(dir, `${date}.jsonl`), JSON.stringify(entry) + '\n')
 }
 
-// 模型响应返回后调用
+// 模型响应返回后 — 读取真实用量，不要估算
 const res = await callModel(...)
 reportUsage({
   source: 'openclaw',
@@ -121,39 +119,43 @@ TokenTrail 自动扫描的目录：
 - `~/.hermes/usage/*.jsonl`
 
 #### 方式 2：包装 OpenAI 客户端（推荐，适用于使用 SDK 的工具）
-```
 
-SDK 从响应中读取 `res.model`、`res.usage.prompt_tokens`、`res.usage.completion_tokens`、`res.id`。
-
-#### 方式 2：每次模型调用后 HTTP 上报
-
-如果无法使用 SDK 包装，在模型 API 响应返回后手动上报。使用 `response.usage` 中的真实值，不要估算。
+如果工具使用 OpenAI 兼容 SDK，启动时包装一次即可。之后每次 `chat.completions.create()` 调用自动从 `response.usage` 读取真实用量并上报。
 
 ```js
-// 模型调用完成后
-const res = await callModel(...)
+const OpenAI = require('openai')
+const { wrapOpenAI } = require('tokentrail-report')
 
-// 上报到 TokenTrail（fire-and-forget，不阻塞主流程）
+const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
+
+// 后续调用无需任何改动，用量自动上报
+const res = await client.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
+```
+
+#### 方式 3：每次模型调用后 HTTP 上报
+
+在模型 API 响应返回后手动上报。使用 `response.usage` 中的真实值，不要估算。
+
+```js
+const res = await callModel(...)
 fetch('http://localhost:3820/api/report', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     source: 'openclaw',
-    model: res.model,                          // 响应中的实际模型名
-    input_tokens: res.usage.prompt_tokens,      // 真实用量，非估算
+    model: res.model,
+    input_tokens: res.usage.prompt_tokens,
     output_tokens: res.usage.completion_tokens,
     cached_input_tokens: res.usage.prompt_tokens_details?.cached_tokens || 0,
-    reasoning_tokens: res.usage.completion_tokens_details?.reasoning_tokens || 0,
     request_id: res.id,
-    project: 'my-project',
     timestamp: Date.now()
   })
 }).catch(() => {})
 ```
 
-**流式调用注意：** 用量数据在最后一个 chunk 中。需要开启 `stream_options: { include_usage: true }`，在流结束后从最后一个 chunk 读取 `usage`。
+**流式调用注意：** 需要开启 `stream_options: { include_usage: true }`，在流结束后从最后一个 chunk 读取 `usage`。
 
-#### 方式 3：本地 OpenAI 代理（工具零代码改动）
+#### 方式 4：本地 OpenAI 代理（工具零代码改动）
 
 如果工具支持修改 OpenAI `baseURL`，指向 TokenTrail 本地代理即可。TokenTrail 转发请求到真实 API，并从响应中记录用量。
 
@@ -175,15 +177,25 @@ OPENAI_BASE_URL=http://localhost:3820/proxy/openai
 
 ### 接入指令（可直接复制给其他工具）
 
-把这段话发给需要接入的工具：
+**给 OpenClaw：**
 
-> 每次模型调用完成后，把模型返回的真实 `response.usage` 上报到本机 TokenTrail：
-> `POST http://localhost:3820/api/report`
->
-> `source` 填你的工具名，`provider` 填实际模型服务商，`model` 填实际模型名，
-> `input_tokens`/`output_tokens` 从 `response.usage` 读取。不要估算，上报失败不能影响主流程。
+> 请在 OpenClaw 的模型调用统一出口处，模型响应完成后读取真实 `response.usage`，并追加一行 JSON 到 `~/.openclaw/usage/YYYY-MM-DD.jsonl`。不要估算，不要写 0；如果本次响应拿不到 usage，就跳过写入。TokenTrail 会本地扫描这个文件。
 
-最小请求体：
+**给 Hermes：**
+
+> 请在 Hermes 的模型调用统一出口处，模型响应完成后读取真实 `response.usage`，并追加一行 JSON 到 `~/.hermes/usage/YYYY-MM-DD.jsonl`。不要估算，不要写 0；如果本次响应拿不到 usage，就跳过写入。TokenTrail 会本地扫描这个文件。
+
+**通用指令：**
+
+> 每次模型调用完成后，读取真实 `response.usage` 上报给 TokenTrail。如果拿不到真实 usage，跳过上报 — 0 值记录会被拒绝。上报失败不能影响主流程。
+
+最小 JSONL 一行：
+
+```json
+{"source":"openclaw","provider":"xiaomi","model":"mimo-v2.5-pro","input_tokens":5000,"output_tokens":1200,"request_id":"xxx","timestamp":1718000000000}
+```
+
+最小 HTTP 请求体：
 
 ```json
 {
@@ -195,14 +207,7 @@ OPENAI_BASE_URL=http://localhost:3820/proxy/openai
 }
 ```
 
-如果用 OpenAI 兼容 SDK，包装一次客户端即可：
-
-```js
-const { wrapOpenAI } = require('tokentrail-report')
-const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
-```
-
-`source`、`model`、`input_tokens` 为必填。建议传入 `request_id` 用于去重。`provider` 可选（如 `openai`、`xiaomi`、`anthropic`）。未知模型会先以 `$0` 价格创建，之后可以通过定价接口补充价格。
+`source`、`model`、`input_tokens` 为必填。建议传入 `request_id` 用于去重。`provider` 可选（如 `openai`、`xiaomi`、`anthropic`）。
 
 #### 环境变量
 

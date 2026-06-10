@@ -82,28 +82,25 @@ For tools that already store usage data locally, TokenTrail reads directly from 
 
 For tools like OpenClaw, Hermes, Lobster, and custom agents, TokenTrail cannot read usage data on its own. **These tools must report usage to TokenTrail after each model API call returns.** Without integration, their data will not appear in the dashboard.
 
-The tool reads `response.usage` from the actual model response and reports it to TokenTrail. Reporting failures must not affect the tool's main flow.
+The tool reads `response.usage` from the actual model response and reports it to TokenTrail. **If the model response does not include usage data, skip the report — do not write zeros.** Reporting failures must not affect the tool's main flow.
 
 #### Option 1: Write a local JSONL file (simplest, no HTTP needed)
 
 The tool writes one JSONL line per model call to `~/.tool-name/usage/YYYY-MM-DD.jsonl`. TokenTrail scans these files during sync — no HTTP calls, no SDK, no dependencies.
 
 ```js
-// After each model call, append one line to the daily usage file
 const fs = require('fs')
 const path = require('path')
 
 function reportUsage(entry) {
+  if (!entry.input_tokens && !entry.output_tokens) return // skip if no real usage
   const dir = path.join(process.env.HOME, '.openclaw', 'usage')
   fs.mkdirSync(dir, { recursive: true })
   const date = new Date().toISOString().slice(0, 10)
-  fs.appendFileSync(
-    path.join(dir, `${date}.jsonl`),
-    JSON.stringify(entry) + '\n'
-  )
+  fs.appendFileSync(path.join(dir, `${date}.jsonl`), JSON.stringify(entry) + '\n')
 }
 
-// Call after each model response
+// After model response — read real usage, never estimate
 const res = await callModel(...)
 reportUsage({
   source: 'openclaw',
@@ -129,44 +126,36 @@ If the tool uses an OpenAI-compatible SDK, wrap it once. Every `chat.completions
 const OpenAI = require('openai')
 const { wrapOpenAI } = require('tokentrail-report')
 
-// Wrap once at startup
 const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
 
-// All subsequent calls report usage automatically — no other changes needed
+// All subsequent calls report usage automatically
 const res = await client.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
 ```
 
-The SDK reads `res.model`, `res.usage.prompt_tokens`, `res.usage.completion_tokens`, and `res.id` from the response.
+#### Option 3: HTTP call after each model response
 
-#### Option 2: HTTP call after each model response
-
-If the tool cannot use the SDK wrapper, add a reporting call after each model API response. Use the real values from `response.usage`, not estimates.
+Add a reporting call after each model API response. Use the real values from `response.usage`, not estimates.
 
 ```js
-// After model call completes
 const res = await callModel(...)
-
-// Report to TokenTrail (fire-and-forget, never block the main flow)
 fetch('http://localhost:3820/api/report', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     source: 'openclaw',
-    model: res.model,                          // actual model from response
-    input_tokens: res.usage.prompt_tokens,      // real usage, not estimate
+    model: res.model,
+    input_tokens: res.usage.prompt_tokens,
     output_tokens: res.usage.completion_tokens,
     cached_input_tokens: res.usage.prompt_tokens_details?.cached_tokens || 0,
-    reasoning_tokens: res.usage.completion_tokens_details?.reasoning_tokens || 0,
     request_id: res.id,
-    project: 'my-project',
     timestamp: Date.now()
   })
 }).catch(() => {})
 ```
 
-**Streaming note:** For streaming calls, usage data is in the final chunk. Enable `stream_options: { include_usage: true }` and read `usage` from the last chunk after the stream ends.
+**Streaming note:** For streaming calls, enable `stream_options: { include_usage: true }` and read `usage` from the last chunk after the stream ends.
 
-#### Option 3: Local OpenAI proxy (zero code changes in the tool)
+#### Option 4: Local OpenAI proxy (zero code changes in the tool)
 
 If the tool supports changing the OpenAI `baseURL`, point it to TokenTrail's local proxy. TokenTrail forwards requests to the real API and records usage from the response.
 
@@ -188,16 +177,25 @@ The tool's API key is forwarded to the upstream API. No code changes in the tool
 
 ### Integration instruction (copy-paste for other tools)
 
-Give this to any tool that needs to report usage to TokenTrail:
+**For OpenClaw:**
 
-> After each model call, POST the real `response.usage` to your local TokenTrail:
-> `POST http://localhost:3820/api/report`
->
-> `source`: your tool name, `provider`: the model provider, `model`: the actual model name,
-> `input_tokens`/`output_tokens`: read from `response.usage`. Do not estimate.
-> Reporting failures must not affect the main flow.
+> At the model call exit point in OpenClaw, read real `response.usage` after the model responds, and append one JSON line to `~/.openclaw/usage/YYYY-MM-DD.jsonl`. Do not estimate. Do not write zeros. If this response has no usage data, skip writing. TokenTrail scans this file locally.
 
-Minimal payload:
+**For Hermes:**
+
+> At the model call exit point in Hermes, read real `response.usage` after the model responds, and append one JSON line to `~/.hermes/usage/YYYY-MM-DD.jsonl`. Do not estimate. Do not write zeros. If this response has no usage data, skip writing. TokenTrail scans this file locally.
+
+**For any tool (universal):**
+
+> After each model call, read the real `response.usage` and report it to TokenTrail. If you can't get real usage, skip reporting — zero values are rejected. Reporting failures must not affect the main flow.
+
+Minimal JSONL line:
+
+```json
+{"source":"openclaw","provider":"xiaomi","model":"mimo-v2.5-pro","input_tokens":5000,"output_tokens":1200,"request_id":"xxx","timestamp":1718000000000}
+```
+
+Minimal HTTP payload:
 
 ```json
 {
@@ -209,14 +207,7 @@ Minimal payload:
 }
 ```
 
-If using an OpenAI-compatible SDK, wrap the client once instead:
-
-```js
-const { wrapOpenAI } = require('tokentrail-report')
-const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
-```
-
-`source`, `model`, and `input_tokens` are required. `request_id` is recommended for deduplication. `provider` is optional (e.g. `openai`, `xiaomi`, `anthropic`). Unknown models are created with price `$0` until you update pricing through the pricing API.
+`source`, `model`, and `input_tokens` are required. `request_id` is recommended for deduplication. `provider` is optional (e.g. `openai`, `xiaomi`, `anthropic`).
 
 #### Option 4: Local OpenAI-compatible proxy (zero code changes)
 
