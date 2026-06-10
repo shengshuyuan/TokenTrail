@@ -67,64 +67,87 @@ The service creates a runtime copy under `~/.tokentrail/runtime/TokenTrail`, kee
 
 ## Data Sources
 
-TokenTrail is self-contained. It collects data in two ways: automatic local file scanning, and active reporting via the included SDK or HTTP API. No external services are required.
+TokenTrail is self-contained. It does not depend on any external platform. How data arrives depends on the tool:
 
-### Automatic local scan
+### Local file scan (TokenTrail reads, tool is unaware)
 
-TokenTrail reads usage records directly from local files. The source tools do not need to know about TokenTrail.
+For tools that already store usage data locally, TokenTrail reads directly from their files. The tool does not need to know about TokenTrail.
 
 | Tool | Files scanned |
 | --- | --- |
 | Claude Code | `~/.claude/projects/*/sessions/*.jsonl` |
 | Codex | `~/.codex/sessions/**/*.jsonl` |
 
-### SDK and API integration for other tools
+### Active reporting (tool must integrate after each model call)
 
-For tools whose usage data is not available as local files (OpenClaw, Hermes, Lobster, custom agents, etc.), TokenTrail provides a lightweight SDK and a plain HTTP API. The source tool reports usage directly to TokenTrail — no third-party service involved.
+For tools like OpenClaw, Hermes, Lobster, and custom agents, TokenTrail cannot read usage data on its own. **These tools must report usage to TokenTrail after each model API call returns.** Without integration, their data will not appear in the dashboard.
 
-#### Option 1: `tokentrail-report` npm package (recommended)
+The tool reads `response.usage` from the actual model response and POSTs it to TokenTrail. Reporting failures must not affect the tool's main flow.
 
-Zero-dependency SDK. Auto-discovers the TokenTrail endpoint via the `TOKENTRAIL_URL` environment variable (defaults to `http://localhost:3820`).
+#### Option 1: Wrap the OpenAI client (recommended, automatic)
 
-```bash
-npm install tokentrail-report
-```
-
-```js
-const { report } = require('tokentrail-report')
-
-await report({
-  source: 'openclaw',
-  model: 'gpt-4.1',
-  input_tokens: 5000,
-  output_tokens: 1200,
-  project: 'my-project',
-})
-```
-
-#### Option 2: Wrap an OpenAI-compatible client
-
-If the tool uses an OpenAI-compatible SDK, wrap it once and every `chat.completions.create()` call automatically reports usage.
+If the tool uses an OpenAI-compatible SDK, wrap it once. Every `chat.completions.create()` call then reports usage automatically by reading `response.usage`.
 
 ```js
 const OpenAI = require('openai')
 const { wrapOpenAI } = require('tokentrail-report')
 
-const openai = wrapOpenAI(new OpenAI(), { source: 'openclaw' })
+// Wrap once at startup
+const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
 
-// Usage is now reported automatically on every call
-const res = await openai.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
+// All subsequent calls report usage automatically — no other changes needed
+const res = await client.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
 ```
 
-#### Option 3: Plain HTTP API
+The SDK reads `res.model`, `res.usage.prompt_tokens`, `res.usage.completion_tokens`, and `res.id` from the response.
 
-Any tool that can make an HTTP request can report usage directly.
+#### Option 2: HTTP call after each model response
+
+If the tool cannot use the SDK wrapper, add a reporting call after each model API response. Use the real values from `response.usage`, not estimates.
+
+```js
+// After model call completes
+const res = await callModel(...)
+
+// Report to TokenTrail (fire-and-forget, never block the main flow)
+fetch('http://localhost:3820/api/report', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    source: 'openclaw',
+    model: res.model,                          // actual model from response
+    input_tokens: res.usage.prompt_tokens,      // real usage, not estimate
+    output_tokens: res.usage.completion_tokens,
+    cached_input_tokens: res.usage.prompt_tokens_details?.cached_tokens || 0,
+    reasoning_tokens: res.usage.completion_tokens_details?.reasoning_tokens || 0,
+    request_id: res.id,
+    project: 'my-project',
+    timestamp: Date.now()
+  })
+}).catch(() => {})
+```
+
+**Streaming note:** For streaming calls, usage data is in the final chunk. Enable `stream_options: { include_usage: true }` and read `usage` from the last chunk after the stream ends.
+
+#### Option 3: Local OpenAI proxy (zero code changes in the tool)
+
+If the tool supports changing the OpenAI `baseURL`, point it to TokenTrail's local proxy. TokenTrail forwards requests to the real API and records usage from the response.
 
 ```bash
-curl -X POST http://localhost:3820/api/report \
-  -H 'Content-Type: application/json' \
-  -d '{"source":"openclaw","model":"gpt-4.1","input_tokens":5000,"output_tokens":1200}'
+OPENAI_BASE_URL=http://localhost:3820/proxy/openai
 ```
+
+The tool's API key is forwarded to the upstream API. No code changes in the tool.
+
+### Integration requirements summary
+
+| Tool | What must happen | Who does the work |
+| --- | --- | --- |
+| Claude Code | TokenTrail scans local JSONL | TokenTrail (automatic) |
+| Codex | TokenTrail scans local JSONL | TokenTrail (automatic) |
+| OpenClaw | Tool reports `response.usage` after each call | OpenClaw (must integrate) |
+| Hermes | Tool reports `response.usage` after each call | Hermes (must integrate) |
+| Any new tool | Tool reports `response.usage` after each call | The tool (must integrate) |
 
 Minimal API payload:
 

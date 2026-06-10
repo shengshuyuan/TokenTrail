@@ -67,107 +67,87 @@ npm run doctor
 
 ## 数据来源
 
-TokenTrail 完全自包含。数据采集有两种方式：本地文件自动扫描，和通过 SDK 或 HTTP API 主动上报。不需要依赖任何外部服务。
+TokenTrail 完全自包含，不依赖任何外部平台。数据如何到达取决于工具类型：
 
-### 本地文件自动扫描
+### 本地文件扫描（TokenTrail 主动读取，工具无需配合）
 
-TokenTrail 直接读取本地用量记录文件，来源工具不需要知道 TokenTrail 的存在。
+对于已经在本地存储用量数据的工具，TokenTrail 直接读取文件，工具本身不需要知道 TokenTrail 的存在。
 
 | 工具 | 扫描路径 |
 | --- | --- |
 | Claude Code | `~/.claude/projects/*/sessions/*.jsonl` |
 | Codex | `~/.codex/sessions/**/*.jsonl` |
 
-### SDK 和 API 集成（用于其他工具）
+### 主动上报（工具必须在每次模型调用后接入）
 
-对于用量数据不在本地文件中的工具（OpenClaw、Hermes、Lobster、自定义 Agent 等），TokenTrail 提供轻量 SDK 和 HTTP API，由来源工具直接上报 — 不经过任何第三方服务。
+对于 OpenClaw、Hermes、Lobster 和自定义 Agent，TokenTrail 无法自行获取用量数据。**这些工具必须在每次模型 API 调用返回后，把真实的 `response.usage` 上报给 TokenTrail。** 不接入就没有数据。
 
-#### 方式 1：`tokentrail-report` npm 包（推荐）
+工具从模型响应中读取 `response.usage`，POST 到 TokenTrail。上报失败不能影响主业务。
 
-零依赖 SDK，通过 `TOKENTRAIL_URL` 环境变量自动发现 TokenTrail 端点（默认 `http://localhost:3820`）。
+#### 方式 1：包装 OpenAI 客户端（推荐，自动上报）
 
-```bash
-npm install tokentrail-report
-```
-
-```js
-const { report } = require('tokentrail-report')
-
-await report({
-  source: 'openclaw',
-  model: 'gpt-4.1',
-  input_tokens: 5000,
-  output_tokens: 1200,
-  project: 'my-project',
-})
-```
-
-#### 方式 2：包装 OpenAI 兼容客户端
-
-如果工具使用 OpenAI 兼容 SDK，包装一次后每次 `chat.completions.create()` 调用都会自动上报用量。
+如果工具使用 OpenAI 兼容 SDK，启动时包装一次即可。之后每次 `chat.completions.create()` 调用自动从 `response.usage` 读取真实用量并上报。
 
 ```js
 const OpenAI = require('openai')
 const { wrapOpenAI } = require('tokentrail-report')
 
-const openai = wrapOpenAI(new OpenAI(), { source: 'openclaw' })
+// 启动时包装一次
+const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
 
-// 之后每次调用自动上报
-const res = await openai.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
+// 后续调用无需任何改动，用量自动上报
+const res = await client.chat.completions.create({ model: 'gpt-4.1', messages: [...] })
 ```
 
-#### 方式 3：HTTP API
+SDK 从响应中读取 `res.model`、`res.usage.prompt_tokens`、`res.usage.completion_tokens`、`res.id`。
 
-任何能发 HTTP 请求的工具都可以直接上报。
+#### 方式 2：每次模型调用后 HTTP 上报
+
+如果无法使用 SDK 包装，在模型 API 响应返回后手动上报。使用 `response.usage` 中的真实值，不要估算。
+
+```js
+// 模型调用完成后
+const res = await callModel(...)
+
+// 上报到 TokenTrail（fire-and-forget，不阻塞主流程）
+fetch('http://localhost:3820/api/report', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    source: 'openclaw',
+    model: res.model,                          // 响应中的实际模型名
+    input_tokens: res.usage.prompt_tokens,      // 真实用量，非估算
+    output_tokens: res.usage.completion_tokens,
+    cached_input_tokens: res.usage.prompt_tokens_details?.cached_tokens || 0,
+    reasoning_tokens: res.usage.completion_tokens_details?.reasoning_tokens || 0,
+    request_id: res.id,
+    project: 'my-project',
+    timestamp: Date.now()
+  })
+}).catch(() => {})
+```
+
+**流式调用注意：** 用量数据在最后一个 chunk 中。需要开启 `stream_options: { include_usage: true }`，在流结束后从最后一个 chunk 读取 `usage`。
+
+#### 方式 3：本地 OpenAI 代理（工具零代码改动）
+
+如果工具支持修改 OpenAI `baseURL`，指向 TokenTrail 本地代理即可。TokenTrail 转发请求到真实 API，并从响应中记录用量。
 
 ```bash
-curl -X POST http://localhost:3820/api/report \
-  -H 'Content-Type: application/json' \
-  -d '{"source":"openclaw","model":"gpt-4.1","input_tokens":5000,"output_tokens":1200}'
-```
-
-最小 API 数据结构：
-
-```json
-{
-  "source": "custom-agent",
-  "model": "gpt-4.1",
-  "input_tokens": 5000,
-  "output_tokens": 1200,
-  "request_id": "unique-id-for-dedup",
-  "project": "my-project",
-  "timestamp": 1718000000000
-}
-```
-
-`source`、`model`、`input_tokens` 为必填。建议传入 `request_id` 用于去重。未知模型会先以 `$0` 价格创建，之后可以通过定价接口补充价格。
-
-#### 方式 4：本地 OpenAI 兼容代理（零代码改动）
-
-如果工具支持修改 OpenAI `baseURL`，直接指向 TokenTrail 的本地代理即可。TokenTrail 自动转发请求到真实 API 并记录用量 — 工具本身不需要任何代码改动。
-
-```bash
-# 在工具配置中设置 base URL
 OPENAI_BASE_URL=http://localhost:3820/proxy/openai
 ```
 
-或在代码中：
+工具的 API Key 会透传给上游 API，不需要改代码。
 
-```js
-const openai = new OpenAI({ baseURL: 'http://localhost:3820/proxy/openai' })
-```
+### 集成责任说明
 
-TokenTrail 使用调用方的 `Authorization` 头转发到上游 API。也可以在环境变量或 `~/.tokentrail/config.json` 中设置 `OPENAI_API_KEY`。
-
-通过自定义请求头标识来源：
-
-```bash
-curl http://localhost:3820/proxy/openai/v1/chat/completions \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -H "x-tokentrail-source: hermes" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4.1","messages":[{"role":"user","content":"hello"}]}'
-```
+| 工具 | 谁负责采集数据 | 是否需要工具接入 |
+| --- | --- | --- |
+| Claude Code | TokenTrail 扫描本地 JSONL | 不需要 |
+| Codex | TokenTrail 扫描本地 JSONL | 不需要 |
+| OpenClaw | OpenClaw 读取 `response.usage` 并上报 | **必须接入** |
+| Hermes | Hermes 读取 `response.usage` 并上报 | **必须接入** |
+| 任意新工具 | 工具读取 `response.usage` 并上报 | **必须接入** |
 
 #### 环境变量
 
