@@ -75,6 +75,12 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+    if (body.provider != null && typeof body.provider !== 'string') {
+      return NextResponse.json(
+        { success: false, error: 'Invalid field: provider (must be a string if provided)' },
+        { status: 400 }
+      )
+    }
 
     // 计算费用
     const costUsd = calculateCost({
@@ -87,11 +93,12 @@ export async function POST(request: NextRequest) {
 
     const result = insertUsageRecord({
       source: body.source,
+      provider: body.provider,
       project: body.project,
       model: body.model,
       input_tokens,
       cached_input_tokens: cachedInput,
-      output_tokens,
+      output_tokens: output_tokens,
       reasoning_tokens: reasoning,
       cost_usd: costUsd,
       request_id: body.request_id,

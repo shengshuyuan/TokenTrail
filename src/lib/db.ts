@@ -61,6 +61,7 @@ export function getDb(): Database.Database {
   `)
 
   ensureUsageRecordsProjectColumn(_db)
+  ensureUsageRecordsProviderColumn(_db)
   _db.exec('CREATE INDEX IF NOT EXISTS idx_usage_project ON usage_records(project);')
 
   return _db
@@ -70,6 +71,13 @@ function ensureUsageRecordsProjectColumn(db: Database.Database) {
   const columns = db.prepare('PRAGMA table_info(usage_records)').all() as { name: string }[]
   if (!columns.some(column => column.name === 'project')) {
     db.exec("ALTER TABLE usage_records ADD COLUMN project TEXT NOT NULL DEFAULT 'unknown';")
+  }
+}
+
+function ensureUsageRecordsProviderColumn(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(usage_records)').all() as { name: string }[]
+  if (!columns.some(column => column.name === 'provider')) {
+    db.exec("ALTER TABLE usage_records ADD COLUMN provider TEXT;")
   }
 }
 
@@ -132,6 +140,7 @@ function normalizeSource(source: string): string {
 
 export function insertUsageRecord(record: {
   source: string
+  provider?: string
   project?: string
   model: string
   input_tokens: number
@@ -145,6 +154,7 @@ export function insertUsageRecord(record: {
   const db = getDb()
   const source = normalizeSource(record.source)
   const project = normalizeProjectName(record.project)
+  const provider = record.provider || null
 
   if (record.request_id) {
     const existing = db.prepare('SELECT id, project FROM usage_records WHERE request_id = ?').get(record.request_id) as { id: number; project: string } | undefined
@@ -155,12 +165,12 @@ export function insertUsageRecord(record: {
   }
 
   const stmt = db.prepare(`
-    INSERT INTO usage_records (source, project, model, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens, cost_usd, request_id, timestamp)
-    VALUES (@source, @project, @model, @input_tokens, @cached_input_tokens, @output_tokens, @reasoning_tokens, @cost_usd, @request_id, @timestamp)
+    INSERT INTO usage_records (source, provider, project, model, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens, cost_usd, request_id, timestamp)
+    VALUES (@source, @provider, @project, @model, @input_tokens, @cached_input_tokens, @output_tokens, @reasoning_tokens, @cost_usd, @request_id, @timestamp)
     ON CONFLICT(request_id) WHERE request_id IS NOT NULL DO NOTHING
   `)
 
-  const result = stmt.run({ ...record, source, project })
+  const result = stmt.run({ ...record, source, provider, project })
 
   // changes === 0 表示因唯一约束冲突被忽略（即重复）
   if (result.changes === 0 && record.request_id) {

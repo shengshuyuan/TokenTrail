@@ -149,21 +149,37 @@ The tool's API key is forwarded to the upstream API. No code changes in the tool
 | Hermes | Tool reports `response.usage` after each call | Hermes (must integrate) |
 | Any new tool | Tool reports `response.usage` after each call | The tool (must integrate) |
 
-Minimal API payload:
+### Integration instruction (copy-paste for other tools)
+
+Give this to any tool that needs to report usage to TokenTrail:
+
+> After each model call, POST the real `response.usage` to your local TokenTrail:
+> `POST http://localhost:3820/api/report`
+>
+> `source`: your tool name, `provider`: the model provider, `model`: the actual model name,
+> `input_tokens`/`output_tokens`: read from `response.usage`. Do not estimate.
+> Reporting failures must not affect the main flow.
+
+Minimal payload:
 
 ```json
 {
-  "source": "custom-agent",
-  "model": "gpt-4.1",
+  "source": "openclaw",
+  "provider": "xiaomi",
+  "model": "mimo-v2.5-pro",
   "input_tokens": 5000,
-  "output_tokens": 1200,
-  "request_id": "unique-id-for-dedup",
-  "project": "my-project",
-  "timestamp": 1718000000000
+  "output_tokens": 1200
 }
 ```
 
-`source`, `model`, and `input_tokens` are required. `request_id` is recommended for deduplication. Unknown models are created with price `$0` until you update pricing through the pricing API.
+If using an OpenAI-compatible SDK, wrap the client once instead:
+
+```js
+const { wrapOpenAI } = require('tokentrail-report')
+const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
+```
+
+`source`, `model`, and `input_tokens` are required. `request_id` is recommended for deduplication. `provider` is optional (e.g. `openai`, `xiaomi`, `anthropic`). Unknown models are created with price `$0` until you update pricing through the pricing API.
 
 #### Option 4: Local OpenAI-compatible proxy (zero code changes)
 

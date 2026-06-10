@@ -149,6 +149,37 @@ OPENAI_BASE_URL=http://localhost:3820/proxy/openai
 | Hermes | Hermes 读取 `response.usage` 并上报 | **必须接入** |
 | 任意新工具 | 工具读取 `response.usage` 并上报 | **必须接入** |
 
+### 接入指令（可直接复制给其他工具）
+
+把这段话发给需要接入的工具：
+
+> 每次模型调用完成后，把模型返回的真实 `response.usage` 上报到本机 TokenTrail：
+> `POST http://localhost:3820/api/report`
+>
+> `source` 填你的工具名，`provider` 填实际模型服务商，`model` 填实际模型名，
+> `input_tokens`/`output_tokens` 从 `response.usage` 读取。不要估算，上报失败不能影响主流程。
+
+最小请求体：
+
+```json
+{
+  "source": "openclaw",
+  "provider": "xiaomi",
+  "model": "mimo-v2.5-pro",
+  "input_tokens": 5000,
+  "output_tokens": 1200
+}
+```
+
+如果用 OpenAI 兼容 SDK，包装一次客户端即可：
+
+```js
+const { wrapOpenAI } = require('tokentrail-report')
+const client = wrapOpenAI(new OpenAI(), { source: 'hermes' })
+```
+
+`source`、`model`、`input_tokens` 为必填。建议传入 `request_id` 用于去重。`provider` 可选（如 `openai`、`xiaomi`、`anthropic`）。未知模型会先以 `$0` 价格创建，之后可以通过定价接口补充价格。
+
 #### 环境变量
 
 设置 `TOKENTRAIL_URL` 让 SDK 和工具自动发现 TokenTrail 端点：
