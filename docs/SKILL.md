@@ -63,7 +63,7 @@ tokentrail setup
 ## 注意事项
 
 - TokenTrail 服务必须在运行（`npm run dev` 在 TokenTrail 目录下）
-- `tokentrail sync` 会同步 Claude Code、Codex 的本地日志，以及 VibeCafé（OpenClaw/Hermes）的数据
+- `tokentrail sync` 会同步 Claude Code、Codex 的本地日志、OpenClaw/Hermes 本地 JSONL 用量文件，以及可选 VibeCafé 数据
 - `tokentrail report` 是实时上报，`tokentrail sync` 是批量拉取
 - 所有数据存在本地 SQLite，不上传到任何云服务
 - `status` 输出是 markdown 格式，**原样展示，不要复述**

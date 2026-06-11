@@ -8,6 +8,7 @@
  *   1. Set OPENAI_API_KEY in env or ~/.tokentrail/config.json
  *   2. Point your tool's baseURL to http://localhost:3820/proxy/openai
  *   3. All calls go through the real API; usage is recorded automatically
+ *   4. Set TOKENTRAIL_UPSTREAM_URL for non-OpenAI-compatible upstreams
  *
  * Streaming: usage is extracted from the final SSE chunk and recorded.
  * Non-streaming: usage is extracted from the JSON response body.
@@ -19,11 +20,10 @@ import { calculateCost } from '@/lib/pricing'
 import { ensureInit } from '@/lib/init'
 import { getConfig } from '@/lib/db'
 
-const DEFAULT_UPSTREAM = 'https://api.openai.com'
+const DEFAULT_UPSTREAM = 'https://api.openai.com/v1'
 
 function getUpstreamUrl(): string {
   return process.env.TOKENTRAIL_UPSTREAM_URL
-    || process.env.OPENAI_BASE_URL
     || DEFAULT_UPSTREAM
 }
 
@@ -56,6 +56,7 @@ function extractProject(request: NextRequest): string | undefined {
  */
 function extractUsageFromSSEChunk(chunk: string): {
   model: string
+  id?: string
   usage: {
     prompt_tokens: number
     completion_tokens: number
@@ -68,7 +69,7 @@ function extractUsageFromSSEChunk(chunk: string): {
     try {
       const obj = JSON.parse(line.slice(6))
       if (obj.usage && obj.model) {
-        return { model: obj.model, usage: obj.usage }
+        return { model: obj.model, id: obj.id, usage: obj.usage }
       }
     } catch {}
   }
@@ -226,6 +227,7 @@ async function handleRequest(
               output_tokens: u.completion_tokens || 0,
               cached_input_tokens: u.prompt_tokens_details?.cached_tokens || 0,
               reasoning_tokens: u.completion_tokens_details?.reasoning_tokens || 0,
+              request_id: usageData.id,
             })
           }
         } catch {}

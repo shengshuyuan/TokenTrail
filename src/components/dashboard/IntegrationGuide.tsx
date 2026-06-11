@@ -63,35 +63,37 @@ const GUIDE_CONTENT: Record<TabId, GuideStep[]> = {
   ],
   openclaw: [
     {
-      title: '方式 1：VibeCafé 自动同步（推荐）',
-      desc: 'OpenClaw 数据存储在 VibeCafé 平台，配置 API Key 后 SYNC 自动拉取',
+      title: '方式 1：本地 JSONL 写入（推荐）',
+      desc: 'OpenClaw 在模型响应完成后写入真实 usage，TokenTrail 同步时扫描',
       commands: [
-        { label: '配置 API Key', code: 'curl -X POST http://localhost:3820/api/sync -H "Content-Type: application/json" -d \'{"vibecafe_api_key": "your-key"}\'' },
+        { label: '写入目录', code: 'mkdir -p ~/.openclaw/usage' },
+        { label: 'JSONL 示例', code: 'echo \'{"source":"openclaw","provider":"xiaomi","model":"mimo-v2.5-pro","input_tokens":5000,"output_tokens":1200,"request_id":"id","timestamp":1718000000000}\' >> ~/.openclaw/usage/$(date +%F).jsonl' },
         { label: '同步数据', code: 'node bin/tokentrail.js sync' },
       ],
     },
     {
-      title: '方式 2：代码集成实时上报',
-      desc: '在 OpenClaw 会话结束 hook 中调用',
+      title: '核心规则',
+      desc: '只在拿到模型返回的真实 response.usage 后写入；拿不到 usage 就跳过，不要写 0',
       commands: [
-        { label: '上报命令', code: 'node bin/tokentrail.js report --source openclaw --model gpt-4.1 --input 5000 --output 1200' },
+        { label: '字段要求', code: 'source=openclaw provider=实际服务商 model=实际模型 input_tokens/output_tokens=真实用量 request_id=响应ID' },
       ],
     },
   ],
   hermes: [
     {
-      title: '方式 1：VibeCafé 自动同步（推荐）',
-      desc: 'Hermes 数据通过 VibeCafé API 拉取',
+      title: '方式 1：本地 JSONL 写入（推荐）',
+      desc: 'Hermes 在模型响应完成后写入真实 usage，TokenTrail 同步时扫描',
       commands: [
-        { label: '配置 API Key', code: 'curl -X POST http://localhost:3820/api/sync -H "Content-Type: application/json" -d \'{"vibecafe_api_key": "your-key"}\'' },
+        { label: '写入目录', code: 'mkdir -p ~/.hermes/usage' },
+        { label: 'JSONL 示例', code: 'echo \'{"source":"hermes","provider":"anthropic","model":"claude-sonnet-4-6","input_tokens":5000,"output_tokens":1200,"request_id":"id","timestamp":1718000000000}\' >> ~/.hermes/usage/$(date +%F).jsonl' },
         { label: '同步数据', code: 'node bin/tokentrail.js sync' },
       ],
     },
     {
-      title: '方式 2：代码集成实时上报',
-      desc: '在 Hermes usage 写入 hook 中调用',
+      title: '核心规则',
+      desc: '只在拿到模型返回的真实 response.usage 后写入；拿不到 usage 就跳过，不要写 0',
       commands: [
-        { label: '上报命令', code: 'node bin/tokentrail.js report --source hermes --model claude-sonnet-4-20250514 --input 50000 --output 8000 --cached 20000' },
+        { label: '字段要求', code: 'source=hermes provider=实际服务商 model=实际模型 input_tokens/output_tokens=真实用量 request_id=响应ID' },
       ],
     },
   ],

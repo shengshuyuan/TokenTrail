@@ -124,6 +124,7 @@ function wrapOpenAI(client, defaults) {
         input_tokens: usage.prompt_tokens || 0,
         output_tokens: usage.completion_tokens || 0,
         cached_input_tokens: usage.prompt_tokens_details?.cached_tokens || 0,
+        reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens || 0,
         request_id: response.id || undefined,
       }).catch(() => {}) // fire-and-forget, never block the caller
     }

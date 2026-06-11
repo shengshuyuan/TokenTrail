@@ -286,7 +286,7 @@ function syncLocalUsageFiles(): SyncResult {
               reasoning_tokens: reasoning,
               cost_usd,
               request_id: entry.request_id,
-              timestamp: entry.timestamp || Date.now(),
+              timestamp: normalizeTimestamp(entry.timestamp),
             })
 
             result.scanned++
@@ -472,6 +472,16 @@ export async function syncAll(): Promise<SyncResult[]> {
 }
 
 // ─── 辅助函数 ─────────────────────────────────────────────────
+
+/** Normalize timestamp to numeric ms. Handles number, ISO string, and missing. */
+function normalizeTimestamp(raw: unknown): number {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  if (typeof raw === 'string') {
+    const t = new Date(raw).getTime()
+    if (Number.isFinite(t)) return t
+  }
+  return Date.now()
+}
 
 /** 递归查找所有 JSONL 文件 */
 function findAllJsonl(dir: string): string[] {
