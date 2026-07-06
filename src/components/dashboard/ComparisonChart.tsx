@@ -27,12 +27,12 @@ interface ComparisonChartProps {
 type ComparisonMode = 'source' | 'model'
 
 const COLORS = [
-  'var(--eva-green)',
-  'var(--eva-purple)',
-  'var(--eva-orange)',
-  '#0ea5e9',
-  '#eab308',
-  '#db2777',
+  'var(--theme-chart-1)',
+  'var(--theme-chart-2)',
+  'var(--theme-chart-3)',
+  'var(--theme-chart-4)',
+  'var(--theme-chart-5)',
+  'var(--theme-chart-6)',
 ]
 
 function compactLabel(label: string) {
@@ -49,7 +49,7 @@ function topWithOther<T extends { tokens: number; cost: number }>(items: T[], ma
       tokens: acc.tokens + item.tokens,
       cost: acc.cost + item.cost,
     }),
-    { ...rest[0], name: otherLabel, tokens: 0, cost: 0, fill: 'var(--eva-text-dim)' } as T
+    { ...rest[0], name: otherLabel, tokens: 0, cost: 0, fill: 'var(--theme-chart-7)' } as T
   )
   return [...head, other]
 }
@@ -94,10 +94,11 @@ export function ComparisonChart({
   return (
     <div>
       {/* Mode Toggle */}
-      <div className="flex gap-2 mb-4">
+      <div className="mb-4 flex gap-2">
         <button
+          type="button"
           onClick={() => setMode('source')}
-          className={`px-2 py-0.5 text-[10px] font-mono rounded transition-all border ${
+          className={`rounded-full px-3 py-1 text-[11px] font-mono border transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
             mode === 'source'
               ? 'border-eva-green/50 bg-eva-green/10 text-eva-green'
               : 'border-eva-border text-eva-text-dim hover:text-eva-text'
@@ -106,8 +107,9 @@ export function ComparisonChart({
           {t('comparison.bySource')}
         </button>
         <button
+          type="button"
           onClick={() => setMode('model')}
-          className={`px-2 py-0.5 text-[10px] font-mono rounded transition-all border ${
+          className={`rounded-full px-3 py-1 text-[11px] font-mono border transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
             mode === 'model'
               ? 'border-eva-green/50 bg-eva-green/10 text-eva-green'
               : 'border-eva-border text-eva-text-dim hover:text-eva-text'
@@ -125,34 +127,34 @@ export function ComparisonChart({
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart layout="vertical" data={data} margin={{ top: 6, right: 18, left: 12, bottom: 6 }}>
-              <CartesianGrid strokeDasharray="3 6" stroke="var(--eva-border)" horizontal={false} />
+              <CartesianGrid strokeDasharray="3 6" stroke="var(--theme-border)" horizontal={false} />
               <XAxis
                 type="number"
-                tick={{ fill: 'var(--eva-text-dim)', fontSize: 10, fontFamily: 'JetBrains Mono, Fira Code, monospace' }}
-                axisLine={{ stroke: 'var(--eva-border)' }}
-                tickLine={{ stroke: 'var(--eva-border)' }}
+                tick={{ fill: 'var(--theme-text-muted)', fontSize: 11, fontFamily: 'var(--theme-font-mono)' }}
+                axisLine={{ stroke: 'var(--theme-border)' }}
+                tickLine={{ stroke: 'var(--theme-border)' }}
                 tickFormatter={(v: number) => formatTokens(v)}
               />
               <YAxis
                 dataKey="name"
                 type="category"
                 width={116}
-                tick={{ fill: 'var(--eva-text-dim)', fontSize: 10, fontFamily: 'JetBrains Mono, Fira Code, monospace' }}
-                axisLine={{ stroke: 'var(--eva-border)' }}
-                tickLine={{ stroke: 'var(--eva-border)' }}
+                tick={{ fill: 'var(--theme-text-muted)', fontSize: 11, fontFamily: 'var(--theme-font-mono)' }}
+                axisLine={{ stroke: 'var(--theme-border)' }}
+                tickLine={{ stroke: 'var(--theme-border)' }}
                 tickFormatter={(v: string) => compactLabel(v)}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: 'var(--eva-panel)',
-                  border: '1px solid var(--eva-border)',
-                  borderRadius: '8px',
-                  fontFamily: 'JetBrains Mono, Fira Code, monospace',
+                  backgroundColor: 'var(--theme-panel)',
+                  border: '1px solid var(--theme-border)',
+                  borderRadius: 'var(--theme-control-radius)',
+                  fontFamily: 'var(--theme-font-mono)',
                   fontSize: '12px',
-                  color: 'var(--eva-text)',
+                  color: 'var(--theme-text)',
                 }}
-                labelStyle={{ color: 'var(--eva-text)' }}
-                itemStyle={{ color: 'var(--eva-green)' }}
+                labelStyle={{ color: 'var(--theme-text)' }}
+                itemStyle={{ color: 'var(--theme-chart-1)' }}
                 formatter={(value: number, name: string) => {
                   if (name === 'cost') return [formatCost(value, currency, exchangeRate), t('comparison.cost')]
                   return [formatTokens(value), t('comparison.tokens')]

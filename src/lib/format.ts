@@ -2,6 +2,7 @@
  * Client-safe formatting utilities.
  * No server-side imports (no DB, no fs).
  */
+import { USD_CNY_EXCHANGE_RATE } from '@/lib/currency'
 
 /**
  * Format token count for display.
@@ -24,7 +25,11 @@ export function formatTokens(tokens: number): string {
  * RMB: "¥89.54"
  * 接收原始 USD 值，内部处理汇率转换。
  */
-export function formatCost(usd: number, currency: 'USD' | 'RMB', exchangeRate: number = 7.25): string {
+export function formatCost(
+  usd: number,
+  currency: 'USD' | 'RMB',
+  exchangeRate: number = USD_CNY_EXCHANGE_RATE.rate
+): string {
   if (!Number.isFinite(usd)) return '—'
   if (currency === 'RMB') {
     const rmb = usd * exchangeRate

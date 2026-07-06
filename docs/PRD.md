@@ -41,10 +41,10 @@
 
 ### 2.4 UI 风格
 
-- **主题**：EVA 初号机风格 — 深色底 + 荧光绿(#39FF14) + 深紫(#6B21A8)
-- **字体**：Inter(英文) + Noto Sans SC(中文) + JetBrains Mono(数字/代码)
-- **点缀色**：#FF642B（品牌橙色，按钮/hover）
-- **整体感受**：科幻终端 / 机甲仪表盘
+- **主题**：四套原创视觉主题——机甲霓虹、赤焰卷轴、纸墨编辑、云光玻璃
+- **切换方式**：顶部预览卡弹层；用户偏好保存在本地
+- **视觉系统**：颜色、字体、圆角、阴影、纹理与图表色序均由语义化主题变量控制
+- **安全边界**：不使用第三方角色、Logo、专有字体或标志性图形素材
 
 ---
 
@@ -57,7 +57,7 @@
 | 框架 | Next.js 14 (App Router) | 前后端一体，本地 `next dev` 跑，Vercel 一键部署 |
 | 数据库 | SQLite (better-sqlite3) | 零配置、本地文件、轻量、单文件存储 |
 | 图表 | Recharts | React 原生、灵活、社区活跃 |
-| 样式 | Tailwind CSS | 快速构建、易定制 Eva 主题 |
+| 样式 | Tailwind CSS + CSS Variables | 语义化令牌支持多主题切换 |
 | UI 组件 | shadcn/ui | 高质量、可定制 |
 | 定时任务 | node-cron | 轻量级 |
 | 语言 | TypeScript | 类型安全 |
@@ -94,7 +94,7 @@
 │                         ▼                                │
 │  ┌──────────────────────────────────────────────────┐    │
 │  │          Next.js Frontend (Dashboard)             │    │
-│  │  EVA-01 Theme  |  Recharts  |  Filters           │    │
+│  │  4 Themes  |  Recharts  |  Filters               │    │
 │  └──────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -277,7 +277,7 @@ TokenTrail/
 ├── postcss.config.js
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx              # 根布局（EVA 主题基础样式）
+│   │   ├── layout.tsx              # 根布局与首屏主题初始化
 │   │   ├── page.tsx                # Dashboard 主页
 │   │   ├── globals.css             # 全局样式 + Tailwind
 │   │   └── api/
@@ -292,8 +292,10 @@ TokenTrail/
 │   ├── lib/
 │   │   ├── db.ts                   # SQLite 连接与初始化
 │   │   ├── pricing.ts              # 费用计算工具
+│   │   ├── themes.ts               # 主题定义、校验与旧偏好迁移
 │   │   └── seed-pricing.ts         # 预置 OpenRouter 价格数据
 │   ├── components/
+│   │   ├── ThemePicker.tsx          # 主题预览与切换弹层
 │   │   ├── dashboard/
 │   │   │   ├── StatsCards.tsx       # 顶部统计卡片
 │   │   │   ├── FilterBar.tsx        # 筛选栏（时间/来源/模型）
@@ -311,29 +313,26 @@ TokenTrail/
 
 ---
 
-## 七、EVA 初号机主题设计规范
+## 七、主题系统设计规范
 
-### 7.1 色彩方案
+### 7.1 语义化令牌
 
-| 用途 | 色值 | 说明 |
+| 类别 | 令牌 | 用途 |
 |------|------|------|
-| 背景色 | `#0a0a0f` | 深黑紫底 |
-| 卡片/面板背景 | `#12121a` | 略浅的深色 |
-| 边框 | `#1a1a2e` | 微妙的紫色边框 |
-| 荧光绿主色 | `#39FF14` | 数字/高亮/图表线 |
-| 深紫强调色 | `#7B2FBE` | 标题/重点区域 |
-| 深紫暗色 | `#4A1D8A` | hover 状态 |
-| 橙色点缀 | `#FF642B` | 按钮/选中态 |
-| 文字主色 | `#e0e0e0` | 浅灰白 |
-| 文字次要 | `#8888aa` | 紫灰 |
+| 页面 | `--theme-page-*` | 页面底色与背景层次 |
+| 表面 | `--theme-panel` / `--theme-border` | 卡片、弹层和边框 |
+| 品牌 | `--theme-primary` / `secondary` / `tertiary` | 选中态、重点内容与装饰 |
+| 状态 | `--status-success` / `warning` / `danger` | 业务状态，不随品牌色含义改变 |
+| 图表 | `--theme-chart-1` 至 `7` | 各主题独立的高对比数据色序 |
+| 形态 | `--theme-radius` / `--theme-panel-shadow` | 圆角、阴影与材质 |
 
-### 7.2 视觉参考
+### 7.2 四套主题
 
-- 扫描线效果（可选，CSS overlay）
-- 数字使用等宽字体 JetBrains Mono
-- 卡片使用微妙的紫色边框发光
-- 图表配色：荧光绿 + 紫色渐变
-- 整体氛围：EVA 驾驶舱 HUD 感
+- **机甲霓虹**：深色荧光终端、网格与低强度扫描线。
+- **赤焰卷轴**：炭黑、赤橙、暗红和收紧的斜向纹理。
+- **纸墨编辑**：暖纸底色、陶土强调色、衬线排版与大留白。
+- **云光玻璃**：冷白底色、清透蓝、柔和玻璃层与大圆角。
+- 极简主题关闭扫描线和强发光；所有主题尊重系统“减少动态效果”设置。
 
 ---
 
@@ -346,7 +345,7 @@ TokenTrail/
 - API: POST /api/report, GET /api/usage, GET /api/stats, GET/POST /api/pricing
 
 ### M2：Dashboard 看板（预计 2-3h）
-- EVA 主题样式
+- 四主题视觉系统
 - 统计卡片组件
 - 筛选栏组件
 - 折线图、柱状图、环形图
@@ -397,6 +396,6 @@ curl -X POST http://localhost:3820/api/report \
   }'
 ```
 
-端口默认 `3820`（致敬 EVA 中初号机编号，38→"MI" 20→"SHI" → 三石，刚好是 EVA 相关）。
+本地 Dashboard 默认使用固定端口 `3820`。
 
 各工具可通过 hooks/plugins 机制在 session 结束时自动调用此接口。

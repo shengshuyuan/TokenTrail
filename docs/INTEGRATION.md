@@ -2,6 +2,8 @@
 
 TokenTrail is a local AI token usage dashboard. All data stays on your machine — no cloud dependency.
 
+Current version: **V0.2.0**
+
 ## How data flows into TokenTrail
 
 | Tool | Method | What happens |
@@ -31,6 +33,40 @@ npm run sync
 npm run install-service
 npm run doctor
 ```
+
+## Codex integration
+
+### Method 1: zero-configuration local scan (recommended)
+
+Codex already stores real incremental usage events under `~/.codex/sessions/**/*.jsonl`. TokenTrail reads `event_msg → token_count → last_token_usage` without modifying those files.
+
+```bash
+# Confirm Codex session files exist
+find ~/.codex/sessions -type f -name '*.jsonl' | head
+
+# Run from the TokenTrail project directory
+node bin/tokentrail.js sync
+```
+
+### Method 2: standalone preflight and import
+
+Use the dedicated scanner to inspect what TokenTrail will import. The dry run is read-only.
+
+```bash
+node scripts/sync-codex.js --dry-run
+node scripts/sync-codex.js --host=http://localhost:3820
+```
+
+Records use `codex:<relative-session-path>:L<event-line>` as `request_id`, so repeated imports are safely deduplicated.
+
+### Method 3: install the Codex Skill (optional)
+
+```bash
+mkdir -p ~/.codex/skills/tokentrail
+cp docs/SKILL.md ~/.codex/skills/tokentrail/SKILL.md
+```
+
+Then ask Codex: `同步 TokenTrail 数据并汇报 Codex 用量`.
 
 ## OpenClaw / Hermes integration
 

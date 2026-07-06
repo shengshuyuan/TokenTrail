@@ -22,15 +22,20 @@ const config: Config = {
           text: 'rgb(var(--eva-text-rgb) / <alpha-value>)',
           'text-dim': 'rgb(var(--eva-text-dim-rgb) / <alpha-value>)',
         },
+        status: {
+          success: 'rgb(var(--status-success-rgb) / <alpha-value>)',
+          warning: 'rgb(var(--status-warning-rgb) / <alpha-value>)',
+          danger: 'rgb(var(--status-danger-rgb) / <alpha-value>)',
+        },
       },
       fontFamily: {
-        mono: ['"JetBrains Mono"', '"Fira Code"', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
-        sans: ['Inter', '"Noto Sans SC"', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['var(--theme-font-mono)'],
+        sans: ['var(--theme-font-body)'],
       },
       boxShadow: {
-        'eva-green': '0 0 20px rgba(57, 255, 20, 0.15)',
-        'eva-purple': '0 0 20px rgba(123, 47, 190, 0.15)',
-        'eva-glow': '0 0 30px rgba(57, 255, 20, 0.1), 0 0 60px rgba(123, 47, 190, 0.05)',
+        'eva-green': '0 0 20px rgba(var(--theme-primary-rgb), 0.15)',
+        'eva-purple': '0 0 20px rgba(var(--theme-secondary-rgb), 0.15)',
+        'eva-glow': '0 0 30px rgba(var(--theme-primary-rgb), 0.1), 0 0 60px rgba(var(--theme-secondary-rgb), 0.05)',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',

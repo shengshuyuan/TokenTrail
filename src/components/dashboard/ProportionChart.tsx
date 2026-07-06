@@ -17,7 +17,14 @@ interface ProportionChartProps {
   sourceDisplayNames: Record<string, string>
 }
 
-const COLORS = ['var(--eva-green)', 'var(--eva-purple)', 'var(--eva-orange)', '#0ea5e9', '#eab308']
+const COLORS = [
+  'var(--theme-chart-1)',
+  'var(--theme-chart-2)',
+  'var(--theme-chart-3)',
+  'var(--theme-chart-4)',
+  'var(--theme-chart-5)',
+  'var(--theme-chart-6)',
+]
 
 interface TooltipPayloadEntry {
   payload: {
@@ -44,15 +51,15 @@ function CustomTooltip({ active, payload, totalTokens }: CustomTooltipProps) {
     <div className="pointer-events-none relative z-50 rounded-lg border border-eva-border bg-eva-panel p-3 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
       <div className="flex items-center gap-2 mb-1.5">
         <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
-        <span className="text-xs font-mono font-semibold" style={{ color: entry.color }}>
+        <span className="text-sm font-mono font-semibold" style={{ color: entry.color }}>
           {entry.name}
         </span>
       </div>
       <div className="space-y-1">
-        <div className="text-xs font-mono text-eva-text">
+        <div className="text-sm font-mono text-eva-text">
           {pct}% / {formatTokens(entry.value)}
         </div>
-        <div className="text-[10px] font-mono text-eva-text-dim">
+        <div className="text-[11px] font-mono text-eva-text-dim">
           {entry.count} requests
         </div>
       </div>
@@ -101,7 +108,7 @@ export function ProportionChart({ bySource, loading, sourceDisplayNames }: Propo
               outerRadius={94}
               paddingAngle={3}
               dataKey="value"
-              stroke="var(--eva-bg)"
+              stroke="var(--theme-bg)"
               strokeWidth={2}
             >
               {data.map((entry, index) => (
@@ -116,8 +123,8 @@ export function ProportionChart({ bySource, loading, sourceDisplayNames }: Propo
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center text-center">
-          <div className="text-[10px] font-mono tracking-[0.22em] text-eva-text-dim">{t('proportion.total')}</div>
-          <div className="font-mono text-xl font-semibold text-eva-green">{formatTokens(totalTokens)}</div>
+          <div className="text-[11px] font-mono tracking-[0.22em] text-eva-text-dim">{t('proportion.total')}</div>
+          <div className="font-mono text-[1.35rem] font-semibold text-eva-green">{formatTokens(totalTokens)}</div>
         </div>
       </div>
       <div className="flex flex-col justify-center gap-2">
@@ -128,11 +135,11 @@ export function ProportionChart({ bySource, loading, sourceDisplayNames }: Propo
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="truncate text-xs font-mono text-eva-text">{item.name}</span>
+                  <span className="truncate text-sm font-mono text-eva-text">{item.name}</span>
                 </div>
-                <span className="text-xs font-mono text-eva-green">{pct.toFixed(1)}%</span>
+                <span className="text-sm font-mono text-eva-green">{pct.toFixed(1)}%</span>
               </div>
-              <div className="mt-1 text-[10px] font-mono text-eva-text-dim">
+              <div className="mt-1.5 text-[11px] font-mono text-eva-text-dim">
                 {formatTokens(item.value)} / {item.count} requests
               </div>
             </div>

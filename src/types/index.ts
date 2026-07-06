@@ -106,7 +106,7 @@ export interface DailyStat {
 export type Currency = 'USD' | 'RMB'
 
 /** 主题类型 */
-export type Theme = 'dark' | 'light'
+export type Theme = 'neon-mecha' | 'ember-scroll' | 'editorial-paper' | 'luminous-glass'
 
 /** 时间范围选项 */
 export type TimeRange = 1 | 7 | 30 | 90
@@ -119,7 +119,5 @@ export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   'openclaw': 'OpenClaw',
   'hermes': 'Hermes',
   'lobster': 'Lobster',
+  'traework': 'TraeWork',
 }
-
-/** 默认汇率 USD -> RMB */
-export const DEFAULT_EXCHANGE_RATE = 7.25

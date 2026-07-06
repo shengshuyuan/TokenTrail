@@ -10,6 +10,21 @@ import path from 'path'
 import { backfillProjectByRequestPrefix, getDb, insertUsageRecord, normalizeStoredProjectNames, upsertModelPricing, getConfig } from './db'
 import { calculateCost } from './pricing'
 import { ensureInit } from './init'
+const { findTraeHistoryFiles, parseTraeHistoryFile } = require('./traework.js') as {
+  findTraeHistoryFiles: () => string[]
+  parseTraeHistoryFile: (filePath: string) => Array<{
+    source: string
+    provider?: string
+    project?: string
+    model: string
+    input_tokens: number
+    cached_input_tokens?: number
+    output_tokens: number
+    reasoning_tokens?: number
+    request_id?: string
+    timestamp?: number
+  }>
+}
 
 // ─── 类型 ──────────────────────────────────────────────────────
 
@@ -306,6 +321,77 @@ function syncLocalUsageFiles(): SyncResult {
   return result
 }
 
+// ─── TraeWork 历史/增量同步（基于 ~/.trae/chat/**/chat_histories.json）────
+
+function syncTraeWork(): SyncResult {
+  const start = Date.now()
+  const result: SyncResult = {
+    source: 'traework',
+    scanned: 0,
+    inserted: 0,
+    duplicates: 0,
+    errors: 0,
+    duration_ms: 0,
+  }
+
+  let files: string[] = []
+  try {
+    files = findTraeHistoryFiles()
+  } catch {
+    result.errors++
+    result.duration_ms = Date.now() - start
+    return result
+  }
+
+  for (const filePath of files) {
+    try {
+      const records = parseTraeHistoryFile(filePath)
+      for (const record of records) {
+        try {
+          ensureModelPricing(record.model)
+          const input_tokens = record.input_tokens || 0
+          const cached_input_tokens = record.cached_input_tokens || 0
+          const output_tokens = record.output_tokens || 0
+          const reasoning_tokens = record.reasoning_tokens || 0
+
+          const cost_usd = calculateCost({
+            model: record.model,
+            input_tokens,
+            cached_input_tokens,
+            output_tokens,
+            reasoning_tokens,
+          })
+
+          const insertResult = insertUsageRecord({
+            source: 'traework',
+            provider: record.provider,
+            project: record.project,
+            model: record.model,
+            input_tokens,
+            cached_input_tokens,
+            output_tokens,
+            reasoning_tokens,
+            cost_usd,
+            request_id: record.request_id,
+            timestamp: normalizeTimestamp(record.timestamp),
+          })
+
+          result.scanned++
+          if (insertResult.duplicate) result.duplicates++
+          else result.inserted++
+        } catch {
+          result.errors++
+        }
+      }
+    } catch {
+      result.errors++
+    }
+  }
+
+  result.duration_ms = Date.now() - start
+  return result
+}
+
 // ─── VibeCafé API 同步 ─────────────────────────────────────────
 
 interface VibeCafeBucket {
@@ -456,6 +542,14 @@ export async function syncAll(): Promise<SyncResult[]> {
       if (localResult.scanned > 0) results.push(localResult)
     } catch {
       results.push({ source: 'local-usage', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
+    }
+
+    // TraeWork 历史/增量会话
+    try {
+      const traeWorkResult = syncTraeWork()
+      if (traeWorkResult.scanned > 0) results.push(traeWorkResult)
+    } catch {
+      results.push({ source: 'traework', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
     }
 
     // VibeCafé (OpenClaw, Hermes, etc.)

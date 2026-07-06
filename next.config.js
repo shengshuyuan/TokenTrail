@@ -12,6 +12,10 @@ const nextConfig = {
         source: '/proxy/openai/:path*',
         destination: '/api/proxy/openai/:path*',
       },
+      {
+        source: '/proxy/openai-traework/:path*',
+        destination: '/api/proxy/openai-traework/:path*',
+      },
     ]
   },
 }

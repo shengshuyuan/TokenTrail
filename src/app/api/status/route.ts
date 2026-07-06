@@ -53,14 +53,14 @@ export async function GET() {
     const db = getDb()
 
     const recordCount = (db.prepare('SELECT COUNT(*) as count FROM usage_records').get() as { count: number }).count
-    const latestTs = (db.prepare('SELECT MAX(timestamp) as latest FROM usage_records').get() as { latest: number | null }).latest
+    const latestTs = (db.prepare('SELECT MAX(CAST(timestamp AS INTEGER)) as latest FROM usage_records').get() as { latest: number | null }).latest
     const latestRecord = latestTs ? new Date(latestTs).toISOString() : null
 
     // Per-source health: latest record timestamp per source
     const sourceRows = db.prepare(`
       SELECT source,
              COUNT(*) as count,
-             MAX(timestamp) as latest_ts
+             MAX(CAST(timestamp AS INTEGER)) as latest_ts
       FROM usage_records
       GROUP BY source
       ORDER BY count DESC
@@ -68,13 +68,20 @@ export async function GET() {
 
     const now = Date.now()
     const STALE_THRESHOLD_MS = 2 * 60 * 60 * 1000 // 2 hours
+    const DAILY_SOURCE_STALE_THRESHOLD_MS = 36 * 60 * 60 * 1000 // daily aggregate + sync delay
 
-    const sources = sourceRows.map(row => ({
-      source: row.source,
-      record_count: row.count,
-      latest_record: new Date(row.latest_ts).toISOString(),
-      stale: now - row.latest_ts > STALE_THRESHOLD_MS,
-    }))
+    const sources = sourceRows.map(row => {
+      const staleThreshold = row.source.toLowerCase() === 'hermes'
+        ? DAILY_SOURCE_STALE_THRESHOLD_MS
+        : STALE_THRESHOLD_MS
+
+      return {
+        source: row.source,
+        record_count: row.count,
+        latest_record: new Date(row.latest_ts).toISOString(),
+        stale: now - row.latest_ts > staleThreshold,
+      }
+    })
 
     // Sync status from file
     const syncStatus = readSyncStatus()

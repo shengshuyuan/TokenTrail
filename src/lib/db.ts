@@ -62,6 +62,7 @@ export function getDb(): Database.Database {
 
   ensureUsageRecordsProjectColumn(_db)
   ensureUsageRecordsProviderColumn(_db)
+  ensureUsageRecordsTimestampValues(_db)
   _db.exec('CREATE INDEX IF NOT EXISTS idx_usage_project ON usage_records(project);')
 
   return _db
@@ -79,6 +80,46 @@ function ensureUsageRecordsProviderColumn(db: Database.Database) {
   if (!columns.some(column => column.name === 'provider')) {
     db.exec("ALTER TABLE usage_records ADD COLUMN provider TEXT;")
   }
+}
+
+function normalizeStoredTimestamp(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value)
+  }
+
+  if (typeof value !== 'string') return null
+
+  const trimmed = value.trim()
+  if (!trimmed) return null
+
+  if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    const numeric = Number(trimmed)
+    return Number.isFinite(numeric) ? Math.trunc(numeric) : null
+  }
+
+  // Legacy Hermes records can contain microseconds, while JavaScript dates
+  // retain milliseconds. Trim only the excess precision before parsing.
+  const normalizedIso = trimmed.replace(/(\.\d{3})\d+/, '$1')
+  const parsed = Date.parse(normalizedIso)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function ensureUsageRecordsTimestampValues(db: Database.Database) {
+  const rows = db
+    .prepare("SELECT id, timestamp FROM usage_records WHERE typeof(timestamp) = 'text'")
+    .all() as { id: number; timestamp: string }[]
+
+  if (rows.length === 0) return
+
+  const update = db.prepare('UPDATE usage_records SET timestamp = ? WHERE id = ?')
+  const migrate = db.transaction(() => {
+    for (const row of rows) {
+      const timestamp = normalizeStoredTimestamp(row.timestamp)
+      if (timestamp !== null) update.run(timestamp, row.id)
+    }
+  })
+
+  migrate()
 }
 
 // ─── WHERE 子句构建 ───────────────────────────────────────────

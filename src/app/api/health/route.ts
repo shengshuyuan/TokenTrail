@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { ensureInit } from '@/lib/init'
+import { APP_VERSION } from '@/lib/version'
 
 /**
  * GET /api/health
@@ -18,7 +19,7 @@ export async function GET() {
     const modelCount = (db.prepare('SELECT COUNT(DISTINCT model) as count FROM usage_records').get() as { count: number }).count
 
     const dateRange = db.prepare(
-      'SELECT MIN(timestamp) as earliest, MAX(timestamp) as latest FROM usage_records'
+      'SELECT MIN(CAST(timestamp AS INTEGER)) as earliest, MAX(CAST(timestamp AS INTEGER)) as latest FROM usage_records'
     ).get() as { earliest: number | null; latest: number | null }
 
     const vibecafeConfigured = !!(
@@ -27,7 +28,7 @@ export async function GET() {
 
     return NextResponse.json({
       status: 'ok',
-      version: '1.0.0',
+      version: APP_VERSION,
       records: recordCount,
       sources: sourceCount,
       models: modelCount,

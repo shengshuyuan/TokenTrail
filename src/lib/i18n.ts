@@ -3,7 +3,7 @@ export type Lang = 'zh' | 'en'
 // Keep these in English regardless of language:
 // - Model names (claude-sonnet-4-20250514, gpt-4.1, etc.)
 // - Source names (OpenClaw, Hermes, Codex, etc.)
-// - Version numbers (v0.1.0)
+// - Version numbers (v0.2.0)
 // - Status terminal text (LOADING..., NO DATA, NO SIGNAL)
 // - Technical labels (TOKEN VOLUME, COST CURVE, PEAK, requests, dup)
 
@@ -28,9 +28,16 @@ const translations: Record<string, Record<Lang, string>> = {
   'guide.button': { zh: '接入指南', en: 'GUIDE' },
 
   // FilterBar
+  'filter.title': { zh: '筛选范围', en: 'FILTERS' },
+  'filter.subtitle': { zh: '调整范围会同步影响所有统计与图表', en: 'Filters affect all stats & charts' },
   'filter.window': { zh: '时间窗口', en: 'WINDOW' },
   'filter.source': { zh: '来源', en: 'SOURCE' },
   'filter.model': { zh: '模型', en: 'MODEL' },
+  'filter.all': { zh: '全部', en: 'All' },
+  'filter.selectedCount': { zh: '已选 {n} 项', en: '{n} selected' },
+  'filter.windowHint': { zh: '决定仪表盘统计周期', en: 'Defines the reporting window' },
+  'filter.sourceHint': { zh: '限制数据来源范围', en: 'Limits which sources are included' },
+  'filter.modelHint': { zh: '限制模型统计范围', en: 'Limits which models are included' },
   'filter.clearAll': { zh: '清除全部 ({n})', en: 'CLEAR ALL ({n})' },
   'filter.clear': { zh: '清除', en: 'CLEAR' },
 
@@ -74,13 +81,17 @@ const translations: Record<string, Record<Lang, string>> = {
   // Error
   'error.label': { zh: '错误', en: 'ERROR' },
 
+  // Header scope
+  'status.lastUpdatedShort': { zh: '更新于 {time}', en: 'Updated {time}' },
+
   // Footer
   'footer.desc': { zh: '本地 AI 用量追踪器', en: 'LOCAL AI USAGE TRACKER' },
-  'footer.theme': { zh: 'EVA-01 主题', en: 'EVA-01 THEME' },
+  'footer.theme': { zh: '{name} 主题', en: '{name} THEME' },
 
   // IntegrationGuide
   'guide.title': { zh: '接入指南', en: 'GUIDE' },
   'guide.tabQuick': { zh: '快速开始', en: 'Quick Start' },
+  'guide.tabCodex': { zh: 'Codex', en: 'Codex' },
   'guide.tabClaudeCode': { zh: 'Claude Code', en: 'Claude Code' },
   'guide.tabOpenclaw': { zh: 'OpenClaw', en: 'OpenClaw' },
   'guide.tabHermes': { zh: 'Hermes', en: 'Hermes' },

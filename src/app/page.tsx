@@ -2,16 +2,21 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { StatsResponse, Currency, TimeRange, Theme, UsageRecord, ProjectStat } from '@/types'
-import { SOURCE_DISPLAY_NAMES, DEFAULT_EXCHANGE_RATE } from '@/types'
+import { SOURCE_DISPLAY_NAMES } from '@/types'
 import { formatCost, formatNumber, formatTokens } from '@/lib/format'
+import { USD_CNY_EXCHANGE_RATE } from '@/lib/currency'
 import { StatsCards } from '@/components/dashboard/StatsCards'
 import { FilterBar } from '@/components/dashboard/FilterBar'
 import { TrendChart } from '@/components/dashboard/TrendChart'
 import { ComparisonChart } from '@/components/dashboard/ComparisonChart'
 import { ProportionChart } from '@/components/dashboard/ProportionChart'
 import { IntegrationGuide } from '@/components/dashboard/IntegrationGuide'
+import { APP_VERSION } from '@/lib/version'
 import { SystemStatus } from '@/components/dashboard/SystemStatus'
+import { ThemePicker } from '@/components/ThemePicker'
+import { DEFAULT_THEME, getThemeDefinition, normalizeTheme } from '@/lib/themes'
 import { useLang } from '@/lib/LanguageContext'
+import { MotionGroup, MotionItem } from '@/components/Motion'
 
 export default function DashboardPage() {
   return <DashboardInner />
@@ -29,7 +34,8 @@ function DashboardInner() {
   const [selectedSources, setSelectedSources] = useState<string[]>([])
   const [selectedModels, setSelectedModels] = useState<string[]>([])
   const [currency, setCurrency] = useState<Currency>('USD')
-  const [theme, setTheme] = useState<Theme>('dark')
+  const [theme, setTheme] = useState<Theme>(DEFAULT_THEME)
+  const [preferencesHydrated, setPreferencesHydrated] = useState(false)
   const [showProjectNames, setShowProjectNames] = useState(false)
   const [showRawRecords, setShowRawRecords] = useState(true)
   const [rawRecords, setRawRecords] = useState<UsageRecord[]>([])
@@ -170,6 +176,7 @@ function DashboardInner() {
 
   // Persist user preferences (lang is handled by LanguageContext)
   useEffect(() => {
+    if (!preferencesHydrated) return
     try {
       const saved = localStorage.getItem('tokentrail-prefs')
       const prefs = saved ? JSON.parse(saved) : {}
@@ -183,30 +190,34 @@ function DashboardInner() {
         showRawRecords,
       }))
     } catch {}
-  }, [timeRange, currency, theme, lang, showProjectNames, showRawRecords])
+  }, [timeRange, currency, theme, lang, showProjectNames, showRawRecords, preferencesHydrated])
 
   useEffect(() => {
+    if (!preferencesHydrated) return
     document.documentElement.dataset.theme = theme
-  }, [theme])
+  }, [theme, preferencesHydrated])
 
   // 挂载后从 localStorage 恢复偏好（避免 hydration 不匹配）
   useEffect(() => {
+    let savedTheme: unknown
     try {
       const saved = localStorage.getItem('tokentrail-prefs')
       if (saved) {
         const p = JSON.parse(saved)
         if (p.timeRange) setTimeRange(p.timeRange)
         if (p.currency) setCurrency(p.currency)
-        if (p.theme) setTheme(p.theme)
+        savedTheme = p.theme
         if (typeof p.showProjectNames === 'boolean') setShowProjectNames(p.showProjectNames)
         if (typeof p.showRawRecords === 'boolean') setShowRawRecords(p.showRawRecords)
       }
     } catch {}
-    // URL 参数优先
-    const param = new URLSearchParams(window.location.search).get('theme')
-    if (param === 'light' || param === 'dark') {
-      setTheme(param)
-    }
+
+    const params = new URLSearchParams(window.location.search)
+    const themeCandidate = params.has('theme') ? params.get('theme') : savedTheme
+    const restoredTheme = normalizeTheme(themeCandidate)
+    setTheme(restoredTheme)
+    document.documentElement.dataset.theme = restoredTheme
+    setPreferencesHydrated(true)
   }, [])
 
   const toggleSource = (source: string) => {
@@ -269,6 +280,7 @@ function DashboardInner() {
   const lastUpdatedLabel = lastUpdated
     ? new Date(lastUpdated).toLocaleTimeString(lang === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit' })
     : '--:--'
+  const activeTheme = getThemeDefinition(theme)
 
   return (
     <div className="dashboard-shell min-h-screen">
@@ -281,25 +293,25 @@ function DashboardInner() {
                 <img
                   src="/logo-app.png"
                   alt="TokenTrail logo"
-                  className="h-full w-full rounded-lg shadow-[0_0_20px_rgba(42,255,37,0.16)]"
+                  className="brand-logo h-full w-full rounded-lg"
                 />
                 <span
                   className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-eva-bg ${
-                    refreshing ? 'bg-eva-orange animate-pulse' : 'bg-eva-green animate-pulse-slow shadow-eva-green'
+                    refreshing ? 'bg-status-warning animate-pulse' : 'bg-status-success shadow-[0_0_12px_rgba(var(--status-success-rgb),0.38)]'
                   }`}
                   aria-hidden="true"
                 />
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl font-mono font-semibold text-eva-green tracking-[0.12em]">
+                  <h1 className="theme-display text-xl font-semibold tracking-[0.12em]">
                     TOKENTRAIL
                   </h1>
                   <span className="rounded border border-eva-purple/30 bg-eva-purple/10 px-1.5 py-0.5 text-[10px] font-mono text-eva-purple tracking-[0.08em]">
-                    v0.1.0
+                    v{APP_VERSION}
                   </span>
                 </div>
-                <div className="mt-1 text-[10px] font-mono uppercase tracking-[0.08em] text-eva-text-dim">
+                <div className="mt-1 text-xs font-mono uppercase tracking-[0.07em] text-eva-text-dim">
                   {selectedWindow} / {activeScope} / {t('status.updatedAt', { time: lastUpdatedLabel })}
                 </div>
               </div>
@@ -310,6 +322,7 @@ function DashboardInner() {
               {/* Language Toggle */}
               <div className="control-cluster">
                 <button
+                  type="button"
                   onClick={() => setLang('zh')}
                   className={`control-button ${
                     lang === 'zh'
@@ -320,6 +333,7 @@ function DashboardInner() {
                   中
                 </button>
                 <button
+                  type="button"
                   onClick={() => setLang('en')}
                   className={`control-button ${
                     lang === 'en'
@@ -331,31 +345,11 @@ function DashboardInner() {
                 </button>
               </div>
 
-              <div className="control-cluster">
-                <button
-                  onClick={() => setTheme('dark')}
-                  className={`control-button ${
-                    theme === 'dark'
-                      ? 'control-button-active'
-                      : 'control-button-idle'
-                  }`}
-                >
-                  DARK
-                </button>
-                <button
-                  onClick={() => setTheme('light')}
-                  className={`control-button ${
-                    theme === 'light'
-                      ? 'control-button-active'
-                      : 'control-button-idle'
-                  }`}
-                >
-                  LIGHT
-                </button>
-              </div>
+              <ThemePicker theme={theme} onThemeChange={setTheme} />
 
               <div className="control-cluster">
                 <button
+                  type="button"
                   onClick={() => setCurrency('USD')}
                   className={`control-button ${
                     currency === 'USD'
@@ -366,6 +360,7 @@ function DashboardInner() {
                   USD
                 </button>
                 <button
+                  type="button"
                   onClick={() => setCurrency('RMB')}
                   className={`control-button ${
                     currency === 'RMB'
@@ -379,13 +374,15 @@ function DashboardInner() {
 
               {/* Sync Button */}
               <button
+                type="button"
                 onClick={handleSync}
                 disabled={syncing}
-                className={`min-h-[32px] rounded-md border px-3 py-1.5 text-xs font-mono transition-all ${
+                aria-live="polite"
+                className={`min-h-[32px] rounded-md border px-3 py-1.5 text-xs font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
                   syncing
-                    ? 'border-eva-orange/50 bg-eva-orange/10 text-eva-orange animate-pulse'
+                    ? 'border-status-warning/50 bg-status-warning/10 text-status-warning animate-pulse'
                     : syncResult
-                      ? 'border-eva-green/50 bg-eva-green/10 text-eva-green'
+                      ? 'border-status-success/50 bg-status-success/10 text-status-success'
                       : 'border-eva-border bg-eva-bg/50 text-eva-text-dim hover:border-eva-green/30 hover:text-eva-green'
                 }`}
               >
@@ -402,31 +399,41 @@ function DashboardInner() {
       {/* Main Content */}
       <main className="relative z-10 mx-auto max-w-[1520px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
         {/* Filter Bar */}
-        <FilterBar
-          timeRange={timeRange}
-          onTimeRangeChange={setTimeRange}
-          availableSources={availableSources}
-          selectedSources={selectedSources}
-          onToggleSource={toggleSource}
-          onClearSources={() => setSelectedSources([])}
-          availableModels={availableModels}
-          selectedModels={selectedModels}
-          onToggleModel={toggleModel}
-          onClearModels={() => setSelectedModels([])}
-          sourceDisplayNames={SOURCE_DISPLAY_NAMES}
-        />
+        <MotionGroup>
+          <MotionItem>
+            <FilterBar
+              timeRange={timeRange}
+              onTimeRangeChange={setTimeRange}
+              availableSources={availableSources}
+              selectedSources={selectedSources}
+              onToggleSource={toggleSource}
+              onClearSources={() => setSelectedSources([])}
+              availableModels={availableModels}
+              selectedModels={selectedModels}
+              onToggleModel={toggleModel}
+              onClearModels={() => setSelectedModels([])}
+              sourceDisplayNames={SOURCE_DISPLAY_NAMES}
+            />
+          </MotionItem>
+        </MotionGroup>
 
         {/* System Status */}
-        <SystemStatus />
+        <MotionGroup>
+          <MotionItem>
+            <SystemStatus />
+          </MotionItem>
+        </MotionGroup>
 
         {/* Sync Details (shown after SYNC button click) */}
         {syncDetails && (
-          <div className="eva-panel p-4 animate-fade-in">
-            <div className="section-title mb-2">
-              {lang === 'zh' ? '同步结果详情' : 'SYNC RESULTS'}
-            </div>
-            <div className="overflow-x-auto rounded border border-eva-border bg-eva-bg/20">
-              <table className="w-full text-xs font-mono text-left">
+          <MotionGroup>
+            <MotionItem>
+              <div className="eva-panel p-4">
+                <div className="section-title mb-2">
+                  {lang === 'zh' ? '同步结果详情' : 'SYNC RESULTS'}
+                </div>
+                <div className="overflow-x-auto rounded border border-eva-border bg-eva-bg/20">
+                  <table className="w-full text-left text-[13px] font-mono">
                 <thead>
                   <tr className="border-b border-eva-border text-eva-text-dim">
                     <th className="px-3 py-2 font-normal">{lang === 'zh' ? '来源' : 'Source'}</th>
@@ -441,48 +448,54 @@ function DashboardInner() {
                     <tr key={r.source} className="border-b border-eva-border/50 last:border-0">
                       <td className="px-3 py-2 text-eva-text">{SOURCE_DISPLAY_NAMES[r.source] || r.source}</td>
                       <td className="px-3 py-2 text-right text-eva-text-dim">{r.scanned.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right text-eva-green">{r.inserted > 0 ? `+${r.inserted}` : '0'}</td>
+                      <td className="px-3 py-2 text-right text-status-success">{r.inserted > 0 ? `+${r.inserted}` : '0'}</td>
                       <td className="px-3 py-2 text-right text-eva-text-dim">{r.duplicates.toLocaleString()}</td>
-                      <td className={`px-3 py-2 text-right ${r.errors > 0 ? 'text-eva-orange' : 'text-eva-text-dim'}`}>
+                      <td className={`px-3 py-2 text-right ${r.errors > 0 ? 'text-status-warning' : 'text-eva-text-dim'}`}>
                         {r.errors > 0 ? r.errors : '0'}
                       </td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
-            </div>
-          </div>
+                  </table>
+                </div>
+              </div>
+            </MotionItem>
+          </MotionGroup>
         )}
 
-        <section className="eva-panel p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="section-title mb-1">SETTINGS</div>
-              <p className="text-xs font-mono text-eva-text-dim">
-                控制项目名称隐私和原始记录列表展示。
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <TogglePill
-                label="显示项目名称"
-                enabled={showProjectNames}
-                onClick={() => setShowProjectNames(value => !value)}
-              />
-              <TogglePill
-                label="显示原始明细"
-                enabled={showRawRecords}
-                onClick={() => setShowRawRecords(value => !value)}
-              />
-            </div>
-          </div>
-        </section>
+        <MotionGroup>
+          <MotionItem>
+            <section className="eva-panel p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="section-title mb-1">SETTINGS</div>
+                  <p className="text-sm leading-6 text-eva-text-dim/90">
+                    控制项目名称隐私和原始记录列表展示。
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <TogglePill
+                    label="显示项目名称"
+                    enabled={showProjectNames}
+                    onClick={() => setShowProjectNames(value => !value)}
+                  />
+                  <TogglePill
+                    label="显示原始明细"
+                    enabled={showRawRecords}
+                    onClick={() => setShowRawRecords(value => !value)}
+                  />
+                </div>
+              </div>
+            </section>
+          </MotionItem>
+        </MotionGroup>
 
         {/* Stats Cards */}
         <StatsCards
           stats={stats}
           loading={loading}
           currency={currency}
-          exchangeRate={DEFAULT_EXCHANGE_RATE}
+          exchangeRate={USD_CNY_EXCHANGE_RATE.rate}
         />
 
         {/* Empty State */}
@@ -504,16 +517,16 @@ function DashboardInner() {
 
         {/* Charts Grid */}
         {(hasData || loading) && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <MotionGroup className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {/* Trend Chart */}
-            <div className="lg:col-span-2">
+            <MotionItem className="lg:col-span-2" index={0}>
               <div className="eva-panel eva-panel-hover p-5">
                 <div className="section-title flex items-center justify-between gap-3">
                   <span className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-eva-green" />
                     {t('trend.title')}
                   </span>
-                  <span className="hidden sm:inline text-[10px] text-eva-text-dim/60">
+                  <span className="hidden text-[13px] text-eva-text-dim/80 sm:inline">
                     {t('trend.dataPoints', { n: stats?.daily.length || 0 })}
                   </span>
                 </div>
@@ -521,41 +534,41 @@ function DashboardInner() {
                   data={stats?.daily || []}
                   loading={loading}
                   currency={currency}
-                  exchangeRate={DEFAULT_EXCHANGE_RATE}
+                  exchangeRate={USD_CNY_EXCHANGE_RATE.rate}
                 />
               </div>
-            </div>
+            </MotionItem>
 
             {/* Comparison Chart */}
-            <div>
+            <MotionItem index={1}>
               <div className="eva-panel eva-panel-hover p-5 h-full">
                 <div className="section-title flex items-center justify-between gap-3">
                   <span className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-eva-purple" />
                     {t('comparison.title')}
                   </span>
-                  <span className="hidden sm:inline text-[10px] text-eva-text-dim/60">{t('comparison.topBreakdown')}</span>
+                  <span className="hidden text-[13px] text-eva-text-dim/80 sm:inline">{t('comparison.topBreakdown')}</span>
                 </div>
                 <ComparisonChart
                   bySource={stats?.by_source || []}
                   byModel={stats?.by_model || []}
                   loading={loading}
                   currency={currency}
-                  exchangeRate={DEFAULT_EXCHANGE_RATE}
+                  exchangeRate={USD_CNY_EXCHANGE_RATE.rate}
                   sourceDisplayNames={SOURCE_DISPLAY_NAMES}
                 />
               </div>
-            </div>
+            </MotionItem>
 
             {/* Proportion Chart */}
-            <div>
+            <MotionItem index={2}>
               <div className="eva-panel eva-panel-hover p-5 h-full overflow-visible">
                 <div className="section-title flex items-center justify-between gap-3">
                   <span className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-eva-orange" />
                     {t('proportion.title')}
                   </span>
-                  <span className="hidden sm:inline text-[10px] text-eva-text-dim/60">{t('proportion.sourceMix')}</span>
+                  <span className="hidden text-[13px] text-eva-text-dim/80 sm:inline">{t('proportion.sourceMix')}</span>
                 </div>
                 <ProportionChart
                   bySource={stats?.by_source || []}
@@ -563,46 +576,52 @@ function DashboardInner() {
                   sourceDisplayNames={SOURCE_DISPLAY_NAMES}
                 />
               </div>
-            </div>
+            </MotionItem>
 
-            <div className="lg:col-span-2">
+            <MotionItem className="lg:col-span-2" index={3}>
               <ProjectStatsPanel
                 stats={stats}
                 loading={loading}
                 currency={currency}
-                exchangeRate={DEFAULT_EXCHANGE_RATE}
+                exchangeRate={USD_CNY_EXCHANGE_RATE.rate}
                 showProjectNames={showProjectNames}
               />
-            </div>
-          </div>
+            </MotionItem>
+          </MotionGroup>
         )}
 
         {showRawRecords && (hasData || rawRecordsLoading) && (
-          <RawRecordsPanel
-            records={rawRecords}
-            total={rawRecordsTotal}
-            page={rawRecordsPage}
-            loading={rawRecordsLoading}
-            currency={currency}
-            exchangeRate={DEFAULT_EXCHANGE_RATE}
-            showProjectNames={showProjectNames}
-            onPrev={() => setRawRecordsPage(page => Math.max(1, page - 1))}
-            onNext={() => setRawRecordsPage(page => page + 1)}
-          />
+          <MotionGroup>
+            <MotionItem>
+              <RawRecordsPanel
+                records={rawRecords}
+                total={rawRecordsTotal}
+                page={rawRecordsPage}
+                loading={rawRecordsLoading}
+                currency={currency}
+                exchangeRate={USD_CNY_EXCHANGE_RATE.rate}
+                showProjectNames={showProjectNames}
+                onPrev={() => setRawRecordsPage(page => Math.max(1, page - 1))}
+                onNext={() => setRawRecordsPage(page => page + 1)}
+              />
+            </MotionItem>
+          </MotionGroup>
         )}
 
         {/* Error */}
         {error && (
-          <div className="eva-panel border-red-500/30 p-4 text-red-400 font-mono text-sm">
-            <span className="text-red-500">{t('error.label')}:</span> {error}
+          <div className="eva-panel border-status-danger/30 p-4 text-status-danger font-mono text-sm">
+            <span className="text-status-danger">{t('error.label')}:</span> {error}
           </div>
         )}
 
         {/* Footer */}
         <footer className="text-center py-4 border-t border-eva-border">
-          <p className="text-xs font-mono text-eva-text-dim">
+          <p className="text-sm font-mono text-eva-text-dim">
             TOKENTRAIL // {t('footer.desc')} //{' '}
-            <span className="text-eva-green">{t('footer.theme')}</span>
+            <span className="text-eva-green">
+              {t('footer.theme', { name: activeTheme.name[lang] })}
+            </span>
           </p>
         </footer>
       </main>
@@ -623,20 +642,20 @@ function TogglePill({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex min-h-[34px] items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-mono transition-all ${
+      className={`inline-flex min-h-[38px] items-center gap-2.5 rounded-md border px-3.5 py-2 text-sm font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
         enabled
           ? 'border-eva-green/40 bg-eva-green/10 text-eva-green'
           : 'border-eva-border bg-eva-bg/60 text-eva-text-dim hover:border-eva-green/30 hover:text-eva-text'
       }`}
     >
       <span
-        className={`relative h-4 w-7 rounded-full border transition-all ${
+        className={`relative h-4 w-7 rounded-full border transition-[border-color,background-color,box-shadow] duration-200 ${
           enabled ? 'border-eva-green/40 bg-eva-green/20' : 'border-eva-border-light/60 bg-eva-bg'
         }`}
         aria-hidden="true"
       >
         <span
-          className={`absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full transition-all ${
+          className={`absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full transition-[left,background-color,box-shadow] duration-200 ${
             enabled ? 'left-[13px] bg-eva-green' : 'left-1 bg-eva-text-dim'
           }`}
         />
@@ -682,7 +701,7 @@ function ProjectStatsPanel({
           <button
             type="button"
             onClick={() => setMetric('tokens')}
-            className={`rounded-full px-3 py-1 text-[10px] font-mono transition-all ${
+            className={`rounded-full px-3 py-1 text-[11px] font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
               metric === 'tokens' ? 'bg-eva-text/15 text-eva-text' : 'text-eva-text-dim hover:text-eva-text'
             }`}
           >
@@ -691,7 +710,7 @@ function ProjectStatsPanel({
           <button
             type="button"
             onClick={() => setMetric('cost')}
-            className={`rounded-full px-3 py-1 text-[10px] font-mono transition-all ${
+            className={`rounded-full px-3 py-1 text-[11px] font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
               metric === 'cost' ? 'bg-eva-text/15 text-eva-text' : 'text-eva-text-dim hover:text-eva-text'
             }`}
           >
@@ -700,21 +719,21 @@ function ProjectStatsPanel({
         </div>
       </div>
       {loading && rows.length === 0 ? (
-        <div className="py-8 text-center font-mono text-xs text-eva-text-dim">LOADING...</div>
+        <div className="py-8 text-center font-mono text-sm text-eva-text-dim">LOADING...</div>
       ) : distribution.length === 0 ? (
-        <div className="py-8 text-center font-mono text-xs text-eva-text-dim">NO PROJECT DATA</div>
+        <div className="py-8 text-center font-mono text-sm text-eva-text-dim">NO PROJECT DATA</div>
       ) : (
         <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
           <div className="flex items-center justify-center">
             <div className="relative flex h-40 w-40 items-center justify-center rounded-full shadow-[0_16px_45px_rgba(0,0,0,0.16)]" style={{ background: gradient }}>
               <div className="flex h-28 w-28 flex-col items-center justify-center rounded-full border border-eva-border bg-eva-panel text-center shadow-[inset_0_0_28px_rgba(0,0,0,0.28)]">
-                <div className="text-[10px] font-mono text-eva-text-dim">{metric === 'tokens' ? 'Tokens' : 'Cost'}</div>
+                <div className="text-[13px] font-mono text-eva-text-dim">{metric === 'tokens' ? 'Tokens' : 'Cost'}</div>
                 <div className="mt-1 text-lg font-mono font-semibold text-eva-text">
                   {metric === 'tokens'
                     ? formatTokens(featured?.value || 0)
                     : formatCost(featured?.value || 0, currency, exchangeRate)}
                 </div>
-                <div className="mt-1 max-w-[5.5rem] truncate text-[10px] font-mono text-eva-text-dim">
+                <div className="mt-1 max-w-[7rem] truncate text-xs font-mono text-eva-text-dim">
                   {featured ? displayProjectName(featured.project, showProjectNames) : '--'}
                 </div>
               </div>
@@ -725,7 +744,7 @@ function ProjectStatsPanel({
             {distribution.map(row => {
               const percentage = totalValue > 0 ? (row.value / totalValue) * 100 : 0
               return (
-                <div key={row.project} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-md px-2 py-1.5 font-mono text-xs transition-colors hover:bg-eva-bg/45">
+                <div key={row.project} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-md px-2.5 py-2 font-mono text-sm transition-colors hover:bg-eva-bg/45">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
@@ -742,7 +761,7 @@ function ProjectStatsPanel({
                 </div>
               )
             })}
-            <div className="pt-2 text-[10px] font-mono text-eva-text-dim/70">
+            <div className="pt-2 text-[13px] font-mono text-eva-text-dim/80">
               {formatNumber(rows.length)} projects / {formatNumber(stats?.total_requests || 0)} requests
             </div>
           </div>
@@ -761,7 +780,15 @@ type ProjectDistributionRow = {
   color: string
 }
 
-const PROJECT_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#737373']
+const PROJECT_COLORS = [
+  'var(--theme-chart-1)',
+  'var(--theme-chart-2)',
+  'var(--theme-chart-3)',
+  'var(--theme-chart-4)',
+  'var(--theme-chart-5)',
+  'var(--theme-chart-6)',
+  'var(--theme-chart-7)',
+]
 
 function buildProjectDistribution(rows: ProjectStat[], metric: 'tokens' | 'cost'): ProjectDistributionRow[] {
   const sorted = [...rows]
@@ -788,7 +815,7 @@ function buildProjectDistribution(rows: ProjectStat[], metric: 'tokens' | 'cost'
 
 function buildConicGradient(rows: ProjectDistributionRow[]) {
   const total = rows.reduce((sum, row) => sum + row.value, 0)
-  if (total <= 0) return 'conic-gradient(var(--eva-border), var(--eva-border))'
+  if (total <= 0) return 'conic-gradient(var(--theme-border), var(--theme-border))'
 
   let cursor = 0
   const stops = rows.map(row => {
@@ -833,12 +860,12 @@ function RawRecordsPanel({
           <span className="h-1.5 w-1.5 rounded-full bg-eva-purple" />
           RAW RECORDS
         </span>
-        <span className="text-[10px] text-eva-text-dim/60">
+        <span className="text-[13px] text-eva-text-dim/80">
           {formatNumber(total)} records / 10 per page
         </span>
       </div>
       <div className="table-shell">
-        <table className="data-table min-w-[900px] w-full text-left font-mono text-xs">
+        <table className="data-table min-w-[960px] w-full text-left font-mono text-[13px]">
           <thead className="text-eva-text-dim">
             <tr className="border-b border-eva-border">
               <th className="py-2 pr-4 font-normal">Time</th>
@@ -882,7 +909,7 @@ function RawRecordsPanel({
         </table>
       </div>
       <div className="mt-4 flex items-center justify-between gap-3">
-        <span className="text-xs font-mono text-eva-text-dim">
+        <span className="text-sm font-mono text-eva-text-dim">
           PAGE {page} / {totalPages}
         </span>
         <div className="flex gap-2">
@@ -890,7 +917,7 @@ function RawRecordsPanel({
             type="button"
             onClick={onPrev}
             disabled={!canPrev}
-            className="rounded border border-eva-border bg-eva-bg/60 px-3 py-1 text-xs font-mono text-eva-text-dim disabled:opacity-40 enabled:hover:border-eva-green/30 enabled:hover:text-eva-green"
+            className="rounded border border-eva-border bg-eva-bg/60 px-3 py-1.5 text-sm font-mono text-eva-text-dim disabled:opacity-40 enabled:hover:border-eva-green/30 enabled:hover:text-eva-green"
           >
             PREV
           </button>
@@ -898,7 +925,7 @@ function RawRecordsPanel({
             type="button"
             onClick={onNext}
             disabled={!canNext}
-            className="rounded border border-eva-border bg-eva-bg/60 px-3 py-1 text-xs font-mono text-eva-text-dim disabled:opacity-40 enabled:hover:border-eva-green/30 enabled:hover:text-eva-green"
+            className="rounded border border-eva-border bg-eva-bg/60 px-3 py-1.5 text-sm font-mono text-eva-text-dim disabled:opacity-40 enabled:hover:border-eva-green/30 enabled:hover:text-eva-green"
           >
             NEXT
           </button>

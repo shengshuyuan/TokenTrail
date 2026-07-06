@@ -40,13 +40,13 @@ function CustomTooltip({ active, payload, currency, exchangeRate }: CustomToolti
       <p className="text-xs font-mono text-eva-text-dim mb-2">{data.date}</p>
       <div className="space-y-1">
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-eva-green" />
+          <span className="h-2 w-2 rounded-full" style={{ background: 'var(--theme-chart-1)' }} />
           <span className="text-xs font-mono text-eva-text">
             {formatTokens(data.total_tokens)} tokens
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-eva-purple" />
+          <span className="h-2 w-2 rounded-full" style={{ background: 'var(--theme-chart-2)' }} />
           <span className="text-xs font-mono text-eva-text">
             {formatCost(data.cost_usd, currency, exchangeRate)}
           </span>
@@ -92,13 +92,13 @@ const chartData = data.map(d => ({
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] font-mono text-eva-text-dim">
-        <span className="inline-flex items-center gap-1.5 rounded border border-eva-border bg-eva-bg/50 px-2 py-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-eva-green" />
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-[11px] font-mono text-eva-text-dim sm:text-xs">
+        <span className="inline-flex items-center gap-1.5 rounded border border-eva-border bg-eva-bg/50 px-2.5 py-1.5">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--theme-chart-1)' }} />
           TOKEN VOLUME
         </span>
-        <span className="inline-flex items-center gap-1.5 rounded border border-eva-border bg-eva-bg/50 px-2 py-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-eva-purple" />
+        <span className="inline-flex items-center gap-1.5 rounded border border-eva-border bg-eva-bg/50 px-2.5 py-1.5">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--theme-chart-2)' }} />
           COST CURVE
         </span>
         {peak && (
@@ -112,35 +112,35 @@ const chartData = data.map(d => ({
         <AreaChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
           <defs>
             <linearGradient id="tokenGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="var(--eva-green)" stopOpacity={0.28} />
-              <stop offset="95%" stopColor="var(--eva-green)" stopOpacity={0} />
+              <stop offset="5%" stopColor="var(--theme-chart-1)" stopOpacity={0.28} />
+              <stop offset="95%" stopColor="var(--theme-chart-1)" stopOpacity={0} />
             </linearGradient>
             <linearGradient id="costGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="var(--eva-purple)" stopOpacity={0.28} />
-              <stop offset="95%" stopColor="var(--eva-purple)" stopOpacity={0} />
+              <stop offset="5%" stopColor="var(--theme-chart-2)" stopOpacity={0.28} />
+              <stop offset="95%" stopColor="var(--theme-chart-2)" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 6" stroke="var(--eva-border)" vertical={false} />
+          <CartesianGrid strokeDasharray="3 6" stroke="var(--theme-border)" vertical={false} />
           <XAxis
             dataKey="shortDate"
-            tick={{ fill: 'var(--eva-text-dim)', fontSize: 10, fontFamily: 'JetBrains Mono, Fira Code, monospace' }}
-            axisLine={{ stroke: 'var(--eva-border)' }}
-            tickLine={{ stroke: 'var(--eva-border)' }}
+            tick={{ fill: 'var(--theme-text-muted)', fontSize: 11, fontFamily: 'var(--theme-font-mono)' }}
+            axisLine={{ stroke: 'var(--theme-border)' }}
+            tickLine={{ stroke: 'var(--theme-border)' }}
             minTickGap={26}
           />
           <YAxis
             yAxisId="tokens"
-            tick={{ fill: 'var(--eva-text-dim)', fontSize: 10, fontFamily: 'JetBrains Mono, Fira Code, monospace' }}
-            axisLine={{ stroke: 'var(--eva-border)' }}
-            tickLine={{ stroke: 'var(--eva-border)' }}
+            tick={{ fill: 'var(--theme-text-muted)', fontSize: 11, fontFamily: 'var(--theme-font-mono)' }}
+            axisLine={{ stroke: 'var(--theme-border)' }}
+            tickLine={{ stroke: 'var(--theme-border)' }}
             tickFormatter={(v: number) => formatTokens(v)}
           />
           <YAxis
             yAxisId="cost"
             orientation="right"
-            tick={{ fill: 'var(--eva-text-dim)', fontSize: 10, fontFamily: 'JetBrains Mono, Fira Code, monospace' }}
-            axisLine={{ stroke: 'var(--eva-border)' }}
-            tickLine={{ stroke: 'var(--eva-border)' }}
+            tick={{ fill: 'var(--theme-text-muted)', fontSize: 11, fontFamily: 'var(--theme-font-mono)' }}
+            axisLine={{ stroke: 'var(--theme-border)' }}
+            tickLine={{ stroke: 'var(--theme-border)' }}
             tickFormatter={(v: number) => formatCost(v, currency, exchangeRate)}
           />
           <Tooltip content={<CustomTooltip currency={currency} exchangeRate={exchangeRate} />} />
@@ -148,21 +148,21 @@ const chartData = data.map(d => ({
             yAxisId="tokens"
             type="monotone"
             dataKey="total_tokens"
-            stroke="var(--eva-green)"
+            stroke="var(--theme-chart-1)"
             strokeWidth={2.4}
             fill="url(#tokenGradient)"
             dot={false}
-            activeDot={{ r: 4, stroke: 'var(--eva-bg)', strokeWidth: 2 }}
+            activeDot={{ r: 4, stroke: 'var(--theme-bg)', strokeWidth: 2 }}
           />
           <Area
             yAxisId="cost"
             type="monotone"
             dataKey="costDisplay"
-            stroke="var(--eva-purple)"
+            stroke="var(--theme-chart-2)"
             strokeWidth={2.2}
             fill="url(#costGradient)"
             dot={false}
-            activeDot={{ r: 4, stroke: 'var(--eva-bg)', strokeWidth: 2 }}
+            activeDot={{ r: 4, stroke: 'var(--theme-bg)', strokeWidth: 2 }}
           />
         </AreaChart>
       </ResponsiveContainer>
