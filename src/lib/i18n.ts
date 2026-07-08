@@ -103,6 +103,23 @@ const translations: Record<string, Record<Lang, string>> = {
   'guide.toastCopied': { zh: '复制成功', en: 'Copied!' },
   'guide.close': { zh: '关闭', en: 'Close' },
   'guide.storageNote': { zh: '数据存储在本地 SQLite，不上传任何云服务', en: 'Data stored in local SQLite, no cloud uploads' },
+
+  // Share
+  'share.button': { zh: '分享', en: 'SHARE' },
+  'share.title': { zh: '分享预览', en: 'SHARE PREVIEW' },
+  'share.download': { zh: '下载图片', en: 'Download' },
+  'share.copy': { zh: '复制图片', en: 'Copy Image' },
+  'share.copied': { zh: '✓ 已复制', en: '✓ Copied' },
+  'share.copyUnsupported': { zh: '当前浏览器不支持复制图片，请用下载', en: 'Copy not supported, use download' },
+  'share.close': { zh: '关闭', en: 'Close' },
+  'share.generating': { zh: '生成中...', en: 'Generating...' },
+  'share.noData': { zh: '暂无数据，无法生成分享图', en: 'No data to share' },
+  'share.privacyNote': { zh: '项目名称已隐藏', en: 'Project names hidden' },
+  'share.topSources': { zh: 'Top 来源', en: 'Top Sources' },
+  'share.topModels': { zh: 'Top 模型', en: 'Top Models' },
+  'share.dailyAvg': { zh: '日均', en: 'Daily Avg' },
+  'share.requests': { zh: '请求', en: 'Requests' },
+  'share.trend': { zh: '趋势', en: 'Trend' },
 } as const
 
 export type TranslationKey = keyof typeof translations

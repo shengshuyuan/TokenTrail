@@ -11,6 +11,7 @@ import { TrendChart } from '@/components/dashboard/TrendChart'
 import { ComparisonChart } from '@/components/dashboard/ComparisonChart'
 import { ProportionChart } from '@/components/dashboard/ProportionChart'
 import { IntegrationGuide } from '@/components/dashboard/IntegrationGuide'
+import { ShareCard } from '@/components/dashboard/ShareCard'
 import { APP_VERSION } from '@/lib/version'
 import { SystemStatus } from '@/components/dashboard/SystemStatus'
 import { ThemePicker } from '@/components/ThemePicker'
@@ -391,6 +392,16 @@ function DashboardInner() {
 
               {/* Integration Guide */}
               <IntegrationGuide />
+
+              {/* Share */}
+              <ShareCard
+                stats={stats}
+                timeRange={timeRange}
+                currency={currency}
+                theme={theme}
+                selectedSources={selectedSources}
+                selectedModels={selectedModels}
+              />
             </div>
           </div>
         </div>
