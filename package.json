@@ -20,6 +20,10 @@
     "backup": "node bin/tokentrail.js backup",
     "install-service": "node bin/tokentrail.js install-service",
     "uninstall-service": "node bin/tokentrail.js uninstall-service",
+    "daemon-install": "node bin/tokentrail.js daemon install",
+    "daemon-status": "node bin/tokentrail.js daemon status",
+    "daemon-restart": "node bin/tokentrail.js daemon restart",
+    "daemon-uninstall": "node bin/tokentrail.js daemon uninstall",
     "verify-local": "node scripts/verify-local.js"
   },
   "dependencies": {

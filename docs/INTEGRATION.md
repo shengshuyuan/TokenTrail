@@ -153,6 +153,10 @@ OPENAI_BASE_URL=http://localhost:3820/proxy/openai
 | `npm run restart` | Restart persistent service |
 | `npm run install-service` | Install macOS LaunchAgent |
 | `npm run uninstall-service` | Remove service (preserve data) |
+| `npm run daemon-install` | Alias for `install-service` |
+| `npm run daemon-status` | Alias for `doctor` |
+| `npm run daemon-restart` | Alias for `restart` |
+| `npm run daemon-uninstall` | Alias for `uninstall-service` |
 
 ## API endpoints
 

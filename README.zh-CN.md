@@ -59,11 +59,13 @@ npm run sync
 ### 3. 安装 macOS 后台服务
 
 ```bash
-npm run install-service
-npm run doctor
+npm run daemon-install
+npm run daemon-status
 ```
 
 服务会在 `~/.tokentrail/runtime/TokenTrail` 创建运行副本，让 Dashboard 常驻在 `3820` 端口，并在后台定时同步数据。
+
+> 旧命令 `npm run install-service`、`npm run uninstall-service`、`npm run restart`、`npm run doctor` 仍然可用，`daemon-*` 系列只是更易读的别名。
 
 ## 数据来源
 

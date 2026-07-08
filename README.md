@@ -59,11 +59,13 @@ This scans Claude Code logs (`~/.claude/projects/`), Codex sessions (`~/.codex/s
 ### 3. Install the macOS background service
 
 ```bash
-npm run install-service
-npm run doctor
+npm run daemon-install
+npm run daemon-status
 ```
 
 The service creates a runtime copy under `~/.tokentrail/runtime/TokenTrail`, keeps the dashboard available on port `3820`, and runs scheduled sync in the background.
+
+> Legacy commands `npm run install-service`, `npm run uninstall-service`, `npm run restart`, and `npm run doctor` still work; the `daemon-*` aliases are the recommended, more readable form.
 
 ## Data Sources
 

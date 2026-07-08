@@ -170,28 +170,28 @@ const QUICK_COMMAND_GROUPS: QuickCommandGroup[] = [
           zh: '安装',
           en: 'Install',
         },
-        code: 'node bin/tokentrail.js install-service',
+        code: 'node bin/tokentrail.js daemon install',
       },
       {
         label: {
           zh: '状态',
           en: 'Status',
         },
-        code: 'node bin/tokentrail.js doctor',
+        code: 'node bin/tokentrail.js daemon status',
       },
       {
         label: {
           zh: '重启',
           en: 'Restart',
         },
-        code: 'node bin/tokentrail.js restart',
+        code: 'node bin/tokentrail.js daemon restart',
       },
       {
         label: {
           zh: '卸载',
           en: 'Uninstall',
         },
-        code: 'node bin/tokentrail.js uninstall-service',
+        code: 'node bin/tokentrail.js daemon uninstall',
       },
     ],
   },
@@ -210,7 +210,7 @@ const QUICK_COMMAND_GROUPS: QuickCommandGroup[] = [
           zh: '诊断',
           en: 'Doctor',
         },
-        code: 'node bin/tokentrail.js doctor',
+        code: 'node bin/tokentrail.js daemon status',
       },
       {
         label: {
@@ -558,8 +558,8 @@ function QuickCommandPanel({ onCopy }: { onCopy: () => void }) {
 
       <div className="rounded-lg border border-status-warning/20 bg-status-warning/5 px-3 py-2.5 text-[13px] leading-6 font-mono text-eva-text-dim">
         {lang === 'zh'
-          ? '提示：如果你已经把 TokenTrail CLI 加入 PATH，可以把上面的 node bin/tokentrail.js 替换成 tokentrail。'
-          : 'Tip: if the TokenTrail CLI is already in your PATH, replace node bin/tokentrail.js with tokentrail.'}
+          ? '提示：如果你已经把 TokenTrail CLI 加入 PATH，可以把上面的 node bin/tokentrail.js 替换成 tokentrail，例如 tokentrail sync、tokentrail daemon install。'
+          : 'Tip: if the TokenTrail CLI is already in your PATH, replace node bin/tokentrail.js with tokentrail, e.g. tokentrail sync, tokentrail daemon install.'}
       </div>
     </div>
   )

@@ -14,6 +14,10 @@
  *   tokentrail restart          重启 LaunchAgent 常驻服务
  *   tokentrail backup           备份 SQLite 数据库
  *   tokentrail install-service  安装本机常驻服务 + 每 4 小时定时同步
+ *   tokentrail daemon install   install-service 的别名
+ *   tokentrail daemon status    doctor 的别名
+ *   tokentrail daemon restart   restart 的别名
+ *   tokentrail daemon uninstall uninstall-service 的别名
  */
 
 const fs = require('fs')
@@ -621,6 +625,10 @@ function cmdHelp() {
   console.log('    backup             备份 SQLite 数据库')
   console.log('    install-service    安装常驻服务 + 每 4 小时自动同步')
   console.log('    uninstall-service  移除常驻服务（保留数据）')
+  console.log('    daemon install     install-service 的别名')
+  console.log('    daemon status      doctor 的别名')
+  console.log('    daemon restart     restart 的别名')
+  console.log('    daemon uninstall   uninstall-service 的别名')
   console.log('')
   console.log('  report 选项:')
   console.log('    --source <名称>    数据来源（如 openclaw、hermes）')
@@ -646,10 +654,39 @@ function cmdHelp() {
 async function main() {
   const argv = process.argv.slice(2)
   const command = argv[0]
+  const subcommand = argv[1]
 
   if (command === '-h' || command === '--help' || !command) {
     cmdHelp()
     return
+  }
+
+  // 短别名: tokentrail daemon <install|status|restart|uninstall>
+  if (command === 'daemon') {
+    switch (subcommand) {
+      case 'install':
+        await cmdInstallService(argv.slice(2))
+        return
+      case 'status':
+        await cmdDoctor()
+        return
+      case 'restart':
+        await cmdRestart()
+        return
+      case 'uninstall':
+        await cmdUninstallService()
+        return
+      default:
+        console.log(`  未知 daemon 子命令: ${subcommand || '(空)'}`)
+        console.log('')
+        console.log('  可用子命令:')
+        console.log('    daemon install    安装常驻服务')
+        console.log('    daemon status     服务状态诊断')
+        console.log('    daemon restart    重启常驻服务')
+        console.log('    daemon uninstall  移除常驻服务')
+        console.log('')
+        process.exit(1)
+    }
   }
 
   switch (command) {
