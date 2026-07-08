@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import type { StatsResponse, Currency, Theme, TimeRange } from '@/types'
 import { formatTokens, formatCost, formatNumber } from '@/lib/format'
 import { getThemeDefinition } from '@/lib/themes'
+import { LOGO_DATA_URI } from '@/lib/logo-data-uri'
 import { useLang } from '@/lib/LanguageContext'
 import { SOURCE_DISPLAY_NAMES } from '@/types'
 
@@ -21,9 +22,58 @@ interface ShareCardProps {
 
 // ─── SVG share card ────────────────────────────────────────────
 
-const CARD_W = 680
-const CARD_H = 420
-const PADDING = 32
+const CARD_W = 1200
+const CARD_H = 675
+const PADDING = 48
+const SAFE_BOTTOM = 32
+
+// ─── Theme-aware panel path (radius + chamfer) ──────────────────
+
+function panelPath(
+  x: number, y: number, w: number, h: number,
+  radius: number, chamfer: number, corners: 'tr-bl' | 'tl-br' | 'none',
+): string {
+  const r = Math.max(0, Math.min(radius, w / 2, h / 2))
+  if (chamfer > 0 && corners !== 'none') {
+    const c = Math.min(chamfer, w / 2, h / 2)
+    if (corners === 'tr-bl') {
+      // sharp TL + BR; cut TR + BL
+      return [
+        `M ${x} ${y}`,
+        `L ${x + w - c} ${y}`,
+        `L ${x + w} ${y + c}`,
+        `L ${x + w} ${y + h}`,
+        `L ${x + c} ${y + h}`,
+        `L ${x} ${y + h - c}`,
+        'Z',
+      ].join(' ')
+    }
+    // tl-br: sharp TR + BL; cut TL + BR
+    return [
+      `M ${x + c} ${y}`,
+      `L ${x + w} ${y}`,
+      `L ${x + w} ${y + h - c}`,
+      `L ${x + w - c} ${y + h}`,
+      `L ${x} ${y + h}`,
+      `L ${x} ${y + c}`,
+      'Z',
+    ].join(' ')
+  }
+  return [
+    `M ${x + r} ${y}`,
+    `L ${x + w - r} ${y}`,
+    `A ${r} ${r} 0 0 1 ${x + w} ${y + r}`,
+    `L ${x + w} ${y + h - r}`,
+    `A ${r} ${r} 0 0 1 ${x + w - r} ${y + h}`,
+    `L ${x + r} ${y + h}`,
+    `A ${r} ${r} 0 0 1 ${x} ${y + h - r}`,
+    `L ${x} ${y + r}`,
+    `A ${r} ${r} 0 0 1 ${x + r} ${y}`,
+    'Z',
+  ].join(' ')
+}
+
+const truncName = (s: string, n = 24) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
 function buildShareSVG(
   stats: StatsResponse,
@@ -32,108 +82,184 @@ function buildShareSVG(
   currency: Currency,
   timeRange: TimeRange,
   filterLabel: string,
+  scopeLabel: string,
   texts: Record<string, string>
 ): string {
   const td = getThemeDefinition(theme)
-  const { canvas, surface, primary, secondary, text: textColor, font } = td.preview
+  const {
+    canvas, surface, primary, secondary, tertiary, text: textColor, muted,
+    border, chart, radius, chamfer, chamferCorners, decoration, font,
+  } = td.preview
+  const chart0 = chart[0] ?? primary
+  const fontFamily = font.replace(/"/g, "'")
+  const barR = Math.min(radius / 4, 3)
+  const markR = Math.min(radius, 4)
+  const L = (zh: string, en: string) => (lang === 'zh' ? zh : en)
+  const tagline = L('本地 AI 用量追踪器', 'AI Usage Tracker')
 
+  // ── Data ──
   const totalTokens = stats.total_tokens ?? 0
   const totalCost = stats.total_cost_usd ?? 0
   const totalReqs = stats.total_requests ?? 0
   const dailyAvg = stats.avg_daily_tokens ?? 0
-
-  // Trend polyline
   const daily = stats.daily ?? []
-  const maxToken = Math.max(1, ...daily.map(d => d.total_tokens))
-  const trendW = 300
-  const trendH = 56
-  const trendY = 232
-  const trendX = PADDING + 280
-  const points = daily.length > 1
-    ? daily.map((d, i) => {
-        const x = trendX + (i / (daily.length - 1)) * trendW
-        const y = trendY + trendH - (d.total_tokens / maxToken) * trendH
-        return `${x.toFixed(1)},${y.toFixed(1)}`
-      }).join(' ')
-    : ''
-
-  // Top sources (max 3)
   const topSources = (stats.by_source ?? []).slice(0, 3)
-  const maxSrcTokens = Math.max(1, ...topSources.map(s => s.total_tokens))
-
-  // Top models (max 3)
   const topModels = (stats.by_model ?? []).slice(0, 3)
-  const maxMdlTokens = Math.max(1, ...topModels.map(m => m.total_tokens))
-
   const rangeLabel = timeRange === 1 ? '24H' : `${timeRange}D`
 
-  // Bar dimensions
-  const barX = PADDING + 120
-  const barMaxW = 140
-  const barH = 14
-  const rowGap = 28
-  const srcStartY = 300
-  const mdlStartY = srcStartY + topSources.length * rowGap + 16
+  // ── Geometry ──
+  const contentRight = CARD_W - PADDING
+  const contentW = contentRight - PADDING
+  const colGap = 24
+  const leftW = Math.round((contentW - colGap) * 0.42)      // 454
+  const rightX = PADDING + leftW + colGap                    // 526
+  const rightW = contentW - leftW - colGap                   // 626
+  const halfW = Math.round((contentW - colGap) / 2)          // 540
+  const rightColX = PADDING + halfW + colGap                 // 612
 
-  // Font family for SVG text
-  const fontFamily = font.replace(/"/g, "'")
+  const mainY = 108
+  const mainH = 272
+  const rankY = 408
+  const rankH = 176
+
+  // ── Trend geometry ──
+  const trendPad = 24
+  const trendX = rightX + trendPad
+  const trendW = rightW - trendPad * 2
+  const trendBottom = mainY + mainH - 20
+  const trendTop = mainY + 52
+  const trendH = trendBottom - trendTop
+  const maxToken = Math.max(1, ...daily.map(d => d.total_tokens))
+  const trendPts: ReadonlyArray<readonly [number, number]> = daily.length > 1
+    ? daily.map((d, i) => {
+        const x = trendX + (i / (daily.length - 1)) * trendW
+        const y = trendBottom - (d.total_tokens / maxToken) * trendH
+        return [x, y] as const
+      })
+    : []
+  const trendLine = trendPts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')
+  const trendArea = trendPts.length > 1
+    ? `M ${trendPts[0][0].toFixed(1)} ${trendBottom} ` +
+      trendPts.map(p => `L ${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ') +
+      ` L ${trendPts[trendPts.length - 1][0].toFixed(1)} ${trendBottom} Z`
+    : ''
+
+  // ── Panel renderer (surface + border + decoration line, per-panel weight) ──
+  const decoInset = Math.max(chamfer, radius, 6)
+  const renderPanel = (
+    x: number, y: number, w: number, h: number,
+    opts: {
+      fill?: number; stroke?: number; deco?: number | false
+      r?: number; ch?: number; cc?: 'tr-bl' | 'tl-br' | 'none'
+    } = {},
+  ) => {
+    const r = opts.r ?? radius
+    const ch = opts.ch ?? chamfer
+    const cc = opts.cc ?? chamferCorners
+    const fillO = opts.fill ?? 1
+    const strokeO = opts.stroke ?? 1
+    let s = `<path d="${panelPath(x, y, w, h, r, ch, cc)}" fill="${surface}" fill-opacity="${fillO}" stroke="${border}" stroke-opacity="${strokeO}" stroke-width="1"/>`
+    if (opts.deco !== false) {
+      s += `<rect x="${x + decoInset}" y="${y + 1}" width="${w - decoInset * 2}" height="2" fill="url(#deco-grad)" opacity="${opts.deco ?? 0.9}"/>`
+    }
+    return s
+  }
+
+  // ── Ranking rows ──
+  const rankRows = (items: { name: string; tokens: number }[], x: number, w: number) => {
+    const innerX = x + 20
+    const valueW = 92
+    const barMaxW = w - 40 - valueW - 8
+    const maxV = Math.max(1, ...items.map(it => it.tokens))
+    return items.map((it, i) => {
+      const ry = 462 + i * 38
+      const color = chart[i % chart.length] ?? primary
+      const bw = (it.tokens / maxV) * barMaxW
+      return `<text x="${innerX}" y="${ry}" fill="${textColor}" fill-opacity="0.85" font-family="${fontFamily}" font-size="12">${truncName(it.name)}</text>` +
+        `<text x="${x + w - 20}" y="${ry}" fill="${muted}" font-family="${fontFamily}" font-size="11" text-anchor="end">${formatTokens(it.tokens)}</text>` +
+        `<rect x="${innerX}" y="${ry + 8}" width="${bw.toFixed(1)}" height="5" fill="${color}" fill-opacity="0.9" rx="${barR}"/>`
+    }).join('')
+  }
+
+  // ── Mini metric cards (inside the left summary panel) ──
+  const miniMetrics = [
+    { label: L('总费用', 'Cost'), value: formatCost(totalCost, currency), color: secondary },
+    { label: texts.requests || L('请求数', 'Requests'), value: formatNumber(totalReqs), color: textColor },
+    { label: texts.dailyAvg || L('日均', 'Daily avg'), value: formatTokens(dailyAvg), color: tertiary },
+  ]
+  const sumInner = 24
+  const cardGap = 10
+  const cardW = Math.floor((leftW - sumInner * 2 - cardGap * 2) / 3)   // 128
+  const cardX0 = PADDING + sumInner                                    // 72
+  const cardY = mainY + 108                                            // 216
+  const cardH = 66
+  const cardR = Math.min(radius, 6)
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_W}" height="${CARD_H}" viewBox="0 0 ${CARD_W} ${CARD_H}">
   <defs>
     <linearGradient id="bg-grad" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="${canvas}"/>
-      <stop offset="100%" stop-color="${surface}"/>
+      <stop offset="100%" stop-color="${surface}" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="deco-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="${decoration}" stop-opacity="0"/>
+      <stop offset="50%" stop-color="${decoration}" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="${decoration}" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="trend-area" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${chart0}" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="${chart0}" stop-opacity="0"/>
     </linearGradient>
   </defs>
-  <rect width="${CARD_W}" height="${CARD_H}" fill="url(#bg-grad)" rx="12"/>
-  <rect x="0.5" y="0.5" width="${CARD_W - 1}" height="${CARD_H - 1}" fill="none" stroke="${primary}" stroke-opacity="0.15" rx="12"/>
+
+  <!-- Canvas -->
+  <rect width="${CARD_W}" height="${CARD_H}" fill="url(#bg-grad)"/>
 
   <!-- Header -->
-  <text x="${PADDING}" y="${PADDING + 18}" fill="${primary}" font-family="${fontFamily}" font-size="13" font-weight="600" letter-spacing="3">TOKENTRAIL</text>
-  <text x="${CARD_W - PADDING}" y="${PADDING + 18}" fill="${textColor}" fill-opacity="0.5" font-family="${fontFamily}" font-size="11" text-anchor="end">${rangeLabel} · ${filterLabel}</text>
+  <rect x="${PADDING}" y="58" width="14" height="14" fill="${primary}" rx="${markR}"/>
+  <text x="${PADDING + 22}" y="70" fill="${textColor}" font-family="${fontFamily}" font-size="16" font-weight="700" letter-spacing="1">TokenTrail</text>
+  <text x="${contentRight}" y="70" fill="${muted}" font-family="${fontFamily}" font-size="12" text-anchor="end">${rangeLabel} · ${filterLabel}</text>
+  <line x1="${PADDING}" y1="92" x2="${contentRight}" y2="92" stroke="${border}" stroke-width="1"/>
 
-  <!-- Divider -->
-  <line x1="${PADDING}" y1="${PADDING + 30}" x2="${CARD_W - PADDING}" y2="${PADDING + 30}" stroke="${textColor}" stroke-opacity="0.1"/>
-
-  <!-- Main number: Total Tokens -->
-  <text x="${PADDING}" y="${PADDING + 80}" fill="${textColor}" fill-opacity="0.5" font-family="${fontFamily}" font-size="12" letter-spacing="1">${texts.totalTokens}</text>
-  <text x="${PADDING}" y="${PADDING + 120}" fill="${primary}" font-family="${fontFamily}" font-size="44" font-weight="700">${formatTokens(totalTokens)}</text>
-
-  <!-- Cost & Requests -->
-  <text x="${PADDING}" y="${PADDING + 160}" fill="${secondary}" font-family="${fontFamily}" font-size="18" font-weight="600">${formatCost(totalCost, currency)}</text>
-  <text x="${PADDING}" y="${PADDING + 182}" fill="${textColor}" fill-opacity="0.4" font-family="${fontFamily}" font-size="11">${formatNumber(totalReqs)} ${texts.requests} · ${texts.dailyAvg} ${formatTokens(dailyAvg)}</text>
-
-  <!-- Trend -->
-  <text x="${trendX}" y="${trendY - 8}" fill="${textColor}" fill-opacity="0.5" font-family="${fontFamily}" font-size="11">${texts.trend}</text>
-  ${points ? `<polyline points="${points}" fill="none" stroke="${primary}" stroke-width="1.5" stroke-opacity="0.7" stroke-linejoin="round"/>` : ''}
-  <line x1="${trendX}" y1="${trendY + trendH}" x2="${trendX + trendW}" y2="${trendY + trendH}" stroke="${textColor}" stroke-opacity="0.08"/>
-
-  <!-- Top Sources -->
-  <text x="${PADDING}" y="${srcStartY - 6}" fill="${textColor}" fill-opacity="0.5" font-family="${fontFamily}" font-size="11">${texts.topSources}</text>
-  ${topSources.map((s, i) => {
-    const y = srcStartY + i * rowGap
-    const name = SOURCE_DISPLAY_NAMES[s.source] ?? s.source
-    const barW = (s.total_tokens / maxSrcTokens) * barMaxW
-    return `<text x="${PADDING}" y="${y + 11}" fill="${textColor}" fill-opacity="0.8" font-family="${fontFamily}" font-size="11">${name}</text>
-    <rect x="${barX}" y="${y}" width="${barW}" height="${barH}" fill="${primary}" fill-opacity="0.2" rx="2"/>
-    <text x="${barX + barW + 6}" y="${y + 11}" fill="${textColor}" fill-opacity="0.6" font-family="${fontFamily}" font-size="10">${formatTokens(s.total_tokens)}</text>`
+  <!-- Main / left summary panel (lighter weight than trend) -->
+  ${renderPanel(PADDING, mainY, leftW, mainH, { fill: 0.5, stroke: 0.75, deco: 0.4 })}
+  <text x="${PADDING + sumInner}" y="${mainY + 32}" fill="${muted}" font-family="${fontFamily}" font-size="12" letter-spacing="1">${texts.totalTokens}</text>
+  <text x="${PADDING + sumInner}" y="${mainY + 82}" fill="${primary}" font-family="${fontFamily}" font-size="48" font-weight="700">${formatTokens(totalTokens)}</text>
+  ${miniMetrics.map((m, i) => {
+    const cx = cardX0 + i * (cardW + cardGap)
+    return renderPanel(cx, cardY, cardW, cardH, { fill: 0.4, stroke: 0.85, deco: false, r: cardR, ch: 0, cc: 'none' }) +
+      `<text x="${cx + 12}" y="${cardY + 22}" fill="${muted}" font-family="${fontFamily}" font-size="9.5" letter-spacing="0.5">${m.label}</text>` +
+      `<text x="${cx + 12}" y="${cardY + 48}" fill="${m.color}" font-family="${fontFamily}" font-size="16" font-weight="600">${m.value}</text>`
   }).join('')}
+  <line x1="${PADDING + sumInner}" y1="${mainY + mainH - 64}" x2="${PADDING + leftW - sumInner}" y2="${mainY + mainH - 64}" stroke="${border}" stroke-opacity="0.4"/>
+  <text x="${PADDING + sumInner}" y="${mainY + mainH - 38}" fill="${muted}" font-family="${fontFamily}" font-size="11">${scopeLabel}</text>
 
-  <!-- Top Models -->
-  <text x="${PADDING}" y="${mdlStartY - 6}" fill="${textColor}" fill-opacity="0.5" font-family="${fontFamily}" font-size="11">${texts.topModels}</text>
-  ${topModels.map((m, i) => {
-    const y = mdlStartY + i * rowGap
-    const name = m.display_name || m.model
-    const barW = (m.total_tokens / maxMdlTokens) * barMaxW
-    return `<text x="${PADDING}" y="${y + 11}" fill="${textColor}" fill-opacity="0.8" font-family="${fontFamily}" font-size="11">${name}</text>
-    <rect x="${barX}" y="${y}" width="${barW}" height="${barH}" fill="${secondary}" fill-opacity="0.2" rx="2"/>
-    <text x="${barX + barW + 6}" y="${y + 11}" fill="${textColor}" fill-opacity="0.6" font-family="${fontFamily}" font-size="10">${formatTokens(m.total_tokens)}</text>`
-  }).join('')}
+  <!-- Main / right trend panel -->
+  ${renderPanel(rightX, mainY, rightW, mainH)}
+  <text x="${rightX + 20}" y="${mainY + 30}" fill="${muted}" font-family="${fontFamily}" font-size="11" letter-spacing="0.5">${texts.trend}</text>
+  <line x1="${trendX}" y1="${trendBottom}" x2="${trendX + trendW}" y2="${trendBottom}" stroke="${border}" stroke-width="1"/>
+  ${trendArea ? `<path d="${trendArea}" fill="url(#trend-area)"/>` : ''}
+  ${trendLine ? `<polyline points="${trendLine}" fill="none" stroke="${chart0}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+  ${daily.length <= 1 ? `<text x="${rightX + rightW / 2}" y="${mainY + mainH / 2}" fill="${muted}" font-family="${fontFamily}" font-size="12" text-anchor="middle">—</text>` : ''}
 
-  <!-- Footer -->
-  <line x1="${PADDING}" y1="${CARD_H - 28}" x2="${CARD_W - PADDING}" y2="${CARD_H - 28}" stroke="${textColor}" stroke-opacity="0.08"/>
-  <text x="${PADDING}" y="${CARD_H - 12}" fill="${textColor}" fill-opacity="0.35" font-family="${fontFamily}" font-size="10">🔒 ${texts.privacyNote}</text>
-  <text x="${CARD_W - PADDING}" y="${CARD_H - 12}" fill="${textColor}" fill-opacity="0.35" font-family="${fontFamily}" font-size="10" text-anchor="end">TokenTrail</text>
+  <!-- Rankings divider -->
+  <line x1="${PADDING}" y1="392" x2="${contentRight}" y2="392" stroke="${border}" stroke-width="1" stroke-opacity="0.6"/>
+
+  <!-- Top sources panel -->
+  ${renderPanel(PADDING, rankY, halfW, rankH)}
+  <text x="${PADDING + 20}" y="${rankY + 26}" fill="${muted}" font-family="${fontFamily}" font-size="11" letter-spacing="0.5">${texts.topSources}</text>
+  ${topSources.length > 0 ? rankRows(topSources.map(s => ({ name: SOURCE_DISPLAY_NAMES[s.source] ?? s.source, tokens: s.total_tokens })), PADDING, halfW) : ''}
+
+  <!-- Top models panel -->
+  ${renderPanel(rightColX, rankY, halfW, rankH)}
+  <text x="${rightColX + 20}" y="${rankY + 26}" fill="${muted}" font-family="${fontFamily}" font-size="11" letter-spacing="0.5">${texts.topModels}</text>
+  ${topModels.length > 0 ? rankRows(topModels.map(m => ({ name: m.display_name || m.model, tokens: m.total_tokens })), rightColX, halfW) : ''}
+
+  <!-- Footer (32px safe area below) -->
+  <line x1="${PADDING}" y1="596" x2="${contentRight}" y2="596" stroke="${border}" stroke-width="1" stroke-opacity="0.6"/>
+  <text x="${PADDING}" y="628" fill="${muted}" font-family="${fontFamily}" font-size="10">${tagline}</text>
+  <image href="${LOGO_DATA_URI}" x="${contentRight - 96}" y="614" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
+  <text x="${contentRight - 70}" y="628" fill="${muted}" font-family="${fontFamily}" font-size="11" font-weight="600" letter-spacing="0.5">TokenTrail</text>
 </svg>`
 }
 
@@ -144,13 +270,21 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
   const [open, setOpen] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'unsupported'>('idle')
-  const svgRef = useRef<string>('')
 
   const hasData = !!stats && (stats.total_tokens > 0 || stats.total_requests > 0)
 
   const filterLabel = selectedSources.length > 0 || selectedModels.length > 0
     ? `${selectedSources.length + selectedModels.length} ${lang === 'zh' ? '项筛选' : 'filters'}`
     : (lang === 'zh' ? '全部' : 'All')
+
+  const rangeLabel = timeRange === 1 ? '24H' : `${timeRange}D`
+  const sourcesLabel = selectedSources.length > 0
+    ? `${selectedSources.length} ${lang === 'zh' ? '来源' : 'sources'}`
+    : (lang === 'zh' ? '全部来源' : 'All sources')
+  const modelsLabel = selectedModels.length > 0
+    ? `${selectedModels.length} ${lang === 'zh' ? '模型' : 'models'}`
+    : (lang === 'zh' ? '全部模型' : 'All models')
+  const scopeLabel = `${rangeLabel} · ${sourcesLabel} · ${modelsLabel}`
 
   const texts = {
     totalTokens: lang === 'zh' ? '总 Token' : 'Total Tokens',
@@ -159,13 +293,12 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
     trend: t('share.trend'),
     topSources: t('share.topSources'),
     topModels: t('share.topModels'),
-    privacyNote: t('share.privacyNote'),
   }
 
   const generateSVG = useCallback(() => {
     if (!stats) return ''
-    return buildShareSVG(stats, theme, lang, currency, timeRange, filterLabel, texts)
-  }, [stats, theme, lang, currency, timeRange, filterLabel])
+    return buildShareSVG(stats, theme, lang, currency, timeRange, filterLabel, scopeLabel, texts)
+  }, [stats, theme, lang, currency, timeRange, filterLabel, scopeLabel])
 
   const handleDownload = useCallback(async () => {
     if (!hasData) return
@@ -310,7 +443,7 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
             {/* Preview */}
             <div className="flex justify-center p-5">
               <div
-                className="w-full max-w-[680px] overflow-hidden rounded-lg border border-eva-border/50"
+                className="w-full max-w-[700px] overflow-hidden rounded-lg border border-eva-border/50 [&_svg]:block [&_svg]:w-full [&_svg]:h-auto"
                 dangerouslySetInnerHTML={{ __html: generateSVG() }}
               />
             </div>
