@@ -41,3 +41,4 @@ data/*.db-wal
 .omx/
 .playwright-cli/
 .claude/
+.trae/
