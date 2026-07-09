@@ -226,7 +226,7 @@ export function SystemStatus() {
       {/* Per-source health */}
       {data.sources.length > 0 && (
         <div className="mt-4">
-          <div className="mb-2 text-[13px] font-medium uppercase tracking-[0.1em] text-eva-text-dim/90">
+          <div className="mb-2 text-[13px] font-semibold uppercase text-eva-text-dim/90">
             {lang === 'zh' ? '数据源健康' : 'DATA SOURCE HEALTH'}
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -280,7 +280,7 @@ function StatusCard({
     <div className={`rounded-lg border px-4 py-3.5 ${
       ok ? 'border-eva-border/80 bg-eva-bg/20' : 'border-status-warning/20 bg-status-warning/5'
     }`}>
-      <div className="mb-2 text-[13px] font-medium uppercase tracking-[0.1em] text-eva-text-dim/90">{label}</div>
+      <div className="mb-2 text-[13px] font-semibold uppercase text-eva-text-dim/90">{label}</div>
       <div className={`text-[15px] font-mono font-medium ${ok ? 'text-status-success' : 'text-status-warning'}`}>
         {value}
       </div>

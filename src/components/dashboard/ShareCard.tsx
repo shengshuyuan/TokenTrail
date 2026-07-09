@@ -438,7 +438,7 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b border-eva-border px-5 py-3">
-              <h2 className="theme-display text-sm font-semibold tracking-[0.12em]">
+              <h2 className="theme-display text-sm font-semibold">
                 {t('share.title')}
               </h2>
               <button

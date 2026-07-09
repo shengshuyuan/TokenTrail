@@ -50,6 +50,8 @@
     --theme-header-bg: rgba(14, 18, 26, 0.84);
     --theme-panel-shadow: 0 18px 45px rgba(0, 0, 0, 0.22);
     --theme-hover-shadow: 0 22px 56px rgba(0, 0, 0, 0.3);
+    --theme-inset-highlight: rgba(255, 255, 255, 0.07);
+    --theme-control-highlight: rgba(255, 255, 255, 0.045);
     --theme-row-hover: rgba(255, 255, 255, 0.04);
     --theme-radius: 10px;
     --theme-control-radius: 6px;
@@ -67,12 +69,15 @@
     --theme-heading-color: #d9ffd1;
     --theme-number-color: #6dff4b;
     --theme-label-color: #bb8dff;
-    --theme-panel-clip: polygon(0 0, calc(100% - 11px) 0, 100% 11px, 100% 100%, 11px 100%, 0 calc(100% - 11px));
+    /* neon-mecha: chamfer disabled. clip-path + CSS border don't close together, so the
+       cut corners read as broken strokes. border-radius (--theme-radius: 10px) still
+       shapes the panels. To restore: polygon(0 0, calc(100% - 11px) 0, 100% 11px, 100% 100%, 11px 100%, 0 calc(100% - 11px)) */
+    --theme-panel-clip: none;
     --theme-panel-decoration: linear-gradient(90deg, transparent, rgba(109, 255, 75, 0.72), transparent);
     --theme-panel-decoration-opacity: 0.42;
     --motion-duration: 420ms;
     --motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
-    --motion-distance: 12px;
+    --motion-distance: 14px;
     --motion-stagger: 58ms;
     --motion-hover-lift: -3px;
     --motion-hover-scale: 1.006;
@@ -157,6 +162,8 @@
   --theme-header-bg: rgba(22, 15, 14, 0.9);
   --theme-panel-shadow: 0 18px 50px rgba(7, 3, 2, 0.34);
   --theme-hover-shadow: 0 24px 60px rgba(7, 3, 2, 0.44);
+  --theme-inset-highlight: rgba(255, 235, 214, 0.07);
+  --theme-control-highlight: rgba(255, 228, 199, 0.045);
   --theme-row-hover: rgba(215, 154, 91, 0.048);
     --theme-radius: 3px;
     --theme-control-radius: 2px;
@@ -230,6 +237,8 @@
     --theme-header-bg: rgba(255, 250, 241, 0.9);
     --theme-panel-shadow: 0 12px 32px rgba(75, 55, 37, 0.08);
     --theme-hover-shadow: 0 18px 38px rgba(75, 55, 37, 0.13);
+    --theme-inset-highlight: rgba(255, 255, 255, 0.7);
+    --theme-control-highlight: rgba(255, 255, 255, 0.56);
     --theme-row-hover: rgba(168, 68, 36, 0.05);
     --theme-radius: 7px;
     --theme-control-radius: 4px;
@@ -303,6 +312,8 @@
     --theme-header-bg: rgba(248, 252, 255, 0.78);
     --theme-panel-shadow: 0 16px 42px rgba(45, 79, 108, 0.1);
     --theme-hover-shadow: 0 22px 52px rgba(45, 79, 108, 0.16);
+    --theme-inset-highlight: rgba(255, 255, 255, 0.9);
+    --theme-control-highlight: rgba(255, 255, 255, 0.68);
     --theme-row-hover: rgba(0, 103, 197, 0.045);
     --theme-radius: 16px;
     --theme-control-radius: 10px;
@@ -341,7 +352,9 @@
       radial-gradient(circle at 78% -10%, color-mix(in srgb, var(--theme-secondary) 10%, transparent), transparent 38%),
       linear-gradient(180deg, color-mix(in srgb, var(--theme-page-0) 94%, var(--theme-primary) 6%) 0%, var(--theme-page-1) 42%, var(--theme-page-2) 100%);
     font-family: var(--theme-font-body);
-    letter-spacing: var(--theme-body-letter-spacing);
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
     text-rendering: geometricPrecision;
   }
 
@@ -360,6 +373,7 @@
   .theme-display {
     font-family: var(--theme-font-display);
     color: var(--theme-heading-color);
+    letter-spacing: 0;
   }
 
   .theme-body {
@@ -369,6 +383,7 @@
   .theme-numeric {
     font-family: var(--theme-font-numeric);
     font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
   }
 
   .theme-label {
@@ -431,14 +446,27 @@
     mask-image: linear-gradient(to bottom, black 0%, transparent 78%);
   }
 
+  .dashboard-shell::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 12% 18%, rgba(var(--theme-primary-rgb), 0.055), transparent 30%),
+      radial-gradient(circle at 86% 10%, rgba(var(--theme-secondary-rgb), 0.05), transparent 28%);
+  }
+
   .eva-panel {
     @apply bg-eva-panel/90 border border-eva-border relative overflow-hidden;
     border-radius: var(--theme-radius);
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 42%),
+      linear-gradient(180deg, var(--theme-inset-highlight), transparent 42%),
+      linear-gradient(135deg, rgba(var(--theme-primary-rgb), 0.035), transparent 34%, rgba(var(--theme-secondary-rgb), 0.026)),
       rgba(var(--theme-panel-rgb), 0.9);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.055),
+      inset 0 1px 0 var(--theme-inset-highlight),
+      inset 0 -1px 0 rgba(var(--theme-bg-rgb), 0.24),
       var(--theme-panel-shadow);
     backdrop-filter: blur(var(--theme-panel-blur));
     clip-path: var(--theme-panel-clip);
@@ -468,7 +496,7 @@
     right: 12%;
     bottom: 0;
     left: 12%;
-    height: 1px;
+    height: 2px;
     pointer-events: none;
     opacity: var(--theme-panel-decoration-opacity);
     background: var(--theme-panel-decoration);
@@ -481,7 +509,7 @@
   .eva-panel-hover:hover {
     border-color: rgba(var(--theme-primary-rgb), 0.38);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      inset 0 1px 0 var(--theme-inset-highlight),
       0 0 20px rgba(var(--theme-primary-rgb), 0.07),
       var(--motion-glow),
       var(--theme-hover-shadow);
@@ -494,6 +522,21 @@
      Large panels (ShareCard, charts) keep their chamfer via plain .eva-panel. */
   .eva-panel-stat {
     clip-path: none;
+    background:
+      linear-gradient(180deg, var(--theme-inset-highlight), transparent 46%),
+      linear-gradient(135deg, rgba(var(--theme-primary-rgb), 0.045), transparent 46%),
+      rgba(var(--theme-panel-rgb), 0.92);
+  }
+
+  .stat-accent-rail {
+    position: absolute;
+    top: 0;
+    left: 18px;
+    width: 56px;
+    height: 2px;
+    opacity: 0.82;
+    border-radius: 0 0 999px 999px;
+    box-shadow: 0 0 18px rgba(var(--theme-primary-rgb), 0.18);
   }
 
   .text-terminal {
@@ -511,7 +554,8 @@
       border-color 180ms ease,
       background-color 180ms ease,
       color 180ms ease,
-      box-shadow 220ms ease;
+      box-shadow 220ms ease,
+      filter 220ms ease;
   }
 
   .eva-badge-active {
@@ -521,13 +565,20 @@
 
   .eva-badge:hover {
     @apply border-eva-green/30 text-eva-text;
+    transform: translateY(-1px);
+    background:
+      linear-gradient(180deg, var(--theme-control-highlight), transparent),
+      rgba(var(--theme-bg-rgb), 0.58);
   }
 
   .stat-value {
-    @apply text-2xl lg:text-[1.65rem] font-semibold tracking-normal;
+    @apply text-2xl lg:text-[1.72rem] font-semibold tracking-normal;
     color: var(--theme-number-color);
     font-family: var(--theme-font-numeric);
     font-variant-numeric: tabular-nums;
+    line-height: 1.06;
+    letter-spacing: 0;
+    text-shadow: 0 0 20px rgba(var(--theme-primary-rgb), 0.08);
   }
 
   .stat-card {
@@ -538,6 +589,7 @@
     @apply flex h-9 w-9 shrink-0 items-center justify-center border border-eva-border bg-eva-bg/45 text-base;
     border-radius: max(2px, calc(var(--theme-control-radius) - 1px));
     font-family: var(--theme-font-display);
+    box-shadow: inset 0 1px 0 var(--theme-control-highlight);
   }
 
   .stat-tone-primary {
@@ -558,24 +610,31 @@
   }
 
   .section-title {
-    @apply mb-3 text-[14px] font-medium uppercase tracking-[0.11em] sm:text-[15px];
+    @apply mb-3 text-[14px] font-semibold uppercase sm:text-[15px];
     color: var(--theme-label-color);
+    letter-spacing: 0;
+    line-height: 1.35;
   }
 
   .control-label {
-    @apply text-[13px] font-medium uppercase tracking-[0.1em] sm:text-[14px];
+    @apply text-[13px] font-semibold uppercase sm:text-[14px];
     color: var(--theme-label-color);
     font-family: var(--theme-font-display);
+    letter-spacing: 0;
   }
 
   .glass-header {
     background: var(--theme-header-bg);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.045), 0 14px 32px rgba(0, 0, 0, 0.18);
+    box-shadow:
+      inset 0 1px 0 var(--theme-control-highlight),
+      0 1px 0 rgba(var(--theme-border-strong-rgb), 0.38),
+      0 14px 32px rgba(0, 0, 0, 0.18);
   }
 
   .control-cluster {
     @apply flex items-center gap-1 border border-eva-border bg-eva-bg/65 p-0.5;
     border-radius: var(--theme-control-radius);
+    box-shadow: inset 0 1px 0 var(--theme-control-highlight);
   }
 
   .control-button {
@@ -598,31 +657,46 @@
 
   .control-button-active {
     @apply border border-eva-green/30 bg-eva-green/10 text-eva-green shadow-eva-green;
+    background:
+      linear-gradient(180deg, rgba(var(--theme-primary-rgb), 0.16), rgba(var(--theme-primary-rgb), 0.06)),
+      rgba(var(--theme-bg-rgb), 0.54);
   }
 
   .control-button-idle {
     @apply border border-transparent text-eva-text-dim hover:text-eva-text;
   }
 
+  .control-button-idle:hover {
+    background: rgba(var(--theme-panel-rgb), 0.42);
+  }
+
   .table-shell {
     @apply overflow-x-auto border border-eva-border bg-eva-bg/35;
     border-radius: var(--theme-radius);
+    box-shadow:
+      inset 0 1px 0 var(--theme-control-highlight),
+      inset 0 -1px 0 rgba(var(--theme-bg-rgb), 0.32);
   }
 
   .data-table thead {
-    background: rgba(var(--theme-bg-rgb), 0.58);
+    background:
+      linear-gradient(180deg, var(--theme-control-highlight), transparent),
+      rgba(var(--theme-bg-rgb), 0.62);
   }
 
   .data-table th {
-    @apply py-2.5 pr-4 font-normal uppercase tracking-[0.08em];
+    @apply py-2.5 pr-4 font-medium uppercase;
+    letter-spacing: 0;
   }
 
   .data-table td {
-    @apply py-2.5 pr-4 align-middle;
+    @apply py-3 pr-4 align-middle;
   }
 
   .data-table tbody tr {
-    transition: background 0.18s ease;
+    transition:
+      background 0.18s ease,
+      color 0.18s ease;
   }
 
   .data-table tbody tr:hover {
@@ -644,7 +718,9 @@
   }
 
   .brand-logo {
-    box-shadow: 0 0 22px rgba(var(--theme-primary-rgb), 0.16);
+    box-shadow:
+      0 0 0 1px rgba(var(--theme-border-strong-rgb), 0.38),
+      0 0 22px rgba(var(--theme-primary-rgb), 0.16);
   }
 
   .theme-picker-trigger {
@@ -656,11 +732,13 @@
       background-color 180ms ease,
       color 180ms ease,
       box-shadow 220ms ease;
+    box-shadow: inset 0 1px 0 var(--theme-control-highlight);
   }
 
   .theme-picker-trigger:hover {
     border-color: rgba(var(--theme-primary-rgb), 0.38);
     color: var(--theme-primary);
+    transform: translateY(-1px);
   }
 
   .theme-swatch {
@@ -692,6 +770,7 @@
   .theme-preview-card:focus-visible {
     border-color: rgba(var(--theme-primary-rgb), 0.48);
     background: rgba(var(--theme-primary-rgb), 0.055);
+    transform: translateY(-1px);
   }
 
   .theme-preview-card-active {
@@ -717,13 +796,13 @@
 
   .motion-group[data-motion-ready='true'] > .motion-item {
     opacity: 0;
-    filter: saturate(0.82);
+    filter: saturate(0.82) blur(1.5px);
     transform: translateY(var(--motion-distance));
   }
 
   .motion-group[data-motion-visible='true'] > .motion-item {
     opacity: 1;
-    filter: saturate(1);
+    filter: saturate(1) blur(0);
     transform: translateY(0);
   }
 

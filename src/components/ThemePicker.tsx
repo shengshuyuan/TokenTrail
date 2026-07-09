@@ -91,7 +91,7 @@ export function ThemePicker({ theme, onThemeChange }: ThemePickerProps) {
           aria-label={lang === 'zh' ? '主题预览' : 'Theme previews'}
         >
           <div className="mb-2 flex items-center justify-between px-1">
-            <span className="text-[11px] font-mono uppercase tracking-[0.14em] text-eva-text-dim">
+            <span className="text-[11px] font-mono uppercase text-eva-text-dim">
               {lang === 'zh' ? '选择视觉主题' : 'Choose a theme'}
             </span>
             <span className="text-[11px] font-mono text-eva-text-dim/60">ESC</span>

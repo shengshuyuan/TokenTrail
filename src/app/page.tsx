@@ -305,14 +305,14 @@ function DashboardInner() {
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="theme-display text-xl font-semibold tracking-[0.12em]">
+                  <h1 className="theme-display text-xl font-semibold">
                     TOKENTRAIL
                   </h1>
-                  <span className="rounded border border-eva-purple/30 bg-eva-purple/10 px-1.5 py-0.5 text-[10px] font-mono text-eva-purple tracking-[0.08em]">
+                  <span className="rounded border border-eva-purple/30 bg-eva-purple/10 px-1.5 py-0.5 text-[10px] font-mono text-eva-purple">
                     v{APP_VERSION}
                   </span>
                 </div>
-                <div className="mt-1 text-xs font-mono uppercase tracking-[0.07em] text-eva-text-dim">
+                <div className="mt-1 text-xs font-mono uppercase text-eva-text-dim">
                   {selectedWindow} / {activeScope} / {t('status.updatedAt', { time: lastUpdatedLabel })}
                 </div>
               </div>

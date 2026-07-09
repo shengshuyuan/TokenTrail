@@ -65,12 +65,12 @@ export function StatsCards({ stats, loading, currency, exchangeRate }: StatsCard
       {cards.map((card, index) => (
         <MotionItem key={card.label} index={index}>
           <div className="eva-panel eva-panel-hover eva-panel-stat min-h-[116px] p-4">
-            <div className={`absolute left-[1px] top-[3px] bottom-[3px] w-0.5 ${card.accent} opacity-70`} />
+            <div className={`stat-accent-rail ${card.accent}`} />
             <div className="mb-2 flex items-center gap-2">
               <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border border-eva-border bg-eva-bg/45 text-xs ${card.tone}`}>
                 {card.icon}
               </span>
-              <span className="theme-label truncate text-[13px] font-medium uppercase tracking-[0.08em]">
+              <span className="theme-label truncate text-[13px] font-semibold uppercase">
                 {card.label}
               </span>
             </div>

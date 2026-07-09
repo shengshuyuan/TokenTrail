@@ -123,7 +123,7 @@ export function ProportionChart({ bySource, loading, sourceDisplayNames }: Propo
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center text-center">
-          <div className="text-[11px] font-mono tracking-[0.22em] text-eva-text-dim">{t('proportion.total')}</div>
+          <div className="text-[11px] font-mono text-eva-text-dim">{t('proportion.total')}</div>
           <div className="font-mono text-[1.35rem] font-semibold text-eva-green">{formatTokens(totalTokens)}</div>
         </div>
       </div>
