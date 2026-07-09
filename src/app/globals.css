@@ -241,7 +241,7 @@
     --theme-body-letter-spacing: 0.005em;
     --theme-font-body: "Noto Serif SC", "Songti SC", Georgia, serif;
     --theme-font-display: "Cormorant Garamond", "Noto Serif SC", Georgia, serif;
-    --theme-font-numeric: "Cormorant Garamond", "Noto Serif SC", Georgia, serif;
+    --theme-font-numeric: "IBM Plex Serif", "Noto Serif SC", Georgia, serif;
     --theme-font-mono: "JetBrains Mono", "SF Mono", monospace;
     --theme-heading-color: #241f1a;
     --theme-number-color: #a84424;
@@ -486,6 +486,14 @@
       var(--motion-glow),
       var(--theme-hover-shadow);
     transform: translateY(var(--motion-hover-lift)) scale(var(--motion-hover-scale));
+  }
+
+  /* Solid rounded variant for small stat cards: drops the theme chamfer so the
+     border + border-radius render as one continuous closed rectangle (CSS borders
+     don't follow clip-path, which made chamfered corners look like broken strokes).
+     Large panels (ShareCard, charts) keep their chamfer via plain .eva-panel. */
+  .eva-panel-stat {
+    clip-path: none;
   }
 
   .text-terminal {

@@ -64,8 +64,8 @@ export function StatsCards({ stats, loading, currency, exchangeRate }: StatsCard
     <MotionGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
       {cards.map((card, index) => (
         <MotionItem key={card.label} index={index}>
-          <div className="eva-panel eva-panel-hover min-h-[116px] p-4">
-            <div className={`absolute left-0 top-0 h-full w-0.5 ${card.accent} opacity-70`} />
+          <div className="eva-panel eva-panel-hover eva-panel-stat min-h-[116px] p-4">
+            <div className={`absolute left-[1px] top-[3px] bottom-[3px] w-0.5 ${card.accent} opacity-70`} />
             <div className="mb-2 flex items-center gap-2">
               <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded border border-eva-border bg-eva-bg/45 text-xs ${card.tone}`}>
                 {card.icon}

@@ -75,13 +75,20 @@ function panelPath(
 
 const truncName = (s: string, n = 24) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
+/** Escape dynamic text before interpolating into SVG — prevents & < > " ' from breaking preview / PNG export / dangerouslySetInnerHTML. */
+const esc = (s: string): string =>
+  s.replace(/&/g, '&amp;')
+   .replace(/</g, '&lt;')
+   .replace(/>/g, '&gt;')
+   .replace(/"/g, '&quot;')
+   .replace(/'/g, '&#39;')
+
 function buildShareSVG(
   stats: StatsResponse,
   theme: Theme,
   lang: 'zh' | 'en',
   currency: Currency,
-  timeRange: TimeRange,
-  filterLabel: string,
+  generatedLabel: string,
   scopeLabel: string,
   texts: Record<string, string>
 ): string {
@@ -105,7 +112,6 @@ function buildShareSVG(
   const daily = stats.daily ?? []
   const topSources = (stats.by_source ?? []).slice(0, 3)
   const topModels = (stats.by_model ?? []).slice(0, 3)
-  const rangeLabel = timeRange === 1 ? '24H' : `${timeRange}D`
 
   // ── Geometry ──
   const contentRight = CARD_W - PADDING
@@ -175,8 +181,8 @@ function buildShareSVG(
       const ry = 462 + i * 38
       const color = chart[i % chart.length] ?? primary
       const bw = (it.tokens / maxV) * barMaxW
-      return `<text x="${innerX}" y="${ry}" fill="${textColor}" fill-opacity="0.85" font-family="${fontFamily}" font-size="12">${truncName(it.name)}</text>` +
-        `<text x="${x + w - 20}" y="${ry}" fill="${muted}" font-family="${fontFamily}" font-size="11" text-anchor="end">${formatTokens(it.tokens)}</text>` +
+      return `<text x="${innerX}" y="${ry}" fill="${textColor}" fill-opacity="0.85" font-family="${fontFamily}" font-size="12">${esc(truncName(it.name))}</text>` +
+        `<text x="${x + w - 20}" y="${ry}" fill="${muted}" font-family="${fontFamily}" font-size="11" text-anchor="end">${esc(formatTokens(it.tokens))}</text>` +
         `<rect x="${innerX}" y="${ry + 8}" width="${bw.toFixed(1)}" height="5" fill="${color}" fill-opacity="0.9" rx="${barR}"/>`
     }).join('')
   }
@@ -194,6 +200,11 @@ function buildShareSVG(
   const cardY = mainY + 108                                            // 216
   const cardH = 66
   const cardR = Math.min(radius, 6)
+
+  // ── Hero number: shrink font with string length so large values don't overflow the panel ──
+  const heroStr = formatTokens(totalTokens)
+  const heroAvailW = leftW - sumInner * 2
+  const heroSize = Math.max(26, Math.min(48, Math.floor(heroAvailW / (heroStr.length * 0.62))))
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_W}" height="${CARD_H}" viewBox="0 0 ${CARD_W} ${CARD_H}">
   <defs>
@@ -218,25 +229,25 @@ function buildShareSVG(
   <!-- Header -->
   <rect x="${PADDING}" y="58" width="14" height="14" fill="${primary}" rx="${markR}"/>
   <text x="${PADDING + 22}" y="70" fill="${textColor}" font-family="${fontFamily}" font-size="16" font-weight="700" letter-spacing="1">TokenTrail</text>
-  <text x="${contentRight}" y="70" fill="${muted}" font-family="${fontFamily}" font-size="12" text-anchor="end">${rangeLabel} · ${filterLabel}</text>
+  <text x="${contentRight}" y="70" fill="${muted}" font-family="${fontFamily}" font-size="12" text-anchor="end">${esc(generatedLabel)}</text>
   <line x1="${PADDING}" y1="92" x2="${contentRight}" y2="92" stroke="${border}" stroke-width="1"/>
 
   <!-- Main / left summary panel (lighter weight than trend) -->
   ${renderPanel(PADDING, mainY, leftW, mainH, { fill: 0.5, stroke: 0.75, deco: 0.4 })}
-  <text x="${PADDING + sumInner}" y="${mainY + 32}" fill="${muted}" font-family="${fontFamily}" font-size="12" letter-spacing="1">${texts.totalTokens}</text>
-  <text x="${PADDING + sumInner}" y="${mainY + 82}" fill="${primary}" font-family="${fontFamily}" font-size="48" font-weight="700">${formatTokens(totalTokens)}</text>
+  <text x="${PADDING + sumInner}" y="${mainY + 32}" fill="${muted}" font-family="${fontFamily}" font-size="12" letter-spacing="1">${esc(texts.totalTokens)}</text>
+  <text x="${PADDING + sumInner}" y="${mainY + 82}" fill="${primary}" font-family="${fontFamily}" font-size="${heroSize}" font-weight="700">${esc(heroStr)}</text>
   ${miniMetrics.map((m, i) => {
     const cx = cardX0 + i * (cardW + cardGap)
     return renderPanel(cx, cardY, cardW, cardH, { fill: 0.4, stroke: 0.85, deco: false, r: cardR, ch: 0, cc: 'none' }) +
-      `<text x="${cx + 12}" y="${cardY + 22}" fill="${muted}" font-family="${fontFamily}" font-size="9.5" letter-spacing="0.5">${m.label}</text>` +
-      `<text x="${cx + 12}" y="${cardY + 48}" fill="${m.color}" font-family="${fontFamily}" font-size="16" font-weight="600">${m.value}</text>`
+      `<text x="${cx + 12}" y="${cardY + 22}" fill="${muted}" font-family="${fontFamily}" font-size="9.5" letter-spacing="0.5">${esc(m.label)}</text>` +
+      `<text x="${cx + 12}" y="${cardY + 48}" fill="${m.color}" font-family="${fontFamily}" font-size="16" font-weight="600">${esc(m.value)}</text>`
   }).join('')}
   <line x1="${PADDING + sumInner}" y1="${mainY + mainH - 64}" x2="${PADDING + leftW - sumInner}" y2="${mainY + mainH - 64}" stroke="${border}" stroke-opacity="0.4"/>
-  <text x="${PADDING + sumInner}" y="${mainY + mainH - 38}" fill="${muted}" font-family="${fontFamily}" font-size="11">${scopeLabel}</text>
+  <text x="${PADDING + sumInner}" y="${mainY + mainH - 38}" fill="${muted}" font-family="${fontFamily}" font-size="11">${esc(scopeLabel)}</text>
 
   <!-- Main / right trend panel -->
   ${renderPanel(rightX, mainY, rightW, mainH)}
-  <text x="${rightX + 20}" y="${mainY + 30}" fill="${muted}" font-family="${fontFamily}" font-size="11" letter-spacing="0.5">${texts.trend}</text>
+  <text x="${rightX + 20}" y="${mainY + 30}" fill="${muted}" font-family="${fontFamily}" font-size="11" letter-spacing="0.5">${esc(texts.trend)}</text>
   <line x1="${trendX}" y1="${trendBottom}" x2="${trendX + trendW}" y2="${trendBottom}" stroke="${border}" stroke-width="1"/>
   ${trendArea ? `<path d="${trendArea}" fill="url(#trend-area)"/>` : ''}
   ${trendLine ? `<polyline points="${trendLine}" fill="none" stroke="${chart0}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
@@ -247,17 +258,17 @@ function buildShareSVG(
 
   <!-- Top sources panel -->
   ${renderPanel(PADDING, rankY, halfW, rankH)}
-  <text x="${PADDING + 20}" y="${rankY + 26}" fill="${muted}" font-family="${fontFamily}" font-size="11" letter-spacing="0.5">${texts.topSources}</text>
+  <text x="${PADDING + 20}" y="${rankY + 26}" fill="${muted}" font-family="${fontFamily}" font-size="11" letter-spacing="0.5">${esc(texts.topSources)}</text>
   ${topSources.length > 0 ? rankRows(topSources.map(s => ({ name: SOURCE_DISPLAY_NAMES[s.source] ?? s.source, tokens: s.total_tokens })), PADDING, halfW) : ''}
 
   <!-- Top models panel -->
   ${renderPanel(rightColX, rankY, halfW, rankH)}
-  <text x="${rightColX + 20}" y="${rankY + 26}" fill="${muted}" font-family="${fontFamily}" font-size="11" letter-spacing="0.5">${texts.topModels}</text>
+  <text x="${rightColX + 20}" y="${rankY + 26}" fill="${muted}" font-family="${fontFamily}" font-size="11" letter-spacing="0.5">${esc(texts.topModels)}</text>
   ${topModels.length > 0 ? rankRows(topModels.map(m => ({ name: m.display_name || m.model, tokens: m.total_tokens })), rightColX, halfW) : ''}
 
   <!-- Footer (32px safe area below) -->
   <line x1="${PADDING}" y1="596" x2="${contentRight}" y2="596" stroke="${border}" stroke-width="1" stroke-opacity="0.6"/>
-  <text x="${PADDING}" y="628" fill="${muted}" font-family="${fontFamily}" font-size="10">${tagline}</text>
+  <text x="${PADDING}" y="628" fill="${muted}" font-family="${fontFamily}" font-size="10">${esc(tagline)}</text>
   <image href="${LOGO_DATA_URI}" x="${contentRight - 96}" y="614" width="20" height="20" preserveAspectRatio="xMidYMid meet"/>
   <text x="${contentRight - 70}" y="628" fill="${muted}" font-family="${fontFamily}" font-size="11" font-weight="600" letter-spacing="0.5">TokenTrail</text>
 </svg>`
@@ -272,10 +283,6 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'unsupported'>('idle')
 
   const hasData = !!stats && (stats.total_tokens > 0 || stats.total_requests > 0)
-
-  const filterLabel = selectedSources.length > 0 || selectedModels.length > 0
-    ? `${selectedSources.length + selectedModels.length} ${lang === 'zh' ? '项筛选' : 'filters'}`
-    : (lang === 'zh' ? '全部' : 'All')
 
   const rangeLabel = timeRange === 1 ? '24H' : `${timeRange}D`
   const sourcesLabel = selectedSources.length > 0
@@ -297,8 +304,11 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
 
   const generateSVG = useCallback(() => {
     if (!stats) return ''
-    return buildShareSVG(stats, theme, lang, currency, timeRange, filterLabel, scopeLabel, texts)
-  }, [stats, theme, lang, currency, timeRange, filterLabel, scopeLabel])
+    const generatedLabel = lang === 'zh'
+      ? new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+      : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    return buildShareSVG(stats, theme, lang, currency, generatedLabel, scopeLabel, texts)
+  }, [stats, theme, lang, currency, scopeLabel])
 
   const handleDownload = useCallback(async () => {
     if (!hasData) return
