@@ -51,7 +51,8 @@ export function FilterBar({
                 key={range.value}
                 type="button"
                 onClick={() => onTimeRangeChange(range.value)}
-                className={`min-h-[32px] rounded-md border px-3 py-1.5 text-xs font-mono transition-all ${
+                aria-pressed={timeRange === range.value}
+                className={`min-h-10 rounded-md border px-3 py-1.5 text-xs font-mono transition-all sm:min-h-[32px] ${
                   timeRange === range.value
                     ? 'border-eva-green/50 bg-eva-green/10 text-eva-green shadow-eva-green'
                     : 'border-eva-border bg-eva-bg/50 text-eva-text-dim hover:border-eva-green/20 hover:text-eva-text'
@@ -78,13 +79,14 @@ export function FilterBar({
         {availableSources.length > 0 && (
           <>
             <div className="control-label pt-1.5">{t('filter.source')}</div>
-            <div className="flex gap-2 overflow-x-auto pb-1.5">
+            <div className="filter-scroll-row flex snap-x gap-2 overflow-x-auto pb-1.5">
               {availableSources.map((source) => (
                 <button
                   key={source}
                   type="button"
                   onClick={() => onToggleSource(source)}
-                  className={`eva-badge ${selectedSources.includes(source) ? 'eva-badge-active' : ''}`}
+                  aria-pressed={selectedSources.includes(source)}
+                  className={`eva-badge snap-start ${selectedSources.includes(source) ? 'eva-badge-active' : ''}`}
                 >
                   {sourceDisplayNames[source] || source}
                 </button>
@@ -105,13 +107,14 @@ export function FilterBar({
         {availableModels.length > 0 && (
           <>
             <div className="control-label pt-1.5">{t('filter.model')}</div>
-            <div className="flex gap-2 overflow-x-auto pb-1.5">
+            <div className="filter-scroll-row flex snap-x gap-2 overflow-x-auto pb-1.5">
               {availableModels.map((model) => (
                 <button
                   key={model.id}
                   type="button"
                   onClick={() => onToggleModel(model.id)}
-                  className={`eva-badge ${selectedModels.includes(model.id) ? 'eva-badge-active' : ''}`}
+                  aria-pressed={selectedModels.includes(model.id)}
+                  className={`eva-badge snap-start ${selectedModels.includes(model.id) ? 'eva-badge-active' : ''}`}
                 >
                   {model.name}
                 </button>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { StatsResponse, Currency, Theme, TimeRange } from '@/types'
 import { formatTokens, formatCost, formatNumber } from '@/lib/format'
@@ -281,6 +281,42 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
   const [open, setOpen] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'unsupported'>('idle')
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  const closeModal = useCallback(() => {
+    setOpen(false)
+    requestAnimationFrame(() => triggerRef.current?.focus())
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+
+    const dialog = dialogRef.current
+    const focusable = dialog?.querySelectorAll<HTMLElement>('button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')
+    focusable?.[0]?.focus()
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeModal()
+        return
+      }
+      if (event.key !== 'Tab' || !focusable?.length) return
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [closeModal, open])
 
   const hasData = !!stats && (stats.total_tokens > 0 || stats.total_requests > 0)
 
@@ -406,9 +442,10 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
   if (!hasData) {
     return (
       <button
+        ref={triggerRef}
         type="button"
         disabled
-        className="min-h-[32px] rounded-md border border-eva-border bg-eva-bg/30 px-3 py-1.5 text-xs font-mono text-eva-text-dim/40 cursor-not-allowed"
+        className="min-h-10 shrink-0 cursor-not-allowed rounded-md border border-eva-border bg-eva-bg/30 px-3 py-1.5 text-xs font-mono text-eva-text-dim/40 sm:min-h-[32px]"
         title={t('share.noData')}
       >
         {t('share.button')}
@@ -419,9 +456,12 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
-        className="min-h-[32px] rounded-md border border-eva-border bg-eva-bg/50 px-3 py-1.5 text-xs font-mono text-eva-text-dim transition-[transform,border-color,background-color,color,box-shadow] duration-200 hover:border-eva-purple/30 hover:text-eva-purple active:scale-95"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className="min-h-10 shrink-0 rounded-md border border-eva-border bg-eva-bg/50 px-3 py-1.5 text-xs font-mono text-eva-text-dim transition-[transform,border-color,background-color,color,box-shadow] duration-200 hover:border-eva-purple/30 hover:text-eva-purple active:scale-95 sm:min-h-[32px]"
       >
         {t('share.button')}
       </button>
@@ -429,21 +469,26 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
       {open && createPortal(
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center"
-          onClick={() => setOpen(false)}
+          onClick={closeModal}
         >
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="share-dialog-title"
             className="relative z-10 mx-4 w-full max-w-[760px] rounded-xl border border-eva-border bg-eva-bg shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b border-eva-border px-5 py-3">
-              <h2 className="theme-display text-sm font-semibold">
+              <h2 id="share-dialog-title" className="theme-display text-sm font-semibold">
                 {t('share.title')}
               </h2>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={closeModal}
+                aria-label={lang === 'zh' ? '关闭分享预览' : 'Close share preview'}
                 className="rounded p-1 text-eva-text-dim hover:text-eva-text"
               >
                 ✕

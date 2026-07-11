@@ -53,9 +53,12 @@ function DashboardInner() {
   const [availableModels, setAvailableModels] = useState<{ id: string; name: string }[]>([])
 
   const isFirstLoad = useRef(true)
-  const fetchDataRef = useRef<() => Promise<void>>(() => Promise.resolve())
+  const fetchDataRef = useRef<() => Promise<boolean>>(() => Promise.resolve(true))
+  const statsRequestId = useRef(0)
+  const rawRecordsRequestId = useRef(0)
 
   const fetchData = useCallback(async (isAutoRefresh = false) => {
+    const requestId = ++statsRequestId.current
     try {
       if (isFirstLoad.current) {
         setInitialLoading(true)
@@ -81,28 +84,37 @@ function DashboardInner() {
       const data = await res.json()
 
       // Extract available filters from response
-      if (data.available_sources) {
-        setAvailableSources(data.available_sources)
-      }
-      if (data.available_models) {
-        setAvailableModels(data.available_models)
-      }
+      if (requestId === statsRequestId.current) {
+        if (data.available_sources) {
+          setAvailableSources(data.available_sources)
+        }
+        if (data.available_models) {
+          setAvailableModels(data.available_models)
+        }
 
-      // Remove filter metadata from stats
-      const { available_sources, available_models, ...statsData } = data as Record<string, unknown>
-      setStats(statsData as unknown as StatsResponse)
-      setLastUpdated(Date.now())
+        // Remove filter metadata from stats
+        const { available_sources, available_models, ...statsData } = data as Record<string, unknown>
+        setStats(statsData as unknown as StatsResponse)
+        setLastUpdated(Date.now())
+      }
+      return true
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      if (requestId === statsRequestId.current) {
+        setError(err instanceof Error ? err.message : 'Unknown error')
+      }
+      return false
     } finally {
-      setInitialLoading(false)
-      setRefreshing(false)
-      isFirstLoad.current = false
+      if (requestId === statsRequestId.current) {
+        setInitialLoading(false)
+        setRefreshing(false)
+        isFirstLoad.current = false
+      }
     }
   }, [timeRange, selectedSources, selectedModels])
 
   const fetchRawRecords = useCallback(async () => {
     if (!showRawRecords) return
+    const requestId = ++rawRecordsRequestId.current
     try {
       setRawRecordsLoading(true)
       const params = new URLSearchParams()
@@ -118,13 +130,19 @@ function DashboardInner() {
       const res = await fetch(`/api/usage?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to fetch raw records')
       const data = await res.json()
-      setRawRecords(data.records || [])
-      setRawRecordsTotal(data.total || 0)
+      if (requestId === rawRecordsRequestId.current) {
+        setRawRecords(data.records || [])
+        setRawRecordsTotal(data.total || 0)
+      }
     } catch {
-      setRawRecords([])
-      setRawRecordsTotal(0)
+      if (requestId === rawRecordsRequestId.current) {
+        setRawRecords([])
+        setRawRecordsTotal(0)
+      }
     } finally {
-      setRawRecordsLoading(false)
+      if (requestId === rawRecordsRequestId.current) {
+        setRawRecordsLoading(false)
+      }
     }
   }, [rawRecordsPage, selectedModels, selectedSources, showRawRecords, timeRange])
 
@@ -154,9 +172,11 @@ function DashboardInner() {
 
     const tick = () => {
       if (paused) return
-      fetchDataRef.current().catch(() => {
-        // On error, retry in 10s instead of waiting full 60s
-        retryTimeout = setTimeout(tick, 10_000)
+      fetchDataRef.current().then(success => {
+        if (!success) {
+          // On error, retry in 10s instead of waiting full 60s
+          retryTimeout = setTimeout(tick, 10_000)
+        }
       })
     }
 
@@ -286,7 +306,7 @@ function DashboardInner() {
   return (
     <div className="dashboard-shell min-h-screen">
       {/* Header */}
-      <header className="glass-header sticky top-0 z-40 border-b border-eva-border backdrop-blur-xl">
+      <header className="glass-header z-40 border-b border-eva-border backdrop-blur-xl sm:sticky sm:top-0">
         <div className="mx-auto max-w-[1520px] px-4 sm:px-6 lg:px-8">
           <div className="flex min-h-16 flex-col gap-3 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
@@ -319,12 +339,13 @@ function DashboardInner() {
             </div>
 
             {/* Controls */}
-            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <div className="header-actions -mx-1 flex w-[calc(100%+0.5rem)] items-center gap-2 overflow-x-auto px-1 pb-1 lg:mx-0 lg:w-auto lg:justify-end lg:overflow-visible lg:px-0 lg:pb-0">
               {/* Language Toggle */}
               <div className="control-cluster">
                 <button
                   type="button"
                   onClick={() => setLang('zh')}
+                  aria-pressed={lang === 'zh'}
                   className={`control-button ${
                     lang === 'zh'
                       ? 'control-button-active'
@@ -336,6 +357,7 @@ function DashboardInner() {
                 <button
                   type="button"
                   onClick={() => setLang('en')}
+                  aria-pressed={lang === 'en'}
                   className={`control-button ${
                     lang === 'en'
                       ? 'control-button-active'
@@ -352,6 +374,7 @@ function DashboardInner() {
                 <button
                   type="button"
                   onClick={() => setCurrency('USD')}
+                  aria-pressed={currency === 'USD'}
                   className={`control-button ${
                     currency === 'USD'
                       ? 'control-button-active'
@@ -363,6 +386,7 @@ function DashboardInner() {
                 <button
                   type="button"
                   onClick={() => setCurrency('RMB')}
+                  aria-pressed={currency === 'RMB'}
                   className={`control-button ${
                     currency === 'RMB'
                       ? 'control-button-active'
@@ -379,7 +403,7 @@ function DashboardInner() {
                 onClick={handleSync}
                 disabled={syncing}
                 aria-live="polite"
-                className={`min-h-[32px] rounded-md border px-3 py-1.5 text-xs font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
+                className={`min-h-10 shrink-0 rounded-md border px-3 py-1.5 text-xs font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 sm:min-h-[32px] ${
                   syncing
                     ? 'border-status-warning/50 bg-status-warning/10 text-status-warning animate-pulse'
                     : syncResult
@@ -408,7 +432,7 @@ function DashboardInner() {
       </header>
 
       {/* Main Content */}
-      <main className="relative z-10 mx-auto max-w-[1520px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+      <main className="relative z-10 mx-auto max-w-[1520px] space-y-4 px-3 py-4 sm:space-y-6 sm:px-6 sm:py-6 lg:px-8">
         {/* Filter Bar */}
         <MotionGroup>
           <MotionItem>
@@ -653,7 +677,8 @@ function TogglePill({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex min-h-[38px] items-center gap-2.5 rounded-md border px-3.5 py-2 text-sm font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
+      aria-pressed={enabled}
+      className={`inline-flex min-h-11 items-center gap-2.5 rounded-md border px-3.5 py-2 text-sm font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 sm:min-h-[38px] ${
         enabled
           ? 'border-eva-green/40 bg-eva-green/10 text-eva-green'
           : 'border-eva-border bg-eva-bg/60 text-eva-text-dim hover:border-eva-green/30 hover:text-eva-text'
@@ -677,8 +702,8 @@ function TogglePill({
 }
 
 function displayProjectName(project: string | null | undefined, showProjectNames: boolean) {
-  if (!showProjectNames) return 'unknown'
-  return project?.trim() || 'unknown'
+  if (!showProjectNames) return 'unknow'
+  return project?.trim() || 'unknow'
 }
 
 function ProjectStatsPanel({
