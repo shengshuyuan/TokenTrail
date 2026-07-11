@@ -251,6 +251,21 @@ export function backfillProjectByRequestPrefix(requestPrefix: string, project?: 
   return result.changes
 }
 
+/** 按 request_id 纠正 project（用于历史误标，如会话 cwd 与真实项目文件夹不一致） */
+export function correctProjectByRequestId(requestId: string, project?: string): boolean {
+  const normalizedProject = normalizeProjectName(project)
+  if (!requestId || normalizedProject === 'unknown') return false
+
+  const db = getDb()
+  const result = db.prepare(`
+    UPDATE usage_records
+    SET project = ?
+    WHERE request_id = ?
+      AND project != ?
+  `).run(normalizedProject, requestId, normalizedProject)
+  return result.changes > 0
+}
+
 export function normalizeStoredProjectNames(normalize: (project: string) => string): number {
   const db = getDb()
   const projects = db.prepare('SELECT DISTINCT project FROM usage_records').all() as { project: string }[]
