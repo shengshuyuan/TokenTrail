@@ -105,8 +105,8 @@ const SOURCE_PLANS: SourcePlan[] = [
     title: 'OpenClaw',
     badge: { zh: '需要接入', en: 'Needs wiring' },
     desc: {
-      zh: '适合可改工具端代码的用户。要在模型返回后写入真实 response.usage，不能只写测试样例。',
-      en: 'For users who can edit the tool pipeline. Write real response.usage after model calls, not only test samples.',
+      zh: '适合可改工具端代码的用户。要在模型返回后写入真实 response.usage，不能只写测试样例。无需 server URL / 邮箱 / API Key。',
+      en: 'For users who can edit the tool pipeline. Write real response.usage after model calls, not only test samples. No server URL / email / API key needed.',
     },
     sourceKey: 'openclaw',
   },
@@ -115,8 +115,8 @@ const SOURCE_PLANS: SourcePlan[] = [
     title: 'Hermes',
     badge: { zh: '需要接入', en: 'Needs wiring' },
     desc: {
-      zh: '适合可改 Hermes 调用链的用户。接入点应放在模型调用完成、拿到 usage 之后。',
-      en: 'For users who can edit the Hermes call chain. Wire it after the model call returns usage.',
+      zh: '适合可改 Hermes 调用链的用户。接入点放在模型调用完成、拿到 usage 之后；只需写本地 JSONL，无需 server URL / 邮箱 / API Key。',
+      en: 'For users who can edit the Hermes call chain. Wire it after the model call returns usage; just write a local JSONL — no server URL / email / API key needed.',
     },
     sourceKey: 'hermes',
   },
@@ -909,7 +909,7 @@ export function IntegrationGuide() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="min-h-[32px] rounded-md border border-eva-border bg-eva-bg/45 px-3 py-1.5 text-xs font-mono text-eva-text-dim transition-[transform,border-color,background-color,color,box-shadow] duration-200 hover:border-eva-green/20 hover:text-eva-text"
+        className="min-h-10 shrink-0 rounded-md border border-eva-border bg-eva-bg/45 px-3 py-1.5 text-xs font-mono text-eva-text-dim transition-[transform,border-color,background-color,color,box-shadow] duration-200 hover:border-eva-green/20 hover:text-eva-text sm:min-h-[32px]"
       >
         {t('guide.title')}
       </button>

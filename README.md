@@ -82,6 +82,8 @@ TokenTrail is self-contained. No external platform dependency.
 
 OpenClaw, Hermes, and any other tool must write one JSONL line per model call to `~/.<tool>/usage/YYYY-MM-DD.jsonl`. TokenTrail scans these files during sync.
 
+> **No server URL / email / API key needed.** TokenTrail is fully local. Writing the JSONL file is zero-config and zero-network. The CLI (`tokentrail report`) and HTTP (`POST /api/report`) alternatives are also auth-free — there is no account to register and no credential to provide.
+
 **Core rule:** Read real `response.usage` after the model responds. If no usage data is available, skip — do not write zeros.
 
 Standard line format:
@@ -158,7 +160,7 @@ OPENAI_BASE_URL=http://localhost:3820/proxy/openai
 
 ### Optional: VibeCafé API
 
-Convenience for existing VibeCafé users. Not a primary method. Add API key to `~/.tokentrail/config.json`:
+Convenience for existing VibeCafé users. Not a primary method. **`vibecafe_api_key` is only for pulling VibeCafé history — Hermes / OpenClaw / Codex / Claude Code never need any API key.** Add it to `~/.tokentrail/config.json`:
 
 ```json
 { "server_url": "http://localhost:3820", "vibecafe_api_key": "your-api-key" }

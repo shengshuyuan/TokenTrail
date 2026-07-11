@@ -10,6 +10,7 @@ Current version: **V0.2.0**
 | --- | --- | --- |
 | Claude Code | Local scan | TokenTrail reads `~/.claude/projects/*/sessions/*.jsonl` during sync |
 | Codex | Local scan | TokenTrail reads `~/.codex/sessions/**/*.jsonl` during sync |
+| Grok (CLI/Build) | Local scan | TokenTrail reads `~/.grok/logs/unified.jsonl` (`shell.turn.inference_done`) during sync |
 | OpenClaw | Local JSONL | OpenClaw writes `~/.openclaw/usage/YYYY-MM-DD.jsonl` after each model call |
 | Hermes | Local JSONL | Hermes writes `~/.hermes/usage/YYYY-MM-DD.jsonl` after each model call |
 | Any tool | Local JSONL | Tool writes `~/.tool/usage/YYYY-MM-DD.jsonl` after each model call |
@@ -32,6 +33,42 @@ npm run sync
 # 4. (macOS) Install persistent service
 npm run install-service
 npm run doctor
+```
+
+## Grok (Grok CLI / Grok Build) integration
+
+### Method 1: zero-configuration local scan (recommended)
+
+Grok writes real per-inference usage into `~/.grok/logs/unified.jsonl` after each model call:
+
+```json
+{"ts":"...","msg":"shell.turn.inference_done","sid":"...","ctx":{"loop_index":1,"prompt_tokens":31850,"cached_prompt_tokens":11136,"completion_tokens":384,"reasoning_tokens":98}}
+```
+
+TokenTrail reads these events during `tokentrail sync` / the 4-hour LaunchAgent timer. Session model and project come from `~/.grok/sessions/**/summary.json`. Dedup ID:
+
+```text
+grok:{sessionId}:L{loopIndex}:{timestampMs}
+```
+
+```bash
+# Confirm Grok logs exist
+ls ~/.grok/logs/unified.jsonl
+
+# Sync (historical + incremental)
+node bin/tokentrail.js sync
+```
+
+No Grok-side plugin is required. Future usage is picked up automatically as long as the TokenTrail daemon/timer is installed.
+
+### Method 2: optional usage JSONL mirror
+
+You can also write OpenClaw-style lines to `~/.grok/usage/YYYY-MM-DD.jsonl`; the local-usage scanner will import them with the same `request_id` dedup rules.
+
+### Method 3: HTTP report
+
+```bash
+tokentrail report --source grok --model grok-4.5 --input 5000 --output 1200 --cached 2000 --reasoning 100
 ```
 
 ## Codex integration
@@ -69,6 +106,8 @@ cp docs/SKILL.md ~/.codex/skills/tokentrail/SKILL.md
 Then ask Codex: `同步 TokenTrail 数据并汇报 Codex 用量`.
 
 ## OpenClaw / Hermes integration
+
+> **不需要 server URL、邮箱或 API Key。** TokenTrail 是纯本地服务，OpenClaw / Hermes 只需在每次模型调用后把真实用量写进本地 JSONL 文件，TokenTrail 同步时自动扫描。无需注册账号、无需鉴权。下面的 `tokentrail-report` SDK、proxy、`POST /api/report` 也都是**免鉴权**的可选项，不是必需步骤。
 
 After each model call, write one JSONL line to `~/.<tool>/usage/YYYY-MM-DD.jsonl`:
 
@@ -174,7 +213,7 @@ OPENAI_BASE_URL=http://localhost:3820/proxy/openai
 
 ## VibeCafé (optional)
 
-Convenience for existing VibeCafé users. Not a primary integration method.
+Convenience for existing VibeCafé users. Not a primary integration method. **`vibecafe_api_key` is only for pulling VibeCafé history — it has nothing to do with Hermes / OpenClaw / Codex / Claude Code, none of which need any API key.**
 
 ```json
 // ~/.tokentrail/config.json

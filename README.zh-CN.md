@@ -82,6 +82,8 @@ TokenTrail 完全自包含，不依赖外部平台。
 
 OpenClaw、Hermes 及其他工具，必须在每次模型调用完成后写一行 JSONL 到 `~/.<工具名>/usage/YYYY-MM-DD.jsonl`。TokenTrail 同步时自动扫描。
 
+> **不需要 server URL / 邮箱 / API Key。** TokenTrail 是纯本地服务。写 JSONL 文件零配置、零网络；CLI（`tokentrail report`）和 HTTP（`POST /api/report`）两种替代方式也都免鉴权——无需注册账号，无需提供任何凭据。
+
 **核心规则：** 在模型响应完成后读取真实 `response.usage`。没有 usage 数据就跳过，不要写 0。
 
 标准格式：
@@ -158,7 +160,7 @@ OPENAI_BASE_URL=http://localhost:3820/proxy/openai
 
 ### 可选：VibeCafé API
 
-给已有 VibeCafé 账号的用户提供的便利功能，不是主要接入方式。在 `~/.tokentrail/config.json` 添加 API Key：
+给已有 VibeCafé 账号的用户提供的便利功能，不是主要接入方式。**`vibecafe_api_key` 只用于拉取 VibeCafé 历史——Hermes / OpenClaw / Codex / Claude Code 都不需要任何 API Key。** 在 `~/.tokentrail/config.json` 添加 API Key：
 
 ```json
 { "server_url": "http://localhost:3820", "vibecafe_api_key": "your-api-key" }
