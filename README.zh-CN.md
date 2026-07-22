@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**面向 Claude Code、Codex 和自定义 AI 工具的本地 token 用量统计面板。**
+**面向 Claude Code、Codex、Kimi Code 和自定义 AI 工具的本地 token 用量统计面板。**
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
@@ -10,7 +10,7 @@
 
 ---
 
-TokenTrail 帮你看清 AI 编程工具的 token 消耗流向。它可以读取 Claude Code 和 Codex 的本地用量记录，也支持其他工具通过 HTTP API 或 CLI 上报数据；所有数据保存在本机 SQLite 中，并在 Dashboard 里展示费用趋势、模型分布、来源健康、项目归因和原始记录。
+TokenTrail 帮你看清 AI 编程工具的 token 消耗流向。它可以读取 Claude Code、Codex 和 Kimi Code 的本地用量记录，也支持其他工具通过 HTTP API 或 CLI 上报数据；所有数据保存在本机 SQLite 中，并在 Dashboard 里展示费用趋势、模型分布、来源健康、项目归因和原始记录。
 
 ![TokenTrail Dashboard](./docs/assets/tokentrail-dashboard.png)
 
@@ -54,7 +54,7 @@ npm run setup
 npm run sync
 ```
 
-这会扫描 Claude Code 日志（`~/.claude/projects/`）、Codex 会话（`~/.codex/sessions/`），以及可选的 VibeCafe 兼容用量数据。
+这会扫描 Claude Code 日志（`~/.claude/projects/`）、Codex 会话（`~/.codex/sessions/`）、Kimi Code 会话（`~/.kimi-code/sessions/` 及兼容的 `~/.kimi/sessions/`），以及可选的 VibeCafe 兼容用量数据。
 
 ### 3. 安装 macOS 后台服务
 
@@ -77,6 +77,7 @@ TokenTrail 完全自包含，不依赖外部平台。
 | --- | --- |
 | Claude Code | `~/.claude/projects/*/sessions/*.jsonl` |
 | Codex | `~/.codex/sessions/**/*.jsonl` |
+| Kimi Code | `~/.kimi-code/sessions/**/wire.jsonl` 和 `~/.kimi/sessions/**/wire.jsonl` |
 
 ### 其他工具（需要接入）
 
@@ -156,6 +157,7 @@ OPENAI_BASE_URL=http://localhost:3820/proxy/openai
 | --- | --- |
 | Claude Code | TokenTrail 扫描本地 JSONL（自动） |
 | Codex | TokenTrail 扫描本地 JSONL（自动） |
+| Kimi Code | TokenTrail 扫描本地 Wire 用量事件（自动） |
 | OpenClaw / Hermes / 其他 | 每次调用后写 `~/.工具名/usage/*.jsonl` |
 
 ### 可选：VibeCafé API

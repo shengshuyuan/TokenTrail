@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Local-first AI token usage dashboard for Claude Code, Codex, and custom AI tools.**
+**Local-first AI token usage dashboard for Claude Code, Codex, Kimi Code, and custom AI tools.**
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
@@ -10,7 +10,7 @@
 
 ---
 
-TokenTrail helps developers understand where their AI coding tokens go. It reads local usage data from Claude Code and Codex, accepts usage reports from other tools, stores everything in SQLite on your machine, and turns it into a dashboard for cost trends, model breakdowns, source health, project attribution, and raw-record inspection.
+TokenTrail helps developers understand where their AI coding tokens go. It reads local usage data from Claude Code, Codex, and Kimi Code, accepts usage reports from other tools, stores everything in SQLite on your machine, and turns it into a dashboard for cost trends, model breakdowns, source health, project attribution, and raw-record inspection.
 
 ![TokenTrail dashboard](./docs/assets/tokentrail-dashboard.png)
 
@@ -54,7 +54,7 @@ npm run setup
 npm run sync
 ```
 
-This scans Claude Code logs (`~/.claude/projects/`), Codex sessions (`~/.codex/sessions/`), and optional VibeCafe-compatible usage data.
+This scans Claude Code logs (`~/.claude/projects/`), Codex sessions (`~/.codex/sessions/`), Kimi Code sessions (`~/.kimi-code/sessions/` and legacy `~/.kimi/sessions/`), and optional VibeCafe-compatible usage data.
 
 ### 3. Install the macOS background service
 
@@ -77,6 +77,7 @@ TokenTrail is self-contained. No external platform dependency.
 | --- | --- |
 | Claude Code | `~/.claude/projects/*/sessions/*.jsonl` |
 | Codex | `~/.codex/sessions/**/*.jsonl` |
+| Kimi Code | `~/.kimi-code/sessions/**/wire.jsonl` and `~/.kimi/sessions/**/wire.jsonl` |
 
 ### Other tools (must integrate)
 
@@ -156,6 +157,7 @@ OPENAI_BASE_URL=http://localhost:3820/proxy/openai
 | --- | --- |
 | Claude Code | TokenTrail scans local JSONL (automatic) |
 | Codex | TokenTrail scans local JSONL (automatic) |
+| Kimi Code | TokenTrail scans local wire usage events (automatic) |
 | OpenClaw / Hermes / others | Tool writes `~/.tool/usage/*.jsonl` after each call |
 
 ### Optional: VibeCafé API

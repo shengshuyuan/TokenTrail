@@ -19,3 +19,9 @@
 - **影响范围**：`scripts/import-pricing-excel.mjs`、`data/token-trail.db`
 - **变更摘要**：新增并执行 Excel 价目表导入脚本，根据用户提供的更新后表格更新了数据库中 `model_pricing` 表的各项费率，并重新计算了所有历史 `usage_records` 的 `cost_usd` 费用。
 - **回滚指南**：如果价格错误，可以通过执行旧的 `npm run db:seed` 脚本或重新导入正确的 Excel 表格。
+
+- **[2026-07-22 12:40:00 CST]** 🟡修改
+- **影响范围**：`src/lib/seed-pricing.ts`、`src/lib/db.ts`、`src/lib/sync.ts`、`src/lib/proxy-usage.ts`、`src/app/api/proxy/**`、`src/app/api/report/route.ts`、`src/app/api/sync/route.ts`、`src/app/api/backup/route.ts`、`src/app/page.tsx`、`tests/*`
+- **变更摘要**：代码 Review 修复：1) seed 不再覆盖用户自定义价格，仅插入缺失模型/升级 0 价占位；2) Claude cache_creation 计入 input；3) 时间戳秒→毫秒归一化；4) 代理 SSE 取最后 usage、限制内存、取消时释放 reader；5) report 整数化 token / 重复返回 cost=0；6) 并发 sync 返回 409；7) 删除空垃圾路由目录。
+- **回滚指南**：`git checkout -- src/lib src/app tests operateLog.md`
+

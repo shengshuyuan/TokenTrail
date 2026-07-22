@@ -92,6 +92,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'guide.title': { zh: '接入指南', en: 'GUIDE' },
   'guide.tabQuick': { zh: '快速开始', en: 'Quick Start' },
   'guide.tabCodex': { zh: 'Codex', en: 'Codex' },
+  'guide.tabKimiCode': { zh: 'Kimi Code', en: 'Kimi Code' },
   'guide.tabClaudeCode': { zh: 'Claude Code', en: 'Claude Code' },
   'guide.tabTraework': { zh: 'TraeWork', en: 'TraeWork' },
   'guide.tabOpenclaw': { zh: 'OpenClaw', en: 'OpenClaw' },

@@ -33,10 +33,14 @@ export async function POST() {
       .filter(f => f.endsWith('.db'))
       .sort()
     const MAX_BACKUPS = 20
+    let remainingBackups = allBackups.length
     if (allBackups.length > MAX_BACKUPS) {
       const toDelete = allBackups.slice(0, allBackups.length - MAX_BACKUPS)
       for (const file of toDelete) {
-        try { fs.unlinkSync(path.join(BACKUP_DIR, file)) } catch {}
+        try {
+          fs.unlinkSync(path.join(BACKUP_DIR, file))
+          remainingBackups--
+        } catch {}
       }
     }
 
@@ -44,7 +48,7 @@ export async function POST() {
       success: true,
       path: backupPath,
       size_bytes: sizeBytes,
-      remaining_backups: Math.min(allBackups.length, MAX_BACKUPS),
+      remaining_backups: remainingBackups,
     })
   } catch (error) {
     console.error('[TokenTrail] Backup error:', error)

@@ -50,6 +50,7 @@ function formatRelativeTime(isoString: string | null, lang: 'zh' | 'en'): string
 
 const SOURCE_DISPLAY: Record<string, string> = {
   'claude-code': 'Claude Code',
+  'kimi-code': 'Kimi Code',
   'codex': 'Codex',
   'vibecafe': 'VibeCafé',
   'openclaw': 'OpenClaw',

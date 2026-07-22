@@ -46,7 +46,7 @@ interface StatusData {
   sources: SourceHealth[]
 }
 
-type TabId = 'quick' | 'codex' | 'claude-code' | 'traework' | 'openclaw' | 'hermes' | 'api' | 'cli'
+type TabId = 'quick' | 'codex' | 'kimi-code' | 'claude-code' | 'traework' | 'openclaw' | 'hermes' | 'api' | 'cli'
 
 interface SourcePlan {
   id: TabId
@@ -77,6 +77,17 @@ const SOURCE_PLANS: SourcePlan[] = [
       en: 'For local Codex users. TokenTrail reads local session records without a proxy or manual export.',
     },
     sourceKey: 'codex',
+    recommended: true,
+  },
+  {
+    id: 'kimi-code',
+    title: 'Kimi Code',
+    badge: { zh: '自动扫描', en: 'Auto scan' },
+    desc: {
+      zh: '适合本机 Kimi Code 用户。TokenTrail 会读取新版和旧版本地会话中的真实 token 用量，无需代理或 API Key。',
+      en: 'For local Kimi Code users. TokenTrail reads real token usage from current and legacy local sessions without a proxy or API key.',
+    },
+    sourceKey: 'kimi-code',
     recommended: true,
   },
   {
@@ -302,6 +313,33 @@ const GUIDE_CONTENT: Record<TabId, GuideStep[]> = {
       commands: [
         { label: '采集字段', code: 'input_tokens cached_input_tokens output_tokens reasoning_output_tokens' },
         { label: '去重规则', code: 'request_id=codex:<会话相对路径>:L<事件行号>' },
+      ],
+    },
+  ],
+  'kimi-code': [
+    {
+      title: '零配置本地扫描（推荐）',
+      desc: 'Kimi Code 会在每次模型调用后把真实用量写入本地会话。TokenTrail 同时支持新版 ~/.kimi-code 和旧版 ~/.kimi 目录。',
+      commands: [
+        { label: '确认新版会话', code: 'find ~/.kimi-code/sessions -type f -name \'wire.jsonl\' | head' },
+        { label: '确认旧版会话', code: 'find ~/.kimi/sessions -type f -name \'wire.jsonl\' | head' },
+        { label: '同步到 TokenTrail', code: 'node bin/tokentrail.js sync' },
+      ],
+    },
+    {
+      title: '采集规则',
+      desc: '新版读取 usage.record，旧版读取 StatusUpdate.token_usage；缓存输入会单独统计，会话文件只读不修改。',
+      commands: [
+        { label: '查看同步状态', code: 'node bin/tokentrail.js status' },
+        { label: '成功标准', code: '系统状态中出现 Kimi Code，并显示记录数与最近更新时间' },
+      ],
+    },
+    {
+      title: '自定义数据目录',
+      desc: '如果你通过环境变量改过 Kimi Code 的存储位置，TokenTrail 会优先使用同名环境变量。',
+      commands: [
+        { label: '新版', code: 'KIMI_CODE_HOME=/your/kimi-code-home node bin/tokentrail.js sync' },
+        { label: '旧版', code: 'KIMI_SHARE_DIR=/your/kimi-home node bin/tokentrail.js sync' },
       ],
     },
   ],
@@ -666,6 +704,7 @@ function Modal({ onClose }: { onClose: () => void }) {
   const GUIDE_TABS = useMemo(() => [
     { id: 'quick' as TabId, label: t('guide.tabQuick') },
     { id: 'codex' as TabId, label: t('guide.tabCodex') },
+    { id: 'kimi-code' as TabId, label: t('guide.tabKimiCode') },
     { id: 'claude-code' as TabId, label: t('guide.tabClaudeCode') },
     { id: 'traework' as TabId, label: t('guide.tabTraework') },
     { id: 'openclaw' as TabId, label: t('guide.tabOpenclaw') },

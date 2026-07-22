@@ -262,6 +262,9 @@ function DashboardInner() {
       const res = await fetch('/api/sync', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) {
+        if (res.status === 409 || data.busy) {
+          throw new Error(lang === 'zh' ? '同步进行中，请稍后再试' : 'Sync already in progress')
+        }
         throw new Error(data.error || t('sync.failed'))
       }
       if (data.success) {

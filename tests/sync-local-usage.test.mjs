@@ -143,17 +143,27 @@ describe('syncLocalUsageFiles logic', () => {
   })
 
   it('should normalize numeric timestamps correctly', () => {
-    // normalizeTimestamp logic: number → use as-is, string → parse, missing → Date.now()
+    // Mirrors src/lib/sync.ts normalizeTimestamp: ms / unix-seconds / ISO / fallback
     function normalizeTimestamp(raw) {
-      if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        return Math.abs(raw) < 1e12 ? Math.round(raw * 1000) : Math.round(raw)
+      }
       if (typeof raw === 'string') {
-        const t = new Date(raw).getTime()
+        const trimmed = raw.trim()
+        if (!trimmed) return Date.now()
+        if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+          return normalizeTimestamp(Number(trimmed))
+        }
+        const normalizedIso = trimmed.replace(/(\.\d{3})\d+/, '$1')
+        const t = new Date(normalizedIso).getTime()
         if (Number.isFinite(t)) return t
       }
       return Date.now()
     }
 
     assert.equal(normalizeTimestamp(1718000000000), 1718000000000)
+    assert.equal(normalizeTimestamp(1718000000), 1718000000000, 'unix seconds → ms')
+    assert.equal(normalizeTimestamp('1718000000'), 1718000000000, 'numeric string seconds → ms')
     assert.equal(normalizeTimestamp('2026-06-10T12:00:00.000Z'), new Date('2026-06-10T12:00:00.000Z').getTime())
     assert.ok(normalizeTimestamp(undefined) > 0, 'Missing timestamp falls back to Date.now()')
     assert.ok(normalizeTimestamp('invalid') > 0, 'Invalid string falls back to Date.now()')

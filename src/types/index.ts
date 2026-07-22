@@ -7,7 +7,7 @@
 export type Source = string
 
 /** 已知的来源列表（用于显示名称映射和输入提示） */
-export const KNOWN_SOURCES = ['codex', 'claude-code', 'openclaw', 'hermes', 'lobster'] as const
+export const KNOWN_SOURCES = ['codex', 'kimi-code', 'claude-code', 'openclaw', 'hermes', 'lobster'] as const
 
 /** 用量上报请求 */
 export interface UsageReport {
@@ -116,6 +116,7 @@ export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   'codex': 'Codex',
   'codex-review': 'Codex Review',
   'claude-code': 'Claude Code',
+  'kimi-code': 'Kimi Code',
   'openclaw': 'OpenClaw',
   'hermes': 'Hermes',
   'lobster': 'Lobster',

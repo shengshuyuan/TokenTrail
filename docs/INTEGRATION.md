@@ -10,6 +10,7 @@ Current version: **V0.2.0**
 | --- | --- | --- |
 | Claude Code | Local scan | TokenTrail reads `~/.claude/projects/*/sessions/*.jsonl` during sync |
 | Codex | Local scan | TokenTrail reads `~/.codex/sessions/**/*.jsonl` during sync |
+| Kimi Code | Local scan | TokenTrail reads current `~/.kimi-code/sessions/**/wire.jsonl` and legacy `~/.kimi/sessions/**/wire.jsonl` |
 | Grok (CLI/Build) | Local scan | TokenTrail reads `~/.grok/logs/unified.jsonl` (`shell.turn.inference_done`) during sync |
 | OpenClaw | Local JSONL | OpenClaw writes `~/.openclaw/usage/YYYY-MM-DD.jsonl` after each model call |
 | Hermes | Local JSONL | Hermes writes `~/.hermes/usage/YYYY-MM-DD.jsonl` after each model call |
@@ -95,6 +96,24 @@ node scripts/sync-codex.js --host=http://localhost:3820
 ```
 
 Records use `codex:<relative-session-path>:L<event-line>` as `request_id`, so repeated imports are safely deduplicated.
+
+## Kimi Code integration
+
+Kimi Code persists real per-call token usage in local `wire.jsonl` session files. TokenTrail supports both generations of the CLI without changing those files:
+
+- Current Kimi Code: `~/.kimi-code/sessions/**/wire.jsonl` (`usage.record` events)
+- Legacy Kimi Code CLI: `~/.kimi/sessions/**/wire.jsonl` (`StatusUpdate.token_usage` events)
+
+```bash
+# Confirm either session directory exists
+find ~/.kimi-code/sessions -type f -name 'wire.jsonl' | head
+find ~/.kimi/sessions -type f -name 'wire.jsonl' | head
+
+# Import historical and incremental usage
+node bin/tokentrail.js sync
+```
+
+Project attribution comes from the session index or the persisted `config.update.cwd` value. Cached input is stored separately, and repeated syncs are deduplicated by wire file and line number. Custom locations set through `KIMI_CODE_HOME` or `KIMI_SHARE_DIR` are detected automatically when the same environment is used for TokenTrail sync.
 
 ### Method 3: install the Codex Skill (optional)
 

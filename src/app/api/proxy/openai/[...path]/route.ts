@@ -15,10 +15,10 @@
  */
 
 import { NextRequest } from 'next/server'
-import { insertUsageRecord } from '@/lib/db'
+import { insertUsageRecord, getConfig } from '@/lib/db'
 import { calculateCost } from '@/lib/pricing'
 import { ensureInit } from '@/lib/init'
-import { getConfig } from '@/lib/db'
+import { appendSseTail, extractUsageFromSSE } from '@/lib/proxy-usage'
 
 const DEFAULT_UPSTREAM = 'https://api.openai.com/v1'
 
@@ -47,33 +47,6 @@ function extractSource(request: NextRequest): string {
 
 function extractProject(request: NextRequest): string | undefined {
   return request.headers.get('x-tokentrail-project') || undefined
-}
-
-/**
- * Extract usage from a final SSE chunk (streaming mode).
- * The chunk may contain multiple "data: {...}" lines;
- * we look for the one with a "usage" field.
- */
-function extractUsageFromSSEChunk(chunk: string): {
-  model: string
-  id?: string
-  usage: {
-    prompt_tokens: number
-    completion_tokens: number
-    prompt_tokens_details?: { cached_tokens?: number }
-    completion_tokens_details?: { reasoning_tokens?: number }
-  }
-} | null {
-  for (const line of chunk.split('\n')) {
-    if (!line.startsWith('data: ') || line.includes('[DONE]')) continue
-    try {
-      const obj = JSON.parse(line.slice(6))
-      if (obj.usage && obj.model) {
-        return { model: obj.model, id: obj.id, usage: obj.usage }
-      }
-    } catch {}
-  }
-  return null
 }
 
 function recordUsage(opts: {
@@ -110,14 +83,14 @@ function recordUsage(opts: {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: { path: string[] } | Promise<{ path: string[] }> }
 ) {
   return handleRequest(request, await params)
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: { path: string[] } | Promise<{ path: string[] }> }
 ) {
   return handleRequest(request, await params)
 }
@@ -211,32 +184,40 @@ async function handleRequest(
 
   const stream = new ReadableStream({
     async pull(controller) {
-      const { done, value } = await reader.read()
-      if (done) {
-        // Stream ended — try to extract usage from accumulated data
-        try {
-          ensureInit()
-          const usageData = extractUsageFromSSEChunk(allData)
-          if (usageData) {
-            const u = usageData.usage
-            recordUsage({
-              source: source_final,
-              project: project_final,
-              model: usageData.model,
-              input_tokens: u.prompt_tokens || 0,
-              output_tokens: u.completion_tokens || 0,
-              cached_input_tokens: u.prompt_tokens_details?.cached_tokens || 0,
-              reasoning_tokens: u.completion_tokens_details?.reasoning_tokens || 0,
-              request_id: usageData.id,
-            })
-          }
-        } catch {}
-        controller.close()
-        return
+      try {
+        const { done, value } = await reader.read()
+        if (done) {
+          // Stream ended — try to extract usage from accumulated tail
+          try {
+            ensureInit()
+            const usageData = extractUsageFromSSE(allData)
+            if (usageData) {
+              const u = usageData.usage
+              recordUsage({
+                source: source_final,
+                project: project_final,
+                model: usageData.model,
+                input_tokens: u.prompt_tokens || 0,
+                output_tokens: u.completion_tokens || 0,
+                cached_input_tokens: u.prompt_tokens_details?.cached_tokens || 0,
+                reasoning_tokens: u.completion_tokens_details?.reasoning_tokens || 0,
+                request_id: usageData.id,
+              })
+            }
+          } catch {}
+          controller.close()
+          return
+        }
+        // Keep only a tail buffer for usage extraction (avoids unbounded memory)
+        allData = appendSseTail(allData, decoder.decode(value, { stream: true }))
+        controller.enqueue(value)
+      } catch (err) {
+        try { reader.cancel() } catch {}
+        controller.error(err)
       }
-      // Accumulate data for usage extraction (not forwarded to client)
-      allData += decoder.decode(value, { stream: true })
-      controller.enqueue(value)
+    },
+    cancel() {
+      return reader.cancel()
     },
   })
 

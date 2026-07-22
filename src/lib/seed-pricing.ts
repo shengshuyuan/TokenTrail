@@ -1,4 +1,4 @@
-import { getDb, upsertModelPricing } from './db'
+import { getDb } from './db'
 
 /**
  * Seed the model_pricing table with reference prices.
@@ -10,7 +10,8 @@ import { getDb, upsertModelPricing } from './db'
  * - DeepSeek: official pricing from API docs
  * - Others (unknown actual price): 50% of input (conservative estimate)
  *
- * This is idempotent - uses UPSERT.
+ * Idempotent and non-destructive: only inserts models that are missing.
+ * Never overwrites prices customized via POST /api/pricing or Excel import.
  */
 export function seedPricing() {
   const models = [
@@ -81,12 +82,52 @@ export function seedPricing() {
   ]
 
   const db = getDb()
+  // Insert missing models. On conflict, only upgrade zero-price placeholders
+  // (auto-registered by ensureModelPricing) — never clobber Excel/API custom prices.
+  const upsertSeed = db.prepare(`
+    INSERT INTO model_pricing (
+      model_id, display_name, provider,
+      input_price_per_1m, cached_input_price_per_1m,
+      output_price_per_1m, reasoning_price_per_1m
+    ) VALUES (
+      @model_id, @display_name, @provider,
+      @input_price_per_1m, @cached_input_price_per_1m,
+      @output_price_per_1m, @reasoning_price_per_1m
+    )
+    ON CONFLICT(model_id) DO UPDATE SET
+      display_name = excluded.display_name,
+      provider = excluded.provider,
+      input_price_per_1m = excluded.input_price_per_1m,
+      cached_input_price_per_1m = excluded.cached_input_price_per_1m,
+      output_price_per_1m = excluded.output_price_per_1m,
+      reasoning_price_per_1m = excluded.reasoning_price_per_1m,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE model_pricing.input_price_per_1m = 0
+      AND model_pricing.cached_input_price_per_1m = 0
+      AND model_pricing.output_price_per_1m = 0
+      AND model_pricing.reasoning_price_per_1m = 0
+      AND (
+        excluded.input_price_per_1m != 0
+        OR excluded.cached_input_price_per_1m != 0
+        OR excluded.output_price_per_1m != 0
+        OR excluded.reasoning_price_per_1m != 0
+      )
+  `)
+
+  let changed = 0
   const insertMany = db.transaction(() => {
     for (const model of models) {
-      upsertModelPricing(model)
+      const result = upsertSeed.run({
+        ...model,
+        cached_input_price_per_1m: model.cached_input_price_per_1m ?? 0,
+        reasoning_price_per_1m: model.reasoning_price_per_1m ?? 0,
+      })
+      if (result.changes > 0) changed++
     }
   })
 
   insertMany()
-  console.log(`[TokenTrail] Seeded ${models.length} model pricing entries`)
+  if (changed > 0) {
+    console.log(`[TokenTrail] Seeded/updated ${changed} model pricing entries (${models.length} in catalog)`)
+  }
 }

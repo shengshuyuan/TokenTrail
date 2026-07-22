@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { syncAll } from '@/lib/sync'
+import { syncAll, SyncInProgressError } from '@/lib/sync'
 import { getConfig, setConfig } from '@/lib/db'
 import { ensureInit } from '@/lib/init'
 import fs from 'fs'
@@ -68,6 +68,12 @@ export async function POST(request: NextRequest) {
       vibecafe_configured: vibecafeConfigured,
     })
   } catch (error) {
+    if (error instanceof SyncInProgressError) {
+      return NextResponse.json(
+        { success: false, error: error.message, busy: true },
+        { status: 409 }
+      )
+    }
     const errorMessage = error instanceof Error ? error.message : 'Sync failed'
     writeSyncStatus(false, {}, false, errorMessage)
     console.error('[TokenTrail] Sync error:', error)

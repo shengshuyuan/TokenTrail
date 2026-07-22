@@ -29,30 +29,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 验证 token 数值：必须是非负有限数
-    const input_tokens = body.input_tokens ?? 0
-    const output_tokens = body.output_tokens ?? 0
-    if (!Number.isFinite(input_tokens) || input_tokens < 0) {
+    // 验证 token 数值：必须是非负有限数，入库前向下取整为整数
+    const rawInput = Number(body.input_tokens ?? 0)
+    const rawOutput = Number(body.output_tokens ?? 0)
+    if (!Number.isFinite(rawInput) || rawInput < 0) {
       return NextResponse.json(
         { success: false, error: 'Invalid field: input_tokens (must be a non-negative number)' },
         { status: 400 }
       )
     }
-    if (!Number.isFinite(output_tokens) || output_tokens < 0) {
+    if (!Number.isFinite(rawOutput) || rawOutput < 0) {
       return NextResponse.json(
         { success: false, error: 'Invalid field: output_tokens (must be a non-negative number)' },
         { status: 400 }
       )
     }
 
-    const cachedInput = body.cached_input_tokens ?? 0
-    const reasoning = body.reasoning_tokens ?? 0
-    if (!Number.isFinite(cachedInput) || cachedInput < 0 || !Number.isFinite(reasoning) || reasoning < 0) {
+    const rawCached = Number(body.cached_input_tokens ?? 0)
+    const rawReasoning = Number(body.reasoning_tokens ?? 0)
+    if (!Number.isFinite(rawCached) || rawCached < 0 || !Number.isFinite(rawReasoning) || rawReasoning < 0) {
       return NextResponse.json(
         { success: false, error: 'Invalid field: cached_input_tokens / reasoning_tokens (must be non-negative)' },
         { status: 400 }
       )
     }
+
+    const input_tokens = Math.floor(rawInput)
+    const output_tokens = Math.floor(rawOutput)
+    const cachedInput = Math.floor(rawCached)
+    const reasoning = Math.floor(rawReasoning)
 
     // 拒绝全部 token 为 0 的记录，避免污染统计数据
     if (input_tokens === 0 && output_tokens === 0 && cachedInput === 0 && reasoning === 0) {
@@ -62,10 +67,29 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const timestamp = body.timestamp ?? Date.now()
-    if (!Number.isFinite(timestamp) || timestamp < 0) {
+    const rawTimestamp = body.timestamp ?? Date.now()
+    let timestamp: number
+    if (typeof rawTimestamp === 'number' && Number.isFinite(rawTimestamp) && rawTimestamp >= 0) {
+      // Accept unix seconds from agents that report wall-clock seconds
+      timestamp = rawTimestamp < 1e12 ? Math.round(rawTimestamp * 1000) : Math.trunc(rawTimestamp)
+    } else if (typeof rawTimestamp === 'string') {
+      const trimmed = rawTimestamp.trim()
+      if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+        const numeric = Number(trimmed)
+        timestamp = numeric < 1e12 ? Math.round(numeric * 1000) : Math.trunc(numeric)
+      } else {
+        const parsed = Date.parse(trimmed)
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          return NextResponse.json(
+            { success: false, error: 'Invalid field: timestamp (must be a non-negative number or ISO string)' },
+            { status: 400 }
+          )
+        }
+        timestamp = parsed
+      }
+    } else {
       return NextResponse.json(
-        { success: false, error: 'Invalid field: timestamp (must be a non-negative number)' },
+        { success: false, error: 'Invalid field: timestamp (must be a non-negative number or ISO string)' },
         { status: 400 }
       )
     }
@@ -115,7 +139,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      cost_usd: costUsd,
+      cost_usd: result.duplicate ? 0 : costUsd,
       id: result.id,
       duplicate: result.duplicate,
     })

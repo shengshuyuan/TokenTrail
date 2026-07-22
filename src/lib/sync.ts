@@ -25,6 +25,29 @@ const { findTraeHistoryFiles, parseTraeHistoryFile } = require('./traework.js') 
     timestamp?: number
   }>
 }
+const { createKimiHomeContext, parseKimiWireLine, resolveKimiWireContext } = require('./kimi.js') as {
+  createKimiHomeContext: (homeDir: string) => {
+    homeDir: string
+    sessionsDir: string
+    sessionIndex: Map<string, string>
+    legacyWorkDirs: Map<string, string>
+  }
+  parseKimiWireLine: (line: string) => {
+    project?: string
+    records: Array<{
+      model: string
+      input_tokens: number
+      cached_input_tokens: number
+      output_tokens: number
+      reasoning_tokens: number
+      timestamp: number
+    }>
+  }
+  resolveKimiWireContext: (
+    context: { homeDir: string; sessionsDir: string; sessionIndex: Map<string, string>; legacyWorkDirs: Map<string, string> },
+    filePath: string
+  ) => { relativePath: string; project: string }
+}
 
 // ─── 类型 ──────────────────────────────────────────────────────
 
@@ -82,7 +105,7 @@ function syncClaudeCode(): SyncResult {
             const entry = JSON.parse(line)
             if (entry.type !== 'assistant' || !entry.message?.usage) continue
             const usage = entry.message.usage
-            if (!usage.input_tokens && !usage.output_tokens && !usage.cache_read_input_tokens) continue
+            if (!usage.input_tokens && !usage.output_tokens && !usage.cache_read_input_tokens && !usage.cache_creation_input_tokens) continue
 
             const model = entry.message.model || 'unknown'
             const rawTs = entry.timestamp ? new Date(entry.timestamp).getTime() : Date.now()
@@ -92,7 +115,8 @@ function syncClaudeCode(): SyncResult {
             // 自动注册未知模型
             ensureModelPricing(model)
 
-            const input_tokens = usage.input_tokens || 0
+            // Anthropic usage: input_tokens 不含 cache；cache 写入按输入价计，cache 读取单独计
+            const input_tokens = (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0)
             const cached_input_tokens = usage.cache_read_input_tokens || 0
             const output_tokens = usage.output_tokens || 0
             const reasoning_tokens = 0
@@ -225,6 +249,103 @@ function syncCodex(): SyncResult {
       }
     } catch {
       result.errors++
+    }
+  }
+
+  result.duration_ms = Date.now() - start
+  return result
+}
+
+// ─── Kimi Code 同步 ───────────────────────────────────────────
+
+const USER_HOME = process.env.HOME || '/root'
+const KIMI_HOME_DIRS = Array.from(new Set([
+  process.env.KIMI_CODE_HOME || path.join(USER_HOME, '.kimi-code'),
+  process.env.KIMI_SHARE_DIR || path.join(USER_HOME, '.kimi'),
+]))
+
+/**
+ * 扫描新版 ~/.kimi-code 与旧版 ~/.kimi 中的会话 wire.jsonl。
+ * 新版使用 usage.record，旧版使用 StatusUpdate.token_usage。
+ */
+function syncKimiCode(): SyncResult {
+  const start = Date.now()
+  const result: SyncResult = {
+    source: 'kimi-code',
+    scanned: 0,
+    inserted: 0,
+    duplicates: 0,
+    errors: 0,
+    duration_ms: 0,
+  }
+
+  for (const homeDir of KIMI_HOME_DIRS) {
+    const context = createKimiHomeContext(homeDir)
+    if (!fs.existsSync(context.sessionsDir)) continue
+
+    const files = findAllJsonl(context.sessionsDir).filter(
+      f => path.basename(f) === 'wire.jsonl'
+    )
+
+    for (const filePath of files) {
+      const wireContext = resolveKimiWireContext(context, filePath)
+      let currentProject = normalizeProjectName(wireContext.project)
+
+      let lines: string[]
+      try {
+        lines = fs.readFileSync(filePath, 'utf-8').split('\n')
+      } catch {
+        result.errors++
+        continue
+      }
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+        if (!line.trim()) continue
+        // 快速跳过无关事件；config.update 用于精确的项目归因。
+        if (!line.includes('usage.record') && !line.includes('StatusUpdate') && !line.includes('config.update')) continue
+        try {
+          const parsed = parseKimiWireLine(line)
+          if (parsed.project) currentProject = normalizeProjectName(parsed.project)
+
+          for (const usage of parsed.records) {
+            const model = usage.model
+            ensureModelPricing(model)
+            const cost_usd = calculateCost({
+              model,
+              input_tokens: usage.input_tokens,
+              cached_input_tokens: usage.cached_input_tokens,
+              output_tokens: usage.output_tokens,
+              reasoning_tokens: usage.reasoning_tokens,
+            })
+
+            const requestId = `kimi:${filePath}:L${i + 1}`
+            const insertResult = insertUsageRecord({
+              source: 'kimi-code',
+              provider: 'moonshot',
+              project: currentProject,
+              model,
+              input_tokens: usage.input_tokens,
+              cached_input_tokens: usage.cached_input_tokens,
+              output_tokens: usage.output_tokens,
+              reasoning_tokens: usage.reasoning_tokens,
+              cost_usd,
+              request_id: requestId,
+              timestamp: usage.timestamp,
+            })
+
+            result.scanned++
+            if (insertResult.duplicate) {
+              correctProjectByRequestId(requestId, currentProject)
+              result.duplicates++
+            } else {
+              result.inserted++
+            }
+          }
+        } catch {
+          result.errors++
+        }
+      }
     }
   }
 
@@ -888,10 +1009,17 @@ async function syncVibeCafe(): Promise<SyncResult> {
 
 let _syncing = false
 
+export class SyncInProgressError extends Error {
+  constructor() {
+    super('Sync already in progress')
+    this.name = 'SyncInProgressError'
+  }
+}
+
 export async function syncAll(): Promise<SyncResult[]> {
   // 防止并发 sync（双击 SYNC 按钮或多 tab 同时触发）
   if (_syncing) {
-    return [{ source: 'sync', scanned: 0, inserted: 0, duplicates: 0, errors: 0, duration_ms: 0 }]
+    throw new SyncInProgressError()
   }
   _syncing = true
   try {
@@ -912,6 +1040,13 @@ export async function syncAll(): Promise<SyncResult[]> {
       results.push(syncCodex())
     } catch {
       results.push({ source: 'codex', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
+    }
+
+    // Kimi Code — 扫描 ~/.kimi-code/sessions/**/wire.jsonl 的 usage.record
+    try {
+      results.push(syncKimiCode())
+    } catch {
+      results.push({ source: 'kimi-code', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
     }
 
     // 本地 JSONL 用量文件（OpenClaw、Hermes、Grok 可选 usage 目录）
@@ -952,11 +1087,24 @@ export async function syncAll(): Promise<SyncResult[]> {
 
 // ─── 辅助函数 ─────────────────────────────────────────────────
 
-/** Normalize timestamp to numeric ms. Handles number, ISO string, and missing. */
+/**
+ * Normalize timestamp to numeric milliseconds.
+ * Handles ms numbers, unix-seconds numbers, numeric strings, ISO strings, and missing.
+ */
 function normalizeTimestamp(raw: unknown): number {
-  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    // Values below 1e12 are almost certainly unix seconds (year ~2001 in ms).
+    return Math.abs(raw) < 1e12 ? Math.round(raw * 1000) : Math.round(raw)
+  }
   if (typeof raw === 'string') {
-    const t = new Date(raw).getTime()
+    const trimmed = raw.trim()
+    if (!trimmed) return Date.now()
+    if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+      return normalizeTimestamp(Number(trimmed))
+    }
+    // Legacy Hermes rows may carry microsecond fractional seconds.
+    const normalizedIso = trimmed.replace(/(\.\d{3})\d+/, '$1')
+    const t = new Date(normalizedIso).getTime()
     if (Number.isFinite(t)) return t
   }
   return Date.now()
@@ -1067,5 +1215,6 @@ function detectProvider(model: string): string {
   if (m.includes('llama')) return 'meta'
   if (m.includes('mimo')) return 'mimo'
   if (m.includes('grok')) return 'xai'
+  if (m.includes('kimi') || m.includes('moonshot')) return 'moonshot'
   return 'unknown'
 }

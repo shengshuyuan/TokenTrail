@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
+import crypto from 'crypto'
 
 const DB_PATH = process.env.TOKENTRAIL_DB_PATH || path.join(process.cwd(), 'data', 'token-trail.db')
 const DB_DIR = path.dirname(DB_PATH)
@@ -84,7 +85,8 @@ function ensureUsageRecordsProviderColumn(db: Database.Database) {
 
 function normalizeStoredTimestamp(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.trunc(value)
+    // Unix seconds → ms (same rule as sync.normalizeTimestamp)
+    return Math.abs(value) < 1e12 ? Math.round(value * 1000) : Math.trunc(value)
   }
 
   if (typeof value !== 'string') return null
@@ -94,7 +96,8 @@ function normalizeStoredTimestamp(value: unknown): number | null {
 
   if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
     const numeric = Number(trimmed)
-    return Number.isFinite(numeric) ? Math.trunc(numeric) : null
+    if (!Number.isFinite(numeric)) return null
+    return Math.abs(numeric) < 1e12 ? Math.round(numeric * 1000) : Math.trunc(numeric)
   }
 
   // Legacy Hermes records can contain microseconds, while JavaScript dates
@@ -179,6 +182,24 @@ function normalizeSource(source: string): string {
 
 // ─── 插入用量记录 ─────────────────────────────────────────────
 
+/**
+ * 当来源未提供 request_id 时，基于记录字段合成确定性的 fallback ID。
+ * 用于 OpenClaw / Hermes 等 JSONL 不带 request_id 的来源：
+ * 同一事件（同 source/timestamp/model/token 数）每次导入/上报都得到同一个 key，
+ * 从而能命中 request_id 唯一索引做去重，避免每次 sync 都把历史记录再插一遍。
+ */
+export function synthesizeRequestId(source: string, rec: {
+  timestamp: number
+  model: string
+  input_tokens: number
+  cached_input_tokens: number
+  output_tokens: number
+  reasoning_tokens: number
+}): string {
+  const raw = [source, rec.timestamp, rec.model, rec.input_tokens, rec.cached_input_tokens, rec.output_tokens, rec.reasoning_tokens].join('|')
+  return `${source}:${crypto.createHash('sha1').update(raw).digest('hex').slice(0, 16)}`
+}
+
 export function insertUsageRecord(record: {
   source: string
   provider?: string
@@ -197,17 +218,33 @@ export function insertUsageRecord(record: {
   const project = normalizeProjectName(record.project)
   const provider = record.provider || null
 
+  // Coerce to non-negative integers so float / string payloads never pollute aggregates
+  const input_tokens = sanitizeTokenCount(record.input_tokens)
+  const cached_input_tokens = sanitizeTokenCount(record.cached_input_tokens)
+  const output_tokens = sanitizeTokenCount(record.output_tokens)
+  const reasoning_tokens = sanitizeTokenCount(record.reasoning_tokens)
+  const timestamp = Number.isFinite(record.timestamp) ? Math.trunc(record.timestamp) : Date.now()
+
   // 拒绝全部 token 为 0 的记录，避免污染统计数据
-  if (record.input_tokens === 0 && record.output_tokens === 0 && record.cached_input_tokens === 0 && record.reasoning_tokens === 0) {
+  if (input_tokens === 0 && output_tokens === 0 && cached_input_tokens === 0 && reasoning_tokens === 0) {
     return { success: false, cost_usd: 0, id: 0, duplicate: false, project_backfilled: false }
   }
 
-  if (record.request_id) {
-    const existing = db.prepare('SELECT id, project FROM usage_records WHERE request_id = ?').get(record.request_id) as { id: number; project: string } | undefined
-    if (existing) {
-      const projectBackfilled = backfillProjectForExistingRecord(db, existing.id, existing.project, project)
-      return { success: true, cost_usd: 0, id: existing.id, duplicate: true, project_backfilled: projectBackfilled }
-    }
+  // 确定 request_id：显式提供则用之；否则按记录字段合成确定性 fallback，保证幂等去重
+  const explicitReqId = record.request_id && String(record.request_id).trim()
+  const requestId = explicitReqId || synthesizeRequestId(source, {
+    timestamp,
+    model: record.model,
+    input_tokens,
+    cached_input_tokens,
+    output_tokens,
+    reasoning_tokens,
+  })
+
+  const existing = db.prepare('SELECT id, project FROM usage_records WHERE request_id = ?').get(requestId) as { id: number; project: string } | undefined
+  if (existing) {
+    const projectBackfilled = backfillProjectForExistingRecord(db, existing.id, existing.project, project)
+    return { success: true, cost_usd: 0, id: existing.id, duplicate: true, project_backfilled: projectBackfilled }
   }
 
   const stmt = db.prepare(`
@@ -216,10 +253,22 @@ export function insertUsageRecord(record: {
     ON CONFLICT(request_id) WHERE request_id IS NOT NULL DO NOTHING
   `)
 
-  const result = stmt.run({ ...record, source, provider, project })
+  const result = stmt.run({
+    source,
+    provider,
+    project,
+    model: record.model,
+    input_tokens,
+    cached_input_tokens,
+    output_tokens,
+    reasoning_tokens,
+    cost_usd: record.cost_usd,
+    request_id: requestId,
+    timestamp,
+  })
 
   // changes === 0 表示因唯一约束冲突被忽略（即重复）
-  if (result.changes === 0 && record.request_id) {
+  if (result.changes === 0) {
     return { success: true, cost_usd: 0, id: 0, duplicate: true, project_backfilled: false }
   }
 
@@ -229,6 +278,13 @@ export function insertUsageRecord(record: {
 function normalizeProjectName(project?: string): string {
   const value = project?.trim()
   return value || 'unknown'
+}
+
+/** Coerce token counts to non-negative integers (floor floats, treat NaN as 0). */
+function sanitizeTokenCount(value: unknown): number {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return 0
+  return Math.floor(n)
 }
 
 function backfillProjectForExistingRecord(db: Database.Database, id: number, existingProject: string, nextProject: string): boolean {
