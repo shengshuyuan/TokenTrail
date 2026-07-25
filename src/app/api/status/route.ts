@@ -5,6 +5,11 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
+// Always evaluate against the live DB; never prerender at build time
+// (the build runs without TOKENTRAIL_DB_PATH, which would otherwise bake
+// in an empty-DB response).
+export const dynamic = 'force-dynamic'
+
 const CONFIG_DIR = path.join(os.homedir(), '.tokentrail')
 const SYNC_STATUS_FILE = path.join(CONFIG_DIR, 'sync-status.json')
 const BACKUP_DIR = path.join(CONFIG_DIR, 'backups')

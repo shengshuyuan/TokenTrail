@@ -3,6 +3,11 @@ import { getDb } from '@/lib/db'
 import { ensureInit } from '@/lib/init'
 import { APP_VERSION } from '@/lib/version'
 
+// Always evaluate against the live DB; never prerender at build time
+// (the build runs without TOKENTRAIL_DB_PATH, which would otherwise bake
+// in an empty-DB response).
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/health
  *
