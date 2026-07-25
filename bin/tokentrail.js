@@ -541,7 +541,11 @@ async function cmdInstallService(argv = []) {
     runWithNodePath(nodePath, 'npm', ['run', 'build'], RUNTIME_ROOT)
   }
 
-  const serverCommand = `cd ${shellQuote(RUNTIME_ROOT)} && TOKENTRAIL_DB_PATH=${shellQuote(DB_PATH)} ${shellQuote(nodePath)} scripts/serve.js --dev`
+  // When a production build was produced (--build), serve it in production mode;
+  // otherwise fall back to Next.js dev mode (no build required).
+  const serveEnvPrefix = flags.build ? 'NODE_ENV=production TOKENTRAIL_DB_PATH=' : 'TOKENTRAIL_DB_PATH='
+  const serveDevFlag = flags.build ? '' : ' --dev'
+  const serverCommand = `cd ${shellQuote(RUNTIME_ROOT)} && ${serveEnvPrefix}${shellQuote(DB_PATH)} ${shellQuote(nodePath)} scripts/serve.js${serveDevFlag}`
   const syncCommand = `cd ${shellQuote(RUNTIME_ROOT)} && ${shellQuote(nodePath)} bin/tokentrail.js sync`
 
   writeLaunchAgent(SERVER_PLIST, SERVER_LABEL, serverCommand, { keepAlive: true, workingDirectory: RUNTIME_ROOT })

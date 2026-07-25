@@ -121,12 +121,58 @@ const translations: Record<string, Record<Lang, string>> = {
   'share.dailyAvg': { zh: '日均', en: 'Daily Avg' },
   'share.requests': { zh: '请求', en: 'Requests' },
   'share.trend': { zh: '趋势', en: 'Trend' },
+
+  // Sync results detail table
+  'syncDetail.title': { zh: '同步结果详情', en: 'SYNC RESULTS' },
+  'syncDetail.source': { zh: '来源', en: 'Source' },
+  'syncDetail.scanned': { zh: '扫描', en: 'Scanned' },
+  'syncDetail.inserted': { zh: '新增', en: 'New' },
+  'syncDetail.duplicates': { zh: '重复', en: 'Dup' },
+  'syncDetail.errors': { zh: '错误', en: 'Err' },
+
+  // Settings panel
+  'settings.title': { zh: '设置', en: 'SETTINGS' },
+  'settings.subtitle': { zh: '控制项目名称隐私和原始记录列表展示。', en: 'Toggle project-name privacy and the raw-records list.' },
+  'settings.showProjects': { zh: '显示项目名称', en: 'Show project names' },
+  'settings.showRaw': { zh: '显示原始明细', en: 'Show raw records' },
+
+  // Project distribution panel
+  'project.title': { zh: '项目分布', en: 'PROJECT MIX' },
+  'project.tokens': { zh: 'Token', en: 'Token' },
+  'project.cost': { zh: '费用', en: 'Cost' },
+  'project.other': { zh: '其他', en: 'Other' },
+  'project.noData': { zh: '暂无项目数据', en: 'NO PROJECT DATA' },
+
+  // Raw records panel
+  'raw.title': { zh: '原始记录', en: 'RAW RECORDS' },
+  'raw.summary': { zh: '{n} 条记录 / 每页 {size}', en: '{n} records / {size} per page' },
+  'raw.col.time': { zh: '时间', en: 'Time' },
+  'raw.col.source': { zh: '来源', en: 'Source' },
+  'raw.col.project': { zh: '项目', en: 'Project' },
+  'raw.col.model': { zh: '模型', en: 'Model' },
+  'raw.col.input': { zh: '输入', en: 'Input' },
+  'raw.col.cached': { zh: '缓存', en: 'Cached' },
+  'raw.col.output': { zh: '输出', en: 'Output' },
+  'raw.col.reasoning': { zh: '推理', en: 'Reasoning' },
+  'raw.col.cost': { zh: '费用', en: 'Cost' },
+  'raw.page': { zh: '第 {n} / {total} 页', en: 'PAGE {n} / {total}' },
+  'raw.prev': { zh: '上一页', en: 'PREV' },
+  'raw.next': { zh: '下一页', en: 'NEXT' },
+  'raw.hidden': { zh: '已隐藏', en: 'hidden' },
+  'raw.unknown': { zh: '未知', en: 'unknown' },
+
+  // Accessibility labels for control clusters
+  'a11y.lang': { zh: '语言', en: 'Language' },
+  'a11y.currency': { zh: '货币', en: 'Currency' },
 } as const
 
 export type TranslationKey = keyof typeof translations
 
 export function t(key: TranslationKey, lang: Lang, params?: Record<string, string | number>): string {
-  let text = translations[key][lang]
+  const entry = translations[key]
+  // Defensive fallback: a missing or malformed entry should never crash the render.
+  if (!entry) return key
+  let text = entry[lang] ?? entry.en ?? key
   if (params) {
     for (const [k, v] of Object.entries(params)) {
       text = text.replace(`{${k}}`, String(v))

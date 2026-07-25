@@ -40,6 +40,8 @@ try {
   if (candidate === 'dark') candidate = 'neon-mecha';
   if (candidate === 'light') candidate = 'editorial-paper';
   document.documentElement.dataset.theme = themes.indexOf(candidate) >= 0 ? candidate : '${DEFAULT_THEME}';
+  var savedLang = localStorage.getItem('tokentrail-lang');
+  document.documentElement.lang = (savedLang === 'en') ? 'en' : 'zh-CN';
 } catch (_) {
   document.documentElement.dataset.theme = '${DEFAULT_THEME}';
 }

@@ -344,7 +344,7 @@ function DashboardInner() {
             {/* Controls */}
             <div className="header-actions -mx-1 flex w-[calc(100%+0.5rem)] items-center gap-2 overflow-x-auto px-1 pb-1 lg:mx-0 lg:w-auto lg:justify-end lg:overflow-visible lg:px-0 lg:pb-0">
               {/* Language Toggle */}
-              <div className="control-cluster">
+              <div className="control-cluster" role="group" aria-label={t('a11y.lang')}>
                 <button
                   type="button"
                   onClick={() => setLang('zh')}
@@ -373,7 +373,7 @@ function DashboardInner() {
 
               <ThemePicker theme={theme} onThemeChange={setTheme} />
 
-              <div className="control-cluster">
+              <div className="control-cluster" role="group" aria-label={t('a11y.currency')}>
                 <button
                   type="button"
                   onClick={() => setCurrency('USD')}
@@ -468,26 +468,26 @@ function DashboardInner() {
             <MotionItem>
               <div className="eva-panel p-4">
                 <div className="section-title mb-2">
-                  {lang === 'zh' ? '同步结果详情' : 'SYNC RESULTS'}
+                  {t('syncDetail.title')}
                 </div>
                 <div className="overflow-x-auto rounded border border-eva-border bg-eva-bg/20">
                   <table className="w-full text-left text-[13px] font-mono">
                 <thead>
                   <tr className="border-b border-eva-border text-eva-text-dim">
-                    <th className="px-3 py-2 font-normal">{lang === 'zh' ? '来源' : 'Source'}</th>
-                    <th className="px-3 py-2 font-normal text-right">{lang === 'zh' ? '扫描' : 'Scanned'}</th>
-                    <th className="px-3 py-2 font-normal text-right">{lang === 'zh' ? '新增' : 'New'}</th>
-                    <th className="px-3 py-2 font-normal text-right">{lang === 'zh' ? '重复' : 'Dup'}</th>
-                    <th className="px-3 py-2 font-normal text-right">{lang === 'zh' ? '错误' : 'Err'}</th>
+                    <th className="px-3 py-2 font-normal">{t('syncDetail.source')}</th>
+                    <th className="px-3 py-2 font-normal text-right">{t('syncDetail.scanned')}</th>
+                    <th className="px-3 py-2 font-normal text-right">{t('syncDetail.inserted')}</th>
+                    <th className="px-3 py-2 font-normal text-right">{t('syncDetail.duplicates')}</th>
+                    <th className="px-3 py-2 font-normal text-right">{t('syncDetail.errors')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {syncDetails.map(r => (
                     <tr key={r.source} className="border-b border-eva-border/50 last:border-0">
                       <td className="px-3 py-2 text-eva-text">{SOURCE_DISPLAY_NAMES[r.source] || r.source}</td>
-                      <td className="px-3 py-2 text-right text-eva-text-dim">{r.scanned.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right text-eva-text-dim">{formatNumber(r.scanned)}</td>
                       <td className="px-3 py-2 text-right text-status-success">{r.inserted > 0 ? `+${r.inserted}` : '0'}</td>
-                      <td className="px-3 py-2 text-right text-eva-text-dim">{r.duplicates.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right text-eva-text-dim">{formatNumber(r.duplicates)}</td>
                       <td className={`px-3 py-2 text-right ${r.errors > 0 ? 'text-status-warning' : 'text-eva-text-dim'}`}>
                         {r.errors > 0 ? r.errors : '0'}
                       </td>
@@ -506,19 +506,19 @@ function DashboardInner() {
             <section className="eva-panel p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <div className="section-title mb-1">SETTINGS</div>
+                  <div className="section-title mb-1">{t('settings.title')}</div>
                   <p className="text-sm leading-6 text-eva-text-dim/90">
-                    控制项目名称隐私和原始记录列表展示。
+                    {t('settings.subtitle')}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <TogglePill
-                    label="显示项目名称"
+                    label={t('settings.showProjects')}
                     enabled={showProjectNames}
                     onClick={() => setShowProjectNames(value => !value)}
                   />
                   <TogglePill
-                    label="显示原始明细"
+                    label={t('settings.showRaw')}
                     enabled={showRawRecords}
                     onClick={() => setShowRawRecords(value => !value)}
                   />
@@ -704,9 +704,13 @@ function TogglePill({
   )
 }
 
-function displayProjectName(project: string | null | undefined, showProjectNames: boolean) {
-  if (!showProjectNames) return 'unknow'
-  return project?.trim() || 'unknow'
+function displayProjectName(
+  project: string | null | undefined,
+  showProjectNames: boolean,
+  labels: { hidden: string; unknown: string },
+) {
+  if (!showProjectNames) return labels.hidden
+  return project?.trim() || labels.unknown
 }
 
 function ProjectStatsPanel({
@@ -723,8 +727,10 @@ function ProjectStatsPanel({
   showProjectNames: boolean
 }) {
   const [metric, setMetric] = useState<'tokens' | 'cost'>('tokens')
+  const { t } = useLang()
   const rows = stats?.by_project || []
-  const distribution = buildProjectDistribution(rows, metric)
+  const distribution = buildProjectDistribution(rows, metric, t('project.other'))
+  const projectLabels = { hidden: t('raw.hidden'), unknown: t('raw.unknown') }
   const totalValue = distribution.reduce((sum, row) => sum + row.value, 0)
   const featured = distribution[0]
   const gradient = buildConicGradient(distribution)
@@ -734,7 +740,7 @@ function ProjectStatsPanel({
       <div className="section-title flex items-center justify-between gap-3">
         <span className="flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full bg-eva-green" />
-          项目分布
+          {t('project.title')}
         </span>
         <div className="flex items-center gap-1 rounded-full border border-eva-border bg-eva-bg/70 p-0.5">
           <button
@@ -744,7 +750,7 @@ function ProjectStatsPanel({
               metric === 'tokens' ? 'bg-eva-text/15 text-eva-text' : 'text-eva-text-dim hover:text-eva-text'
             }`}
           >
-            Token
+            {t('project.tokens')}
           </button>
           <button
             type="button"
@@ -753,27 +759,27 @@ function ProjectStatsPanel({
               metric === 'cost' ? 'bg-eva-text/15 text-eva-text' : 'text-eva-text-dim hover:text-eva-text'
             }`}
           >
-            费用
+            {t('project.cost')}
           </button>
         </div>
       </div>
       {loading && rows.length === 0 ? (
         <div className="py-8 text-center font-mono text-sm text-eva-text-dim">LOADING...</div>
       ) : distribution.length === 0 ? (
-        <div className="py-8 text-center font-mono text-sm text-eva-text-dim">NO PROJECT DATA</div>
+        <div className="py-8 text-center font-mono text-sm text-eva-text-dim">{t('project.noData')}</div>
       ) : (
         <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
           <div className="flex items-center justify-center">
             <div className="relative flex h-40 w-40 items-center justify-center rounded-full shadow-[0_16px_45px_rgba(0,0,0,0.16)]" style={{ background: gradient }}>
               <div className="flex h-28 w-28 flex-col items-center justify-center rounded-full border border-eva-border bg-eva-panel text-center shadow-[inset_0_0_28px_rgba(0,0,0,0.28)]">
-                <div className="text-[13px] font-mono text-eva-text-dim">{metric === 'tokens' ? 'Tokens' : 'Cost'}</div>
+                <div className="text-[13px] font-mono text-eva-text-dim">{metric === 'tokens' ? t('project.tokens') : t('project.cost')}</div>
                 <div className="mt-1 text-lg font-mono font-semibold text-eva-text">
                   {metric === 'tokens'
                     ? formatTokens(featured?.value || 0)
                     : formatCost(featured?.value || 0, currency, exchangeRate)}
                 </div>
                 <div className="mt-1 max-w-[7rem] truncate text-xs font-mono text-eva-text-dim">
-                  {featured ? displayProjectName(featured.project, showProjectNames) : '--'}
+                  {featured ? displayProjectName(featured.project, showProjectNames, projectLabels) : '--'}
                 </div>
               </div>
             </div>
@@ -787,7 +793,7 @@ function ProjectStatsPanel({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
-                      <span className="truncate text-eva-text">{displayProjectName(row.project, showProjectNames)}</span>
+                      <span className="truncate text-eva-text">{displayProjectName(row.project, showProjectNames, projectLabels)}</span>
                     </div>
                     <div className="mt-1 h-1.5 rounded-full bg-eva-bg">
                       <div className="h-full rounded-full" style={{ width: `${Math.max(percentage, 1)}%`, backgroundColor: row.color }} />
@@ -829,7 +835,7 @@ const PROJECT_COLORS = [
   'var(--theme-chart-7)',
 ]
 
-function buildProjectDistribution(rows: ProjectStat[], metric: 'tokens' | 'cost'): ProjectDistributionRow[] {
+function buildProjectDistribution(rows: ProjectStat[], metric: 'tokens' | 'cost', otherLabel: string): ProjectDistributionRow[] {
   const sorted = [...rows]
     .map(row => ({ ...row, value: metric === 'tokens' ? row.total_tokens : row.cost_usd }))
     .filter(row => row.value > 0)
@@ -841,7 +847,7 @@ function buildProjectDistribution(rows: ProjectStat[], metric: 'tokens' | 'cost'
 
   if (otherRows.length > 0) {
     groupedRows.push({
-      project: '其他',
+      project: otherLabel,
       total_tokens: otherRows.reduce((sum, row) => sum + row.total_tokens, 0),
       cost_usd: otherRows.reduce((sum, row) => sum + row.cost_usd, 0),
       count: otherRows.reduce((sum, row) => sum + row.count, 0),
@@ -887,35 +893,38 @@ function RawRecordsPanel({
   onPrev: () => void
   onNext: () => void
 }) {
+  const { t, lang } = useLang()
   const pageSize = 10
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const canPrev = page > 1
   const canNext = page < totalPages
+  const projectLabels = { hidden: t('raw.hidden'), unknown: t('raw.unknown') }
+  const timeLocale = lang === 'zh' ? 'zh-CN' : 'en-US'
 
   return (
     <section className="eva-panel eva-panel-hover p-5">
       <div className="section-title flex items-center justify-between gap-3">
         <span className="flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full bg-eva-purple" />
-          RAW RECORDS
+          {t('raw.title')}
         </span>
         <span className="text-[13px] text-eva-text-dim/80">
-          {formatNumber(total)} records / 10 per page
+          {t('raw.summary', { n: formatNumber(total), size: pageSize })}
         </span>
       </div>
       <div className="table-shell">
         <table className="data-table min-w-[960px] w-full text-left font-mono text-[13px]">
           <thead className="text-eva-text-dim">
             <tr className="border-b border-eva-border">
-              <th className="py-2 pr-4 font-normal">Time</th>
-              <th className="py-2 pr-4 font-normal">Source</th>
-              <th className="py-2 pr-4 font-normal">Project</th>
-              <th className="py-2 pr-4 font-normal">Model</th>
-              <th className="py-2 pr-4 font-normal">Input</th>
-              <th className="py-2 pr-4 font-normal">Cached</th>
-              <th className="py-2 pr-4 font-normal">Output</th>
-              <th className="py-2 pr-4 font-normal">Reasoning</th>
-              <th className="py-2 font-normal">Cost</th>
+              <th className="py-2 pr-4 font-normal">{t('raw.col.time')}</th>
+              <th className="py-2 pr-4 font-normal">{t('raw.col.source')}</th>
+              <th className="py-2 pr-4 font-normal">{t('raw.col.project')}</th>
+              <th className="py-2 pr-4 font-normal">{t('raw.col.model')}</th>
+              <th className="py-2 pr-4 font-normal">{t('raw.col.input')}</th>
+              <th className="py-2 pr-4 font-normal">{t('raw.col.cached')}</th>
+              <th className="py-2 pr-4 font-normal">{t('raw.col.output')}</th>
+              <th className="py-2 pr-4 font-normal">{t('raw.col.reasoning')}</th>
+              <th className="py-2 font-normal">{t('raw.col.cost')}</th>
             </tr>
           </thead>
           <tbody>
@@ -930,11 +939,11 @@ function RawRecordsPanel({
             ) : records.map(record => (
               <tr key={record.id} className="border-b border-eva-border/60 last:border-0">
                 <td className="whitespace-nowrap py-2 pr-4 text-eva-text-dim">
-                  {new Date(record.timestamp).toLocaleString('zh-CN', { hour12: false })}
+                  {new Date(record.timestamp).toLocaleString(timeLocale, { hour12: false })}
                 </td>
                 <td className="py-2 pr-4 text-eva-text">{SOURCE_DISPLAY_NAMES[record.source] || record.source}</td>
                 <td className="max-w-[14rem] truncate py-2 pr-4 text-eva-text">
-                  {displayProjectName(record.project, showProjectNames)}
+                  {displayProjectName(record.project, showProjectNames, projectLabels)}
                 </td>
                 <td className="max-w-[16rem] truncate py-2 pr-4 text-eva-text-dim">{record.model}</td>
                 <td className="py-2 pr-4 text-eva-green">{formatNumber(record.input_tokens)}</td>
@@ -949,7 +958,7 @@ function RawRecordsPanel({
       </div>
       <div className="mt-4 flex items-center justify-between gap-3">
         <span className="text-sm font-mono text-eva-text-dim">
-          PAGE {page} / {totalPages}
+          {t('raw.page', { n: page, total: totalPages })}
         </span>
         <div className="flex gap-2">
           <button
@@ -958,7 +967,7 @@ function RawRecordsPanel({
             disabled={!canPrev}
             className="rounded border border-eva-border bg-eva-bg/60 px-3 py-1.5 text-sm font-mono text-eva-text-dim disabled:opacity-40 enabled:hover:border-eva-green/30 enabled:hover:text-eva-green"
           >
-            PREV
+            {t('raw.prev')}
           </button>
           <button
             type="button"
@@ -966,7 +975,7 @@ function RawRecordsPanel({
             disabled={!canNext}
             className="rounded border border-eva-border bg-eva-bg/60 px-3 py-1.5 text-sm font-mono text-eva-text-dim disabled:opacity-40 enabled:hover:border-eva-green/30 enabled:hover:text-eva-green"
           >
-            NEXT
+            {t('raw.next')}
           </button>
         </div>
       </div>

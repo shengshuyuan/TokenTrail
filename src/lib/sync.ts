@@ -95,7 +95,6 @@ function syncClaudeCode(): SyncResult {
 
     for (const file of files) {
       const filePath = path.join(fullProjectPath, file)
-      const sessionId = file.replace('.jsonl', '')
 
       try {
         const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean)
@@ -110,7 +109,10 @@ function syncClaudeCode(): SyncResult {
             const model = entry.message.model || 'unknown'
             const rawTs = entry.timestamp ? new Date(entry.timestamp).getTime() : Date.now()
             const timestamp = Number.isFinite(rawTs) ? rawTs : Date.now()
-            const msgId = entry.message.id || `${sessionId}-${entry.uuid || ''}`
+            // Prefer stable ids; when neither is present fall back to empty so
+            // db.ts synthesizes a content-hash id (avoiding a shared "<session>-"
+            // id that would dedupe away every turn in the session).
+            const msgId = entry.message.id || entry.uuid || ''
 
             // 自动注册未知模型
             ensureModelPricing(model)
@@ -132,7 +134,7 @@ function syncClaudeCode(): SyncResult {
               output_tokens,
               reasoning_tokens,
               cost_usd,
-              request_id: msgId,
+              request_id: msgId || undefined,
               timestamp,
             })
 

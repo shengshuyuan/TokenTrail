@@ -128,6 +128,7 @@ async function handleRequest(
       method: request.method,
       headers,
       body,
+      redirect: 'manual',
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
@@ -169,7 +170,9 @@ async function handleRequest(
           request_id: json.id || undefined,
         })
       }
-    } catch {}
+    } catch (usageErr) {
+      console.error('[TokenTrail] proxy usage record failed:', usageErr)
+    }
 
     return new Response(responseBody, {
       status: upstreamRes.status,
@@ -204,7 +207,9 @@ async function handleRequest(
                 request_id: usageData.id,
               })
             }
-          } catch {}
+          } catch (usageErr) {
+            console.error('[TokenTrail] proxy usage record failed:', usageErr)
+          }
           controller.close()
           return
         }

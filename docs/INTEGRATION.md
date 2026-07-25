@@ -2,7 +2,7 @@
 
 TokenTrail is a local AI token usage dashboard. All data stays on your machine — no cloud dependency.
 
-Current version: **V0.2.0**
+Current version: **V0.2.1**
 
 ## How data flows into TokenTrail
 

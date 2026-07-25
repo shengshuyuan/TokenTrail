@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { t, type Lang, type TranslationKey } from '@/lib/i18n'
 
 interface LanguageContextValue {
@@ -24,14 +24,23 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, [])
 
-  const setLang = (newLang: Lang) => {
+  // Keep <html lang> in sync with the active language so screen readers,
+  // search engines, and translation prompts see the correct language.
+  useEffect(() => {
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en'
+  }, [lang])
+
+  const setLang = useCallback((newLang: Lang) => {
     setLangState(newLang)
     try {
       localStorage.setItem('tokentrail-lang', newLang)
     } catch {}
-  }
+  }, [])
 
-  const translate = (key: TranslationKey, params?: Record<string, string | number>) => t(key, lang, params)
+  const translate = useCallback(
+    (key: TranslationKey, params?: Record<string, string | number>) => t(key, lang, params),
+    [lang]
+  )
 
   return (
     <LanguageContext.Provider value={{ lang, setLang, t: translate }}>

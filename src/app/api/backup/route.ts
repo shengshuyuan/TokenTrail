@@ -33,20 +33,21 @@ export async function POST() {
       .filter(f => f.endsWith('.db'))
       .sort()
     const MAX_BACKUPS = 20
-    let remainingBackups = allBackups.length
     if (allBackups.length > MAX_BACKUPS) {
       const toDelete = allBackups.slice(0, allBackups.length - MAX_BACKUPS)
       for (const file of toDelete) {
         try {
           fs.unlinkSync(path.join(BACKUP_DIR, file))
-          remainingBackups--
         } catch {}
       }
     }
 
+    // Recompute after cleanup so the count is accurate even if any delete failed.
+    const remainingBackups = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.db')).length
+
     return NextResponse.json({
       success: true,
-      path: backupPath,
+      filename: path.basename(backupPath),
       size_bytes: sizeBytes,
       remaining_backups: remainingBackups,
     })
