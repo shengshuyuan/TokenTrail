@@ -329,22 +329,21 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
     : (lang === 'zh' ? '全部模型' : 'All models')
   const scopeLabel = `${rangeLabel} · ${sourcesLabel} · ${modelsLabel}`
 
-  const texts = {
-    totalTokens: lang === 'zh' ? '总 Token' : 'Total Tokens',
-    requests: t('share.requests'),
-    dailyAvg: t('share.dailyAvg'),
-    trend: t('share.trend'),
-    topSources: t('share.topSources'),
-    topModels: t('share.topModels'),
-  }
-
   const generateSVG = useCallback(() => {
     if (!stats) return ''
+    const texts = {
+      totalTokens: lang === 'zh' ? '总 Token' : 'Total Tokens',
+      requests: t('share.requests'),
+      dailyAvg: t('share.dailyAvg'),
+      trend: t('share.trend'),
+      topSources: t('share.topSources'),
+      topModels: t('share.topModels'),
+    }
     const generatedLabel = lang === 'zh'
       ? new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
       : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     return buildShareSVG(stats, theme, lang, currency, generatedLabel, scopeLabel, texts)
-  }, [stats, theme, lang, currency, scopeLabel])
+  }, [stats, theme, lang, currency, scopeLabel, t])
 
   const handleDownload = useCallback(async () => {
     if (!hasData) return

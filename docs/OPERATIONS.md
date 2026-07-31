@@ -12,7 +12,7 @@ npm run install-service
 
 - 准备本机运行副本 `~/.tokentrail/runtime/TokenTrail`
 - 安装 macOS LaunchAgent 常驻服务
-- 安装每 30 分钟运行一次的自动同步任务
+- 安装每 4 小时运行一次的自动同步任务
 
 常驻服务从本机运行副本启动，避免云同步桌面对 Next.js 模块读取造成干扰；数据库仍使用项目里的 `data/token-trail.db`。需要单独验证生产构建时，可以运行：
 
@@ -60,6 +60,12 @@ npm run verify-local
 | 服务配置 | `~/Library/LaunchAgents/com.shengshuyuan.tokentrail.server.plist` |
 | 同步配置 | `~/Library/LaunchAgents/com.shengshuyuan.tokentrail.sync.plist` |
 | 数据库 | `data/token-trail.db` |
+
+## 本地访问边界
+
+TokenTrail 默认监听 `127.0.0.1`，修改价格、同步、备份、上报和代理调用等写操作会拒绝跨站浏览器请求。CLI、curl 和本机 SDK 不携带 `Origin` 时仍可正常调用。
+
+只有在受信任网络中明确需要远程访问时，才设置 `TOKENTRAIL_ALLOW_REMOTE=1`。该开关会放宽本地来源检查，但不会增加账户认证；对外暴露前应另行配置访问控制。
 
 ## 故障恢复
 
@@ -180,7 +186,7 @@ npm run doctor
 
 ## 自动同步
 
-LaunchAgent 每 30 分钟执行一次 `npm run sync`。
+LaunchAgent 每 4 小时执行一次 `npm run sync`。
 
 同步结果记录在 `~/.tokentrail/sync-status.json`，Dashboard 的"系统状态"面板会展示：
 - 最近同步时间

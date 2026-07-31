@@ -1,15 +1,19 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { ensureInit } from '@/lib/init'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { rejectUnsafeLocalMutation } from '@/lib/local-request'
 
 const CONFIG_DIR = path.join(os.homedir(), '.tokentrail')
 const BACKUP_DIR = path.join(CONFIG_DIR, 'backups')
 const DB_PATH = process.env.TOKENTRAIL_DB_PATH || path.join(process.cwd(), 'data', 'token-trail.db')
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const rejected = rejectUnsafeLocalMutation(request)
+  if (rejected) return rejected
+
   try {
     if (!fs.existsSync(DB_PATH)) {
       return NextResponse.json(

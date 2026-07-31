@@ -5,6 +5,7 @@ import { ensureInit } from '@/lib/init'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import { rejectUnsafeLocalMutation } from '@/lib/local-request'
 
 const SYNC_STATUS_FILE = path.join(os.homedir(), '.tokentrail', 'sync-status.json')
 
@@ -25,6 +26,9 @@ function writeSyncStatus(success: boolean, sources: Record<string, { scanned: nu
 }
 
 export async function POST(request: NextRequest) {
+  const rejected = rejectUnsafeLocalMutation(request)
+  if (rejected) return rejected
+
   try {
     ensureInit()
 

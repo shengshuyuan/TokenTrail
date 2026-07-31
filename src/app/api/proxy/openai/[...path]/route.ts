@@ -19,6 +19,7 @@ import { insertUsageRecord, getConfig } from '@/lib/db'
 import { calculateCost } from '@/lib/pricing'
 import { ensureInit } from '@/lib/init'
 import { appendSseTail, extractUsageFromSSE } from '@/lib/proxy-usage'
+import { rejectUnsafeLocalMutation } from '@/lib/local-request'
 
 const DEFAULT_UPSTREAM = 'https://api.openai.com/v1'
 
@@ -99,6 +100,11 @@ async function handleRequest(
   request: NextRequest,
   { path }: { path: string[] }
 ) {
+  if (request.method !== 'GET') {
+    const rejected = rejectUnsafeLocalMutation(request)
+    if (rejected) return rejected
+  }
+
   const upstream = getUpstreamUrl()
   const targetPath = path.join('/')
   const targetUrl = `${upstream}/${targetPath}${request.nextUrl.search}`

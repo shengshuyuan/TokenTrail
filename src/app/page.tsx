@@ -314,6 +314,8 @@ function DashboardInner() {
           <div className="flex min-h-16 flex-col gap-3 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
               <div className="relative h-10 w-10 shrink-0">
+                {/* A 40px local icon does not benefit from the image optimizer. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/logo-app.png"
                   alt="TokenTrail logo"
@@ -546,7 +548,9 @@ function DashboardInner() {
                 <p className="text-eva-green/70 mb-1">{t('empty.testHint')}</p>
                 <p className="text-eva-text break-all">curl -X POST http://localhost:3820/api/report \</p>
                 <p className="text-eva-text break-all pl-4">-H &apos;Content-Type: application/json&apos; \</p>
-                <p className="text-eva-text break-all pl-4">-d &apos;&#123;"source":"claude-code","model":"claude-sonnet-4-20250514","input_tokens":50000,"output_tokens":5000&#125;&apos;</p>
+                <p className="text-eva-text break-all pl-4">
+                  {'-d \'{"source":"claude-code","model":"claude-sonnet-4-20250514","input_tokens":50000,"output_tokens":5000}\''}
+                </p>
               </div>
               <p className="text-eva-text-dim/50 mt-2">{t('empty.docHint')}</p>
             </div>
@@ -656,7 +660,7 @@ function DashboardInner() {
         {/* Footer */}
         <footer className="text-center py-4 border-t border-eva-border">
           <p className="text-sm font-mono text-eva-text-dim">
-            TOKENTRAIL // {t('footer.desc')} //{' '}
+            TOKENTRAIL {'//'} {t('footer.desc')} {'//'}{' '}
             <span className="text-eva-green">
               {t('footer.theme', { name: activeTheme.name[lang] })}
             </span>

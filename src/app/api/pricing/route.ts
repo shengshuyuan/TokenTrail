@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAllPricing, upsertModelPricing } from '@/lib/db'
 import { ensureInit } from '@/lib/init'
+import { rejectUnsafeLocalMutation } from '@/lib/local-request'
 
 /** 校验可选价格字段：非负有限数，缺省为 0 */
 function validateOptionalPrice(val: unknown): number {
@@ -25,6 +26,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const rejected = rejectUnsafeLocalMutation(request)
+  if (rejected) return rejected
+
   try {
     ensureInit()
 

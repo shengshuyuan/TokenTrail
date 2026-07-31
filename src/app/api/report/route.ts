@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { insertUsageRecord } from '@/lib/db'
 import { calculateCost } from '@/lib/pricing'
 import { ensureInit } from '@/lib/init'
+import { rejectUnsafeLocalMutation } from '@/lib/local-request'
 
 export async function POST(request: NextRequest) {
+  const rejected = rejectUnsafeLocalMutation(request)
+  if (rejected) return rejected
+
   try {
     ensureInit()
 

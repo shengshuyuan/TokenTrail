@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb, getAggregatedStats } from '@/lib/db'
 import { ensureInit } from '@/lib/init'
+import { InvalidQueryParameterError, parseBoundedInteger, parseFilterList } from '@/lib/api-params'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,8 +10,7 @@ export async function GET(request: NextRequest) {
     ensureInit()
 
     const searchParams = request.nextUrl.searchParams
-    const rawDays = parseInt(searchParams.get('days') || '7')
-    const days = Math.min(365, Math.max(1, Number.isNaN(rawDays) ? 7 : rawDays))
+    const days = parseBoundedInteger(searchParams.get('days'), 7, 1, 365)
     const sourceParam = searchParams.get('source')
     const modelParam = searchParams.get('model')
 
@@ -20,8 +20,8 @@ export async function GET(request: NextRequest) {
     const stats = getAggregatedStats({
       startDate,
       endDate: now,
-      sources: sourceParam ? sourceParam.split(',').filter(Boolean) : undefined,
-      models: modelParam ? modelParam.split(',').filter(Boolean) : undefined,
+      sources: parseFilterList(sourceParam, 'source'),
+      models: parseFilterList(modelParam, 'model'),
     })
 
     // 返回可用的筛选选项（与当前时间范围一致，避免显示无数据的选项）
@@ -42,6 +42,12 @@ export async function GET(request: NextRequest) {
       available_models: availableModels.map(m => ({ id: m.model, name: m.display_name })),
     })
   } catch (error) {
+    if (error instanceof InvalidQueryParameterError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 400 }
+      )
+    }
     console.error('[TokenTrail] Error getting stats:', error)
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
