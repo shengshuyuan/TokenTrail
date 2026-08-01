@@ -2,7 +2,7 @@
 
 ## Source of truth
 - Status: Active
-- Last refreshed: 2026-07-09
+- Last refreshed: 2026-08-01
 - Primary product surfaces: local AI usage dashboard, filters, system status, charts, project distribution, raw records, sharing and integration controls.
 - Evidence reviewed: `src/app/page.tsx`, `src/app/globals.css`, `src/app/layout.tsx`, `src/components/dashboard/StatsCards.tsx`, `src/components/dashboard/FilterBar.tsx`, `src/components/dashboard/SystemStatus.tsx`, `src/components/Motion.tsx`, `src/lib/themes.ts`, `tailwind.config.ts`, `docs/PRD.md`, `README.zh-CN.md`.
 
@@ -36,12 +36,13 @@
 - Typography: body uses theme fonts; numeric data uses tabular numeric font; labels are compact but legible.
 - Spacing/layout rhythm: compact dashboard rhythm with clear section separation and stable control sizes.
 - Shape/radius/elevation: panels use theme radius/chamfer; small stat cards keep solid rounded borders for clean rendering.
-- Motion: reveal, hover, and refresh motion should feel polished and short; honor reduced-motion preference.
+- Atmosphere: a theme-tuned aurora glow behind the header, a fixed film-grain overlay, and a 2px animated energy rail on the top edge set the tone; all are token-driven (`--theme-aurora-opacity`, `--theme-noise-opacity`, `--theme-energy-opacity`).
+- Motion: reveal (translate + slight scale), hover, and refresh motion should feel polished and short; stat values glide across data deltas via rAF count-up; status dots breathe softly; theme switches cross-fade colors for ~420ms; honor reduced-motion preference.
 - Imagery/iconography: app logo is the primary brand asset; dashboard icons should remain subtle utility markers.
 
 ## Components
 - Existing components to reuse: `MotionGroup`, `MotionItem`, `StatsCards`, `FilterBar`, `SystemStatus`, `ThemePicker`, chart panels, project/raw record panels.
-- New/changed components: visual-only class refinements for panels, controls, tables, stat cards, and pagination buttons.
+- New/changed components: visual-only class refinements for panels, controls, tables, stat cards, and pagination buttons; unified `.chart-tooltip` glass tooltips; `.pulse-dot` breathing status dots; `.pressable` press feedback; right-aligned color-tiered numeric table columns (`.data-table .num`); `AnimatedValue` count-up in stat cards.
 - Variants and states: active, hover, focus-visible, disabled, loading, refreshing, success, warning, empty.
 - Token/component ownership: theme tokens live in `src/app/globals.css` and `src/lib/themes.ts`; Tailwind aliases live in `tailwind.config.ts`.
 

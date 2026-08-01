@@ -16,7 +16,8 @@ export function formatTokens(tokens: number): string {
   if (tokens >= 1_000) {
     return (tokens / 1_000).toFixed(2) + 'K'
   }
-  return tokens.toString()
+  // Round so rAF count-up intermediates never leak long floats for small counts.
+  return Math.round(tokens).toString()
 }
 
 /**

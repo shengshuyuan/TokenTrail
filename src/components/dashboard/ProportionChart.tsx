@@ -48,9 +48,9 @@ function CustomTooltip({ active, payload, totalTokens }: CustomTooltipProps) {
   const pct = totalTokens > 0 ? ((entry.value / totalTokens) * 100).toFixed(1) : '0.0'
 
   return (
-    <div className="pointer-events-none relative z-50 rounded-lg border border-eva-border bg-eva-panel p-3 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
+    <div className="chart-tooltip pointer-events-none relative z-50">
       <div className="flex items-center gap-2 mb-1.5">
-        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
+        <span className="chart-tooltip-dot w-2.5 h-2.5" style={{ backgroundColor: entry.color, color: entry.color }} />
         <span className="text-sm font-mono font-semibold" style={{ color: entry.color }}>
           {entry.name}
         </span>

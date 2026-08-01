@@ -61,6 +61,9 @@
     --theme-grid-opacity: 0.28;
     --theme-scan-opacity: 0.035;
     --theme-panel-texture-opacity: 0.03;
+    --theme-noise-opacity: 0.032;
+    --theme-aurora-opacity: 1;
+    --theme-energy-opacity: 0.5;
     --theme-body-letter-spacing: 0.015em;
     --theme-font-body: "Oxanium", "Noto Sans SC", system-ui, sans-serif;
     --theme-font-display: "Oxanium", "Noto Sans SC", sans-serif;
@@ -172,6 +175,9 @@
   --theme-grid-opacity: 0.22;
   --theme-scan-opacity: 0.012;
   --theme-panel-texture-opacity: 0.04;
+  --theme-noise-opacity: 0.04;
+  --theme-aurora-opacity: 0.8;
+  --theme-energy-opacity: 0.42;
     --theme-body-letter-spacing: 0.01em;
   --theme-font-body: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
     --theme-font-display: "ZCOOL XiaoWei", "Noto Serif SC", "STKaiti", serif;
@@ -247,6 +253,9 @@
     --theme-grid-opacity: 0;
     --theme-scan-opacity: 0;
     --theme-panel-texture-opacity: 0;
+    --theme-noise-opacity: 0.05;
+    --theme-aurora-opacity: 0.35;
+    --theme-energy-opacity: 0.32;
     --theme-body-letter-spacing: 0.005em;
     --theme-font-body: "Noto Serif SC", "Songti SC", Georgia, serif;
     --theme-font-display: "Cormorant Garamond", "Noto Serif SC", Georgia, serif;
@@ -322,6 +331,9 @@
     --theme-grid-opacity: 0.12;
     --theme-scan-opacity: 0;
     --theme-panel-texture-opacity: 0;
+    --theme-noise-opacity: 0.022;
+    --theme-aurora-opacity: 0.55;
+    --theme-energy-opacity: 0.4;
     --theme-font-body: "Manrope", "Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif;
     --theme-font-display: "Manrope", "Noto Sans SC", -apple-system, sans-serif;
     --theme-font-numeric: "Manrope", "Noto Sans SC", sans-serif;
@@ -452,9 +464,14 @@
     inset: 0;
     z-index: -1;
     pointer-events: none;
+    opacity: var(--theme-aurora-opacity);
     background:
+      radial-gradient(64% 340px at 50% -90px, rgba(var(--theme-primary-rgb), 0.14), transparent 72%),
+      radial-gradient(44% 300px at 82% -60px, rgba(var(--theme-secondary-rgb), 0.12), transparent 72%),
+      radial-gradient(38% 280px at 16% -40px, rgba(var(--theme-tertiary-rgb), 0.07), transparent 70%),
       radial-gradient(circle at 12% 18%, rgba(var(--theme-primary-rgb), 0.055), transparent 30%),
       radial-gradient(circle at 86% 10%, rgba(var(--theme-secondary-rgb), 0.05), transparent 28%);
+    animation: aurora-drift 22s ease-in-out infinite;
   }
 
   .eva-panel {
@@ -508,8 +525,9 @@
 
   .eva-panel-hover:hover {
     border-color: rgba(var(--theme-primary-rgb), 0.38);
+    border-top-color: rgba(var(--theme-primary-rgb), 0.6);
     box-shadow:
-      inset 0 1px 0 var(--theme-inset-highlight),
+      inset 0 1px 0 color-mix(in srgb, var(--theme-inset-highlight) 70%, rgba(var(--theme-primary-rgb), 0.3)),
       0 0 20px rgba(var(--theme-primary-rgb), 0.07),
       var(--motion-glow),
       var(--theme-hover-shadow);
@@ -534,9 +552,14 @@
     left: 18px;
     width: 56px;
     height: 2px;
-    opacity: 0.82;
+    opacity: 0.9;
     border-radius: 0 0 999px 999px;
-    box-shadow: 0 0 18px rgba(var(--theme-primary-rgb), 0.18);
+    box-shadow: 0 0 18px rgba(var(--theme-primary-rgb), 0.22);
+    transition: width var(--motion-duration) var(--motion-easing);
+  }
+
+  .eva-panel-stat:hover .stat-accent-rail {
+    width: 84px;
   }
 
   .text-terminal {
@@ -796,13 +819,13 @@
   .motion-group[data-motion-ready='true'] > .motion-item {
     opacity: 0;
     filter: saturate(0.82) blur(1.5px);
-    transform: translateY(var(--motion-distance));
+    transform: translateY(var(--motion-distance)) scale(0.992);
   }
 
   .motion-group[data-motion-visible='true'] > .motion-item {
     opacity: 1;
     filter: saturate(1) blur(0);
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 
   .data-refresh {
@@ -935,6 +958,185 @@
   .filter-scroll-row::-webkit-scrollbar {
     display: none;
   }
+
+  /* ─── Atmosphere: film grain ─────────────────────────── */
+  .grain-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 49;
+    pointer-events: none;
+    opacity: var(--theme-noise-opacity);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.86' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
+    mix-blend-mode: overlay;
+  }
+
+  /* ─── Brand energy rail on the very top edge ─────────── */
+  .header-energy-rail {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    z-index: 60;
+    pointer-events: none;
+    opacity: var(--theme-energy-opacity);
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--theme-primary) 28%,
+      var(--theme-secondary) 55%,
+      var(--theme-tertiary) 78%,
+      transparent 100%
+    );
+    background-size: 220% 100%;
+    animation: energy-flow 14s linear infinite;
+  }
+
+  /* ─── Theme switch color migration ─────────────────────
+     Scope to the page surface + common chrome — not every SVG path
+     inside Recharts, which would thrash during theme switches. */
+  html.theme-animating,
+  html.theme-animating body,
+  html.theme-animating .eva-panel,
+  html.theme-animating .eva-panel::before,
+  html.theme-animating .eva-panel::after,
+  html.theme-animating .dashboard-shell,
+  html.theme-animating .dashboard-shell::before,
+  html.theme-animating .dashboard-shell::after,
+  html.theme-animating .scan-overlay,
+  html.theme-animating .scan-overlay-pattern,
+  html.theme-animating .grain-overlay,
+  html.theme-animating .header-energy-rail,
+  html.theme-animating .app-footer,
+  html.theme-animating .app-footer::before,
+  html.theme-animating .theme-picker-trigger,
+  html.theme-animating .theme-picker-popover,
+  html.theme-animating .section-title,
+  html.theme-animating .stat-value,
+  html.theme-animating .stat-icon,
+  html.theme-animating .stat-accent-rail,
+  html.theme-animating .chart-tooltip,
+  html.theme-animating button,
+  html.theme-animating input,
+  html.theme-animating select,
+  html.theme-animating table,
+  html.theme-animating th,
+  html.theme-animating td,
+  html.theme-animating a,
+  html.theme-animating span,
+  html.theme-animating p,
+  html.theme-animating div,
+  html.theme-animating label,
+  html.theme-animating h1,
+  html.theme-animating h2,
+  html.theme-animating h3 {
+    transition-property: background-color, border-color, color, box-shadow, outline-color, fill, stroke !important;
+    transition-duration: 420ms !important;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+
+  html.theme-animating svg,
+  html.theme-animating svg * {
+    transition: none !important;
+  }
+
+  /* ─── Unified glass chart tooltip ────────────────────── */
+  .chart-tooltip {
+    border: 1px solid rgba(var(--theme-border-strong-rgb), 0.55);
+    background:
+      linear-gradient(180deg, var(--theme-inset-highlight), transparent 60%),
+      rgba(var(--theme-panel-rgb), 0.88);
+    backdrop-filter: blur(16px) saturate(1.15);
+    -webkit-backdrop-filter: blur(16px) saturate(1.15);
+    border-radius: calc(var(--theme-radius) - 2px);
+    box-shadow:
+      inset 0 1px 0 var(--theme-inset-highlight),
+      0 14px 40px rgba(0, 0, 0, 0.3);
+    padding: 10px 12px;
+  }
+
+  .chart-tooltip-dot {
+    display: inline-block;
+    border-radius: 999px;
+    box-shadow: 0 0 8px currentColor;
+  }
+
+  /* ─── Stat card hover sheen sweep ────────────────────── */
+  .stat-sheen {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  .stat-sheen::before {
+    content: '';
+    position: absolute;
+    top: -20%;
+    bottom: -20%;
+    left: -70%;
+    width: 45%;
+    transform: skewX(-18deg);
+    background: linear-gradient(105deg, transparent, rgba(var(--theme-text-rgb), 0.07), transparent);
+    /* Snap back on leave; only animate the forward sweep on hover. */
+    transition: none;
+  }
+
+  .eva-panel-stat:hover .stat-sheen::before {
+    left: 135%;
+    transition: left 0.75s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ─── Tone-colored icon chip glow ────────────────────── */
+  .stat-icon {
+    box-shadow:
+      inset 0 1px 0 var(--theme-control-highlight),
+      0 0 12px color-mix(in srgb, currentColor 22%, transparent);
+  }
+
+  /* ─── Breathing status dots (color comes from text-*) ── */
+  .pulse-dot {
+    animation: dot-breathe 2.8s ease-in-out infinite;
+  }
+
+  /* ─── Press feedback for any .pressable button ───────── */
+  .pressable:active:not(:disabled) {
+    transform: translateY(1px) scale(0.98);
+  }
+
+  .pressable:disabled {
+    cursor: not-allowed;
+  }
+
+  /* ─── Numeric table cells ────────────────────────────── */
+  .data-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ─── Footer gradient hairline ───────────────────────── */
+  .app-footer {
+    position: relative;
+  }
+
+  .app-footer::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: 12%;
+    right: 12%;
+    height: 1px;
+    pointer-events: none;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(var(--theme-primary-rgb), 0.45),
+      rgba(var(--theme-secondary-rgb), 0.45),
+      transparent
+    );
+  }
 }
 
 :root[data-theme='neon-mecha'] .eva-panel {
@@ -1042,6 +1244,21 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes aurora-drift {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, 16px, 0); }
+}
+
+@keyframes energy-flow {
+  0% { background-position: 0% 0; }
+  100% { background-position: -220% 0; }
+}
+
+@keyframes dot-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 42%, transparent); }
+  50% { box-shadow: 0 0 0 6px transparent; }
 }
 
 .animate-fade-in {

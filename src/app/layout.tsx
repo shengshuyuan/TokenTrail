@@ -50,9 +50,11 @@ try {
         />
       </head>
       <body className="min-h-screen bg-eva-bg antialiased">
+        <div className="header-energy-rail" aria-hidden="true" />
         <div className="scan-overlay fixed inset-0 pointer-events-none z-50">
           <div className="scan-overlay-pattern absolute inset-0" />
         </div>
+        <div className="grain-overlay" aria-hidden="true" />
         <Providers>{children}</Providers>
       </body>
     </html>

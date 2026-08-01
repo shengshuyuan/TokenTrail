@@ -146,12 +146,15 @@ export function ComparisonChart({
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: 'var(--theme-panel)',
-                  border: '1px solid var(--theme-border)',
-                  borderRadius: 'var(--theme-control-radius)',
+                  backgroundColor: 'rgba(var(--theme-panel-rgb), 0.88)',
+                  border: '1px solid rgba(var(--theme-border-strong-rgb), 0.55)',
+                  borderRadius: 'calc(var(--theme-radius) - 2px)',
                   fontFamily: 'var(--theme-font-mono)',
                   fontSize: '12px',
                   color: 'var(--theme-text)',
+                  backdropFilter: 'blur(16px) saturate(1.15)',
+                  WebkitBackdropFilter: 'blur(16px) saturate(1.15)',
+                  boxShadow: 'inset 0 1px 0 var(--theme-inset-highlight), 0 14px 40px rgba(0, 0, 0, 0.3)',
                 }}
                 labelStyle={{ color: 'var(--theme-text)' }}
                 itemStyle={{ color: 'var(--theme-chart-1)' }}

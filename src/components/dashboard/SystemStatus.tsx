@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useLang } from '@/lib/LanguageContext'
 
 interface SourceHealth {
@@ -116,7 +116,7 @@ export function SystemStatus() {
       <div className="eva-panel eva-panel-hover p-5">
         <div className="section-title">
           <span className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-status-success" />
+            <span className="h-1.5 w-1.5 rounded-full bg-status-success text-status-success pulse-dot" />
             {lang === 'zh' ? '系统状态' : 'SYSTEM STATUS'}
           </span>
         </div>
@@ -134,13 +134,13 @@ export function SystemStatus() {
     <div className="eva-panel eva-panel-hover p-5">
       <div className="section-title flex items-center justify-between gap-3">
         <span className="flex items-center gap-2">
-          <span className={`h-1.5 w-1.5 rounded-full ${overallOk ? 'bg-status-success/80' : 'bg-status-warning'}`} />
+          <span className={`h-1.5 w-1.5 rounded-full pulse-dot ${overallOk ? 'bg-status-success/80 text-status-success' : 'bg-status-warning text-status-warning'}`} />
           {lang === 'zh' ? '系统状态' : 'SYSTEM STATUS'}
         </span>
         <button
           type="button"
           onClick={fetchStatus}
-          className="rounded-full border border-eva-border/70 bg-eva-bg/30 px-3 py-1.5 text-xs font-mono text-eva-text-dim hover:border-eva-green/20 hover:text-eva-green transition-colors"
+          className="pressable rounded-full border border-eva-border/70 bg-eva-bg/30 px-3 py-1.5 text-xs font-mono text-eva-text-dim hover:border-eva-green/20 hover:text-eva-green transition-[transform,border-color,color] duration-150"
         >
           {lang === 'zh' ? '刷新' : 'REFRESH'}
         </button>
@@ -207,7 +207,7 @@ export function SystemStatus() {
               type="button"
               onClick={handleBackup}
               disabled={backingUp}
-              className={`rounded border px-2.5 py-1 text-xs font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
+              className={`pressable rounded border px-2.5 py-1 text-xs font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
                 backingUp
                   ? 'border-status-warning/50 text-status-warning animate-pulse'
                   : backupResult
@@ -234,14 +234,14 @@ export function SystemStatus() {
             {data.sources.map(src => (
               <div
                 key={src.source}
-                className={`flex items-center justify-between rounded-md border px-3 py-2.5 text-sm font-mono transition-colors ${
+                className={`flex items-center justify-between rounded-md border px-3 py-2.5 text-sm font-mono transition-[transform,border-color,background-color,box-shadow] duration-200 hover:-translate-y-px ${
                   src.stale
-                    ? 'border-status-warning/20 bg-status-warning/5'
-                    : 'border-eva-border/80 bg-eva-bg/20'
+                    ? 'border-status-warning/20 bg-status-warning/5 hover:border-status-warning/40'
+                    : 'border-eva-border/80 bg-eva-bg/20 hover:border-eva-green/25 hover:bg-eva-bg/35'
                 }`}
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${src.stale ? 'bg-status-warning' : 'bg-status-success'}`} />
+                  <span className={`h-2 w-2 shrink-0 rounded-full pulse-dot ${src.stale ? 'bg-status-warning text-status-warning' : 'bg-status-success text-status-success'}`} />
                   <span className="truncate text-eva-text">{sourceDisplayName(src.source)}</span>
                 </div>
                 <div className="flex items-center gap-3 shrink-0 ml-2">
@@ -275,13 +275,23 @@ function StatusCard({
   ok: boolean
   value: string
   detail: string
-  stat: React.ReactNode
+  stat: ReactNode
 }) {
   return (
-    <div className={`rounded-lg border px-4 py-3.5 ${
-      ok ? 'border-eva-border/80 bg-eva-bg/20' : 'border-status-warning/20 bg-status-warning/5'
+    <div className={`rounded-lg border px-4 py-3.5 transition-[transform,border-color,background-color,box-shadow] duration-200 hover:-translate-y-px ${
+      ok
+        ? 'border-eva-border/80 bg-eva-bg/20 hover:border-eva-green/25'
+        : 'border-status-warning/20 bg-status-warning/5 hover:border-status-warning/40'
     }`}>
-      <div className="mb-2 text-[13px] font-semibold uppercase text-eva-text-dim/90">{label}</div>
+      <div className="mb-2 flex items-center justify-between gap-2 text-[13px] font-semibold uppercase text-eva-text-dim/90">
+        <span>{label}</span>
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full pulse-dot ${
+            ok ? 'bg-status-success text-status-success' : 'bg-status-warning text-status-warning'
+          }`}
+          aria-hidden="true"
+        />
+      </div>
       <div className={`text-[15px] font-mono font-medium ${ok ? 'text-status-success' : 'text-status-warning'}`}>
         {value}
       </div>
@@ -312,9 +322,9 @@ function SyncDetails({
       <button
         type="button"
         onClick={() => setExpanded(e => !e)}
-        className="flex items-center gap-1 text-[13px] font-mono text-eva-text-dim hover:text-eva-green transition-colors"
+        className="pressable flex items-center gap-1 text-[13px] font-mono text-eva-text-dim hover:text-eva-green transition-[transform,color] duration-150"
       >
-        <span className={`inline-block transition-transform ${expanded ? 'rotate-90' : ''}`}>▸</span>
+        <span className={`inline-block transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}>▸</span>
         {lang === 'zh' ? '同步详情' : 'SYNC DETAILS'}
       </button>
       {expanded && (

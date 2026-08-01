@@ -213,9 +213,24 @@ function DashboardInner() {
     } catch {}
   }, [timeRange, currency, theme, lang, showProjectNames, showRawRecords, preferencesHydrated])
 
+  const themeReadyRef = useRef(false)
   useEffect(() => {
     if (!preferencesHydrated) return
-    document.documentElement.dataset.theme = theme
+    const root = document.documentElement
+    root.dataset.theme = theme
+
+    // Skip cross-fade on first hydrate — bootstrap script already painted the theme.
+    if (!themeReadyRef.current) {
+      themeReadyRef.current = true
+      return
+    }
+
+    root.classList.add('theme-animating')
+    const timer = setTimeout(() => root.classList.remove('theme-animating'), 480)
+    return () => {
+      clearTimeout(timer)
+      root.classList.remove('theme-animating')
+    }
   }, [theme, preferencesHydrated])
 
   // 挂载后从 localStorage 恢复偏好（避免 hydration 不匹配）
@@ -408,7 +423,7 @@ function DashboardInner() {
                 onClick={handleSync}
                 disabled={syncing}
                 aria-live="polite"
-                className={`min-h-10 shrink-0 rounded-md border px-3 py-1.5 text-xs font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 sm:min-h-[32px] ${
+                className={`pressable min-h-10 shrink-0 rounded-md border px-3 py-1.5 text-xs font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 sm:min-h-[32px] ${
                   syncing
                     ? 'border-status-warning/50 bg-status-warning/10 text-status-warning animate-pulse'
                     : syncResult
@@ -565,7 +580,7 @@ function DashboardInner() {
               <div className="eva-panel eva-panel-hover p-5">
                 <div className="section-title flex items-center justify-between gap-3">
                   <span className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-eva-green" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-eva-green text-eva-green pulse-dot" />
                     {t('trend.title')}
                   </span>
                   <span className="hidden text-[13px] text-eva-text-dim/80 sm:inline">
@@ -586,7 +601,7 @@ function DashboardInner() {
               <div className="eva-panel eva-panel-hover p-5 h-full">
                 <div className="section-title flex items-center justify-between gap-3">
                   <span className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-eva-purple" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-eva-purple text-eva-purple pulse-dot" />
                     {t('comparison.title')}
                   </span>
                   <span className="hidden text-[13px] text-eva-text-dim/80 sm:inline">{t('comparison.topBreakdown')}</span>
@@ -607,7 +622,7 @@ function DashboardInner() {
               <div className="eva-panel eva-panel-hover p-5 h-full overflow-visible">
                 <div className="section-title flex items-center justify-between gap-3">
                   <span className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-eva-orange" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-eva-orange text-eva-orange pulse-dot" />
                     {t('proportion.title')}
                   </span>
                   <span className="hidden text-[13px] text-eva-text-dim/80 sm:inline">{t('proportion.sourceMix')}</span>
@@ -658,7 +673,7 @@ function DashboardInner() {
         )}
 
         {/* Footer */}
-        <footer className="text-center py-4 border-t border-eva-border">
+        <footer className="app-footer text-center py-4 border-t border-eva-border">
           <p className="text-sm font-mono text-eva-text-dim">
             TOKENTRAIL {'//'} {t('footer.desc')} {'//'}{' '}
             <span className="text-eva-green">
@@ -685,7 +700,7 @@ function TogglePill({
       type="button"
       onClick={onClick}
       aria-pressed={enabled}
-      className={`inline-flex min-h-11 items-center gap-2.5 rounded-md border px-3.5 py-2 text-sm font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 sm:min-h-[38px] ${
+      className={`pressable inline-flex min-h-11 items-center gap-2.5 rounded-md border px-3.5 py-2 text-sm font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 sm:min-h-[38px] ${
         enabled
           ? 'border-eva-green/40 bg-eva-green/10 text-eva-green'
           : 'border-eva-border bg-eva-bg/60 text-eva-text-dim hover:border-eva-green/30 hover:text-eva-text'
@@ -743,14 +758,14 @@ function ProjectStatsPanel({
     <div className="eva-panel eva-panel-hover p-5">
       <div className="section-title flex items-center justify-between gap-3">
         <span className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-eva-green" />
+          <span className="h-1.5 w-1.5 rounded-full bg-eva-green text-eva-green pulse-dot" />
           {t('project.title')}
         </span>
         <div className="flex items-center gap-1 rounded-full border border-eva-border bg-eva-bg/70 p-0.5">
           <button
             type="button"
             onClick={() => setMetric('tokens')}
-            className={`rounded-full px-3 py-1 text-[11px] font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
+            className={`pressable rounded-full px-3 py-1 text-[11px] font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
               metric === 'tokens' ? 'bg-eva-text/15 text-eva-text' : 'text-eva-text-dim hover:text-eva-text'
             }`}
           >
@@ -759,7 +774,7 @@ function ProjectStatsPanel({
           <button
             type="button"
             onClick={() => setMetric('cost')}
-            className={`rounded-full px-3 py-1 text-[11px] font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
+            className={`pressable rounded-full px-3 py-1 text-[11px] font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
               metric === 'cost' ? 'bg-eva-text/15 text-eva-text' : 'text-eva-text-dim hover:text-eva-text'
             }`}
           >
@@ -909,7 +924,7 @@ function RawRecordsPanel({
     <section className="eva-panel eva-panel-hover p-5">
       <div className="section-title flex items-center justify-between gap-3">
         <span className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-eva-purple" />
+          <span className="h-1.5 w-1.5 rounded-full bg-eva-purple text-eva-purple pulse-dot" />
           {t('raw.title')}
         </span>
         <span className="text-[13px] text-eva-text-dim/80">
@@ -924,11 +939,11 @@ function RawRecordsPanel({
               <th className="py-2 pr-4 font-normal">{t('raw.col.source')}</th>
               <th className="py-2 pr-4 font-normal">{t('raw.col.project')}</th>
               <th className="py-2 pr-4 font-normal">{t('raw.col.model')}</th>
-              <th className="py-2 pr-4 font-normal">{t('raw.col.input')}</th>
-              <th className="py-2 pr-4 font-normal">{t('raw.col.cached')}</th>
-              <th className="py-2 pr-4 font-normal">{t('raw.col.output')}</th>
-              <th className="py-2 pr-4 font-normal">{t('raw.col.reasoning')}</th>
-              <th className="py-2 font-normal">{t('raw.col.cost')}</th>
+              <th className="num py-2 pr-4 font-normal">{t('raw.col.input')}</th>
+              <th className="num py-2 pr-4 font-normal">{t('raw.col.cached')}</th>
+              <th className="num py-2 pr-4 font-normal">{t('raw.col.output')}</th>
+              <th className="num py-2 pr-4 font-normal">{t('raw.col.reasoning')}</th>
+              <th className="num py-2 pr-1 font-normal">{t('raw.col.cost')}</th>
             </tr>
           </thead>
           <tbody>
@@ -950,11 +965,11 @@ function RawRecordsPanel({
                   {displayProjectName(record.project, showProjectNames, projectLabels)}
                 </td>
                 <td className="max-w-[16rem] truncate py-2 pr-4 text-eva-text-dim">{record.model}</td>
-                <td className="py-2 pr-4 text-eva-green">{formatNumber(record.input_tokens)}</td>
-                <td className="py-2 pr-4 text-eva-green">{formatNumber(record.cached_input_tokens)}</td>
-                <td className="py-2 pr-4 text-eva-green">{formatNumber(record.output_tokens)}</td>
-                <td className="py-2 pr-4 text-eva-green">{formatNumber(record.reasoning_tokens)}</td>
-                <td className="py-2 text-eva-orange">{formatCost(record.cost_usd, currency, exchangeRate)}</td>
+                <td className="num py-2 pr-4 text-eva-green">{formatNumber(record.input_tokens)}</td>
+                <td className="num py-2 pr-4 text-eva-text-dim/75">{formatNumber(record.cached_input_tokens)}</td>
+                <td className="num py-2 pr-4 text-eva-green">{formatNumber(record.output_tokens)}</td>
+                <td className="num py-2 pr-4 text-eva-purple">{formatNumber(record.reasoning_tokens)}</td>
+                <td className="num py-2 pr-1 text-eva-orange">{formatCost(record.cost_usd, currency, exchangeRate)}</td>
               </tr>
             ))}
           </tbody>
@@ -969,7 +984,7 @@ function RawRecordsPanel({
             type="button"
             onClick={onPrev}
             disabled={!canPrev}
-            className="rounded border border-eva-border bg-eva-bg/60 px-3 py-1.5 text-sm font-mono text-eva-text-dim disabled:opacity-40 enabled:hover:border-eva-green/30 enabled:hover:text-eva-green"
+            className="pressable rounded border border-eva-border bg-eva-bg/60 px-3 py-1.5 text-sm font-mono text-eva-text-dim transition-[transform,border-color,color] duration-150 disabled:opacity-40 enabled:hover:border-eva-green/30 enabled:hover:text-eva-green"
           >
             {t('raw.prev')}
           </button>
@@ -977,7 +992,7 @@ function RawRecordsPanel({
             type="button"
             onClick={onNext}
             disabled={!canNext}
-            className="rounded border border-eva-border bg-eva-bg/60 px-3 py-1.5 text-sm font-mono text-eva-text-dim disabled:opacity-40 enabled:hover:border-eva-green/30 enabled:hover:text-eva-green"
+            className="pressable rounded border border-eva-border bg-eva-bg/60 px-3 py-1.5 text-sm font-mono text-eva-text-dim transition-[transform,border-color,color] duration-150 disabled:opacity-40 enabled:hover:border-eva-green/30 enabled:hover:text-eva-green"
           >
             {t('raw.next')}
           </button>

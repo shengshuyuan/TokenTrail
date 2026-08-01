@@ -36,17 +36,17 @@ function CustomTooltip({ active, payload, currency, exchangeRate }: CustomToolti
 
   const data = payload[0].payload
   return (
-    <div className="bg-eva-panel border border-eva-border rounded-lg p-3 shadow-lg">
+    <div className="chart-tooltip">
       <p className="text-xs font-mono text-eva-text-dim mb-2">{data.date}</p>
       <div className="space-y-1">
         <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: 'var(--theme-chart-1)' }} />
+          <span className="chart-tooltip-dot h-2 w-2" style={{ background: 'var(--theme-chart-1)', color: 'var(--theme-chart-1)' }} />
           <span className="text-xs font-mono text-eva-text">
             {formatTokens(data.total_tokens)} tokens
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: 'var(--theme-chart-2)' }} />
+          <span className="chart-tooltip-dot h-2 w-2" style={{ background: 'var(--theme-chart-2)', color: 'var(--theme-chart-2)' }} />
           <span className="text-xs font-mono text-eva-text">
             {formatCost(data.cost_usd, currency, exchangeRate)}
           </span>
