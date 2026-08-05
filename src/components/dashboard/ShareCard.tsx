@@ -444,7 +444,7 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
         ref={triggerRef}
         type="button"
         disabled
-        className="min-h-10 shrink-0 cursor-not-allowed rounded-md border border-eva-border bg-eva-bg/30 px-3 py-1.5 text-xs font-mono text-eva-text-dim/40 sm:min-h-[32px]"
+        className="control-surface min-h-10 shrink-0 cursor-not-allowed px-3 py-1.5 text-xs font-mono opacity-45 sm:min-h-[32px]"
         title={t('share.noData')}
       >
         {t('share.button')}
@@ -460,7 +460,7 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="min-h-10 shrink-0 rounded-md border border-eva-border bg-eva-bg/50 px-3 py-1.5 text-xs font-mono text-eva-text-dim transition-[transform,border-color,background-color,color,box-shadow] duration-200 hover:border-eva-purple/30 hover:text-eva-purple active:scale-95 sm:min-h-[32px]"
+        className="control-surface pressable min-h-10 shrink-0 px-3 py-1.5 text-xs font-mono active:scale-95 sm:min-h-[32px]"
       >
         {t('share.button')}
       </button>

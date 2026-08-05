@@ -423,12 +423,12 @@ function DashboardInner() {
                 onClick={handleSync}
                 disabled={syncing}
                 aria-live="polite"
-                className={`pressable min-h-10 shrink-0 rounded-md border px-3 py-1.5 text-xs font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 sm:min-h-[32px] ${
+                className={`pressable control-surface min-h-10 shrink-0 px-3 py-1.5 text-xs font-mono sm:min-h-[32px] ${
                   syncing
                     ? 'border-status-warning/50 bg-status-warning/10 text-status-warning animate-pulse'
                     : syncResult
                       ? 'border-status-success/50 bg-status-success/10 text-status-success'
-                      : 'border-eva-border bg-eva-bg/50 text-eva-text-dim hover:border-eva-green/30 hover:text-eva-green'
+                      : ''
                 }`}
               >
                 {syncing ? t('sync.syncing') : syncResult || t('sync.button')}
@@ -453,7 +453,7 @@ function DashboardInner() {
 
       {/* Main Content */}
       <main className="relative z-10 mx-auto max-w-[1520px] space-y-4 px-3 py-4 sm:space-y-6 sm:px-6 sm:py-6 lg:px-8">
-        {/* Filter Bar */}
+        {/* 1) Filter — primary controls */}
         <MotionGroup>
           <MotionItem>
             <FilterBar
@@ -472,10 +472,18 @@ function DashboardInner() {
           </MotionItem>
         </MotionGroup>
 
-        {/* System Status */}
+        {/* 2) KPI first — core numbers above system chrome */}
+        <StatsCards
+          stats={stats}
+          loading={loading}
+          currency={currency}
+          exchangeRate={USD_CNY_EXCHANGE_RATE.rate}
+        />
+
+        {/* 3) System status — collapsed strip by default (expand for health grid) */}
         <MotionGroup>
           <MotionItem>
-            <SystemStatus />
+            <SystemStatus defaultCollapsed />
           </MotionItem>
         </MotionGroup>
 
@@ -487,7 +495,7 @@ function DashboardInner() {
                 <div className="section-title mb-2">
                   {t('syncDetail.title')}
                 </div>
-                <div className="overflow-x-auto rounded border border-eva-border bg-eva-bg/20">
+                <div className="overflow-x-auto rounded border border-eva-border bg-eva-panel/60">
                   <table className="w-full text-left text-[13px] font-mono">
                 <thead>
                   <tr className="border-b border-eva-border text-eva-text-dim">
@@ -544,14 +552,6 @@ function DashboardInner() {
             </section>
           </MotionItem>
         </MotionGroup>
-
-        {/* Stats Cards */}
-        <StatsCards
-          stats={stats}
-          loading={loading}
-          currency={currency}
-          exchangeRate={USD_CNY_EXCHANGE_RATE.rate}
-        />
 
         {/* Empty State */}
         {!loading && !hasData && (
@@ -700,15 +700,15 @@ function TogglePill({
       type="button"
       onClick={onClick}
       aria-pressed={enabled}
-      className={`pressable inline-flex min-h-11 items-center gap-2.5 rounded-md border px-3.5 py-2 text-sm font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 sm:min-h-[38px] ${
-        enabled
-          ? 'border-eva-green/40 bg-eva-green/10 text-eva-green'
-          : 'border-eva-border bg-eva-bg/60 text-eva-text-dim hover:border-eva-green/30 hover:text-eva-text'
+      className={`pressable control-surface inline-flex min-h-11 items-center gap-2.5 px-3.5 py-2 text-sm font-mono sm:min-h-[38px] ${
+        enabled ? 'control-surface-active' : ''
       }`}
     >
       <span
         className={`relative h-4 w-7 rounded-full border transition-[border-color,background-color,box-shadow] duration-200 ${
-          enabled ? 'border-eva-green/40 bg-eva-green/20' : 'border-eva-border-light/60 bg-eva-bg'
+          enabled
+            ? 'border-eva-green/40 bg-eva-green/20'
+            : 'border-eva-border bg-[var(--theme-control-bg)]'
         }`}
         aria-hidden="true"
       >

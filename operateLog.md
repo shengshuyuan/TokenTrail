@@ -25,3 +25,8 @@
 - **变更摘要**：代码 Review 修复：1) seed 不再覆盖用户自定义价格，仅插入缺失模型/升级 0 价占位；2) Claude cache_creation 计入 input；3) 时间戳秒→毫秒归一化；4) 代理 SSE 取最后 usage、限制内存、取消时释放 reader；5) report 整数化 token / 重复返回 cost=0；6) 并发 sync 返回 409；7) 删除空垃圾路由目录。
 - **回滚指南**：`git checkout -- src/lib src/app tests operateLog.md`
 
+
+- **[2026-08-05 17:23:01 CST]** 🟡修改
+- **影响范围**：`src/app/globals.css`、`src/app/page.tsx`、`src/components/dashboard/SystemStatus.tsx`、`FilterBar.tsx`、`ShareCard.tsx`、`IntegrationGuide.tsx`、`src/lib/version.ts`、`package.json`
+- **变更摘要**：v0.2.2 样式优化：① 亮主题 control 层 token（修复同步/指南/分享/chips/Toggle 深色翻车）；② 首屏重排 KPI 紧跟筛选，系统状态默认折叠为摘要条；③ 亮主题关闭 grain/scan、减弱 aurora/energy 装饰。
+- **回滚指南**：`git checkout -- src/app/globals.css src/app/page.tsx src/components/dashboard src/lib/version.ts package.json package-lock.json docs/INTEGRATION.md operateLog.md`

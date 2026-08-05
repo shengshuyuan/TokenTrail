@@ -948,7 +948,7 @@ export function IntegrationGuide() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="min-h-10 shrink-0 rounded-md border border-eva-border bg-eva-bg/45 px-3 py-1.5 text-xs font-mono text-eva-text-dim transition-[transform,border-color,background-color,color,box-shadow] duration-200 hover:border-eva-green/20 hover:text-eva-text sm:min-h-[32px]"
+        className="control-surface pressable min-h-10 shrink-0 px-3 py-1.5 text-xs font-mono sm:min-h-[32px]"
       >
         {t('guide.title')}
       </button>

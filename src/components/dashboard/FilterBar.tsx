@@ -52,10 +52,8 @@ export function FilterBar({
                 type="button"
                 onClick={() => onTimeRangeChange(range.value)}
                 aria-pressed={timeRange === range.value}
-                className={`min-h-10 rounded-md border px-3 py-1.5 text-xs font-mono transition-all sm:min-h-[32px] ${
-                  timeRange === range.value
-                    ? 'border-eva-green/50 bg-eva-green/10 text-eva-green shadow-eva-green'
-                    : 'border-eva-border bg-eva-bg/50 text-eva-text-dim hover:border-eva-green/20 hover:text-eva-text'
+                className={`control-surface min-h-10 px-3 py-1.5 text-xs font-mono sm:min-h-[32px] ${
+                  timeRange === range.value ? 'control-surface-active shadow-eva-green' : ''
                 }`}
               >
                 {range.label}

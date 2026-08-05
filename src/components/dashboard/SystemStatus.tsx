@@ -63,12 +63,18 @@ function sourceDisplayName(source: string): string {
   return SOURCE_DISPLAY[source] || source
 }
 
-export function SystemStatus() {
+export function SystemStatus({
+  defaultCollapsed = true,
+}: {
+  /** First-screen density: show a one-line summary until expanded. */
+  defaultCollapsed?: boolean
+} = {}) {
   const { lang } = useLang()
   const [data, setData] = useState<StatusData | null>(null)
   const [loading, setLoading] = useState(true)
   const [backingUp, setBackingUp] = useState(false)
   const [backupResult, setBackupResult] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(!defaultCollapsed)
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -113,14 +119,11 @@ export function SystemStatus() {
 
   if (loading && !data) {
     return (
-      <div className="eva-panel eva-panel-hover p-5">
-        <div className="section-title">
-          <span className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-status-success text-status-success pulse-dot" />
-            {lang === 'zh' ? '系统状态' : 'SYSTEM STATUS'}
-          </span>
+      <div className="eva-panel p-3 sm:px-4 sm:py-3">
+        <div className="flex items-center gap-2 text-sm font-mono text-eva-text-dim">
+          <span className="h-1.5 w-1.5 rounded-full bg-status-success pulse-dot" />
+          {lang === 'zh' ? '系统状态 · 加载中…' : 'SYSTEM STATUS · loading…'}
         </div>
-        <div className="py-6 text-center font-mono text-sm text-eva-text-dim">LOADING...</div>
       </div>
     )
   }
@@ -129,33 +132,62 @@ export function SystemStatus() {
 
   const hasSyncData = data.last_sync !== null
   const overallOk = data.status === 'ok'
+  const staleCount = data.sources.filter(s => s.stale).length
+  const summaryLine = lang === 'zh'
+    ? `${overallOk ? '正常' : '需关注'} · ${data.records.toLocaleString()} 条 · 同步 ${hasSyncData ? formatRelativeTime(data.last_sync!.at, lang) : '从未'}${staleCount > 0 ? ` · ${staleCount} 源过期` : ''}`
+    : `${overallOk ? 'OK' : 'Attention'} · ${data.records.toLocaleString()} rec · sync ${hasSyncData ? formatRelativeTime(data.last_sync!.at, lang) : 'never'}${staleCount > 0 ? ` · ${staleCount} stale` : ''}`
 
   return (
-    <div className="eva-panel eva-panel-hover p-5">
-      <div className="section-title flex items-center justify-between gap-3">
-        <span className="flex items-center gap-2">
-          <span className={`h-1.5 w-1.5 rounded-full pulse-dot ${overallOk ? 'bg-status-success/80 text-status-success' : 'bg-status-warning text-status-warning'}`} />
-          {lang === 'zh' ? '系统状态' : 'SYSTEM STATUS'}
-        </span>
+    <div className={`eva-panel eva-panel-hover ${expanded ? 'p-5' : 'px-4 py-3'}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          aria-expanded={expanded}
+          className="group flex min-w-0 flex-1 items-center gap-2.5 text-left"
+        >
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full pulse-dot ${overallOk ? 'bg-status-success/80 text-status-success' : 'bg-status-warning text-status-warning'}`} />
+          <span className="section-title mb-0 shrink-0">
+            {lang === 'zh' ? '系统状态' : 'SYSTEM STATUS'}
+          </span>
+          {!expanded && (
+            <span className="min-w-0 truncate text-sm font-mono text-eva-text-dim">
+              {summaryLine}
+            </span>
+          )}
+          <span className="ml-auto shrink-0 text-[11px] font-mono text-eva-text-dim/80 group-hover:text-eva-green">
+            {expanded ? (lang === 'zh' ? '收起 ▴' : 'Collapse ▴') : (lang === 'zh' ? '展开 ▾' : 'Expand ▾')}
+          </span>
+        </button>
         <button
           type="button"
           onClick={fetchStatus}
-          className="pressable rounded-full border border-eva-border/70 bg-eva-bg/30 px-3 py-1.5 text-xs font-mono text-eva-text-dim hover:border-eva-green/20 hover:text-eva-green transition-[transform,border-color,color] duration-150"
+          className="control-surface pressable shrink-0 rounded-full px-3 py-1.5 text-xs font-mono"
         >
           {lang === 'zh' ? '刷新' : 'REFRESH'}
         </button>
       </div>
 
+      {!expanded && !overallOk && (
+        <p className="mt-2 text-xs font-mono text-status-warning">
+          {lang === 'zh'
+            ? '⚠ 数据可能过期，展开查看详情或手动同步'
+            : '⚠ Data may be stale — expand for details or sync'}
+        </p>
+      )}
+
+      {expanded && (
+      <>
       {/* Stale data warning banner */}
       {!overallOk && (
-        <div className="mb-4 rounded-md border border-status-warning/25 bg-status-warning/5 px-3 py-2.5 text-sm leading-6 font-mono text-status-warning">
+        <div className="mb-4 mt-3 rounded-md border border-status-warning/25 bg-status-warning/5 px-3 py-2.5 text-sm leading-6 font-mono text-status-warning">
           {lang === 'zh'
             ? '⚠ 数据长时间未更新，建议手动同步或检查自动同步任务'
             : '⚠ Data not updated recently. Try manual sync or check scheduled sync task'}
         </div>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-3">
+      <div className={`grid gap-3 lg:grid-cols-3 ${overallOk ? 'mt-4' : ''}`}>
         {/* Service Status */}
         <StatusCard
           label={lang === 'zh' ? '服务' : 'SERVICE'}
@@ -207,12 +239,12 @@ export function SystemStatus() {
               type="button"
               onClick={handleBackup}
               disabled={backingUp}
-              className={`pressable rounded border px-2.5 py-1 text-xs font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
+              className={`pressable control-surface px-2.5 py-1 text-xs font-mono ${
                 backingUp
                   ? 'border-status-warning/50 text-status-warning animate-pulse'
                   : backupResult
                     ? 'border-status-success/50 text-status-success'
-                    : 'border-eva-border text-eva-text-dim hover:border-eva-green/30 hover:text-eva-green'
+                    : ''
               }`}
             >
               {backingUp
@@ -237,7 +269,7 @@ export function SystemStatus() {
                 className={`flex items-center justify-between rounded-md border px-3 py-2.5 text-sm font-mono transition-[transform,border-color,background-color,box-shadow] duration-200 hover:-translate-y-px ${
                   src.stale
                     ? 'border-status-warning/20 bg-status-warning/5 hover:border-status-warning/40'
-                    : 'border-eva-border/80 bg-eva-bg/20 hover:border-eva-green/25 hover:bg-eva-bg/35'
+                    : 'border-eva-border/80 bg-[var(--theme-control-bg)] hover:border-eva-green/25'
                 }`}
               >
                 <div className="flex items-center gap-2 min-w-0">
@@ -260,6 +292,8 @@ export function SystemStatus() {
       {hasSyncData && (
         <SyncDetails sources={data.last_sync!.sources} lang={lang} />
       )}
+      </>
+      )}
     </div>
   )
 }
@@ -280,7 +314,7 @@ function StatusCard({
   return (
     <div className={`rounded-lg border px-4 py-3.5 transition-[transform,border-color,background-color,box-shadow] duration-200 hover:-translate-y-px ${
       ok
-        ? 'border-eva-border/80 bg-eva-bg/20 hover:border-eva-green/25'
+        ? 'border-eva-border/80 bg-[var(--theme-control-bg)] hover:border-eva-green/25'
         : 'border-status-warning/20 bg-status-warning/5 hover:border-status-warning/40'
     }`}>
       <div className="mb-2 flex items-center justify-between gap-2 text-[13px] font-semibold uppercase text-eva-text-dim/90">

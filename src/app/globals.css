@@ -53,6 +53,13 @@
     --theme-inset-highlight: rgba(255, 255, 255, 0.07);
     --theme-control-highlight: rgba(255, 255, 255, 0.045);
     --theme-row-hover: rgba(255, 255, 255, 0.04);
+    /* Control / chip surfaces — dark themes use translucent canvas */
+    --theme-control-bg: rgba(var(--theme-bg-rgb), 0.55);
+    --theme-control-bg-hover: rgba(var(--theme-primary-rgb), 0.1);
+    --theme-control-bg-active: rgba(var(--theme-primary-rgb), 0.14);
+    --theme-control-fg: var(--theme-text-muted);
+    --theme-control-fg-hover: var(--theme-text);
+    --theme-header-shadow: 0 14px 32px rgba(0, 0, 0, 0.18);
     --theme-radius: 10px;
     --theme-control-radius: 6px;
     --theme-panel-blur: 14px;
@@ -64,6 +71,7 @@
     --theme-noise-opacity: 0.032;
     --theme-aurora-opacity: 1;
     --theme-energy-opacity: 0.5;
+    --theme-noise-blend: overlay;
     --theme-body-letter-spacing: 0.015em;
     --theme-font-body: "Oxanium", "Noto Sans SC", system-ui, sans-serif;
     --theme-font-display: "Oxanium", "Noto Sans SC", sans-serif;
@@ -168,6 +176,12 @@
   --theme-inset-highlight: rgba(255, 235, 214, 0.07);
   --theme-control-highlight: rgba(255, 228, 199, 0.045);
   --theme-row-hover: rgba(215, 154, 91, 0.048);
+  --theme-control-bg: rgba(var(--theme-bg-rgb), 0.5);
+  --theme-control-bg-hover: rgba(var(--theme-primary-rgb), 0.1);
+  --theme-control-bg-active: rgba(var(--theme-primary-rgb), 0.14);
+  --theme-control-fg: var(--theme-text-muted);
+  --theme-control-fg-hover: var(--theme-text);
+  --theme-header-shadow: 0 14px 36px rgba(7, 3, 2, 0.28);
     --theme-radius: 3px;
     --theme-control-radius: 2px;
     --theme-grid-size: 56px;
@@ -178,6 +192,7 @@
   --theme-noise-opacity: 0.04;
   --theme-aurora-opacity: 0.8;
   --theme-energy-opacity: 0.42;
+  --theme-noise-blend: overlay;
     --theme-body-letter-spacing: 0.01em;
   --theme-font-body: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
     --theme-font-display: "ZCOOL XiaoWei", "Noto Serif SC", "STKaiti", serif;
@@ -244,8 +259,15 @@
     --theme-panel-shadow: 0 12px 32px rgba(75, 55, 37, 0.08);
     --theme-hover-shadow: 0 18px 38px rgba(75, 55, 37, 0.13);
     --theme-inset-highlight: rgba(255, 255, 255, 0.7);
-    --theme-control-highlight: rgba(255, 255, 255, 0.56);
+    --theme-control-highlight: rgba(255, 255, 255, 0.72);
     --theme-row-hover: rgba(168, 68, 36, 0.05);
+    /* Light: solid paper controls — avoid dark translucent stacks */
+    --theme-control-bg: color-mix(in srgb, var(--theme-panel) 88%, var(--theme-border) 12%);
+    --theme-control-bg-hover: color-mix(in srgb, var(--theme-panel) 78%, var(--theme-primary) 8%);
+    --theme-control-bg-active: color-mix(in srgb, var(--theme-panel) 82%, var(--theme-primary) 14%);
+    --theme-control-fg: var(--theme-text-muted);
+    --theme-control-fg-hover: var(--theme-text);
+    --theme-header-shadow: 0 8px 22px rgba(75, 55, 37, 0.08);
     --theme-radius: 7px;
     --theme-control-radius: 4px;
     --theme-panel-blur: 4px;
@@ -253,9 +275,12 @@
     --theme-grid-opacity: 0;
     --theme-scan-opacity: 0;
     --theme-panel-texture-opacity: 0;
-    --theme-noise-opacity: 0.05;
-    --theme-aurora-opacity: 0.35;
-    --theme-energy-opacity: 0.32;
+    /* Light themes: no grain/scan — overlay noise looks dirty on paper */
+    --theme-noise-opacity: 0;
+    --theme-aurora-opacity: 0.22;
+    --theme-energy-opacity: 0.16;
+    --theme-noise-blend: normal;
+    --theme-panel-decoration-opacity: 0.22;
     --theme-body-letter-spacing: 0.005em;
     --theme-font-body: "Noto Serif SC", "Songti SC", Georgia, serif;
     --theme-font-display: "Cormorant Garamond", "Noto Serif SC", Georgia, serif;
@@ -266,7 +291,6 @@
     --theme-label-color: #2f6254;
     --theme-panel-clip: none;
     --theme-panel-decoration: linear-gradient(90deg, transparent, rgba(168, 68, 36, 0.52), transparent);
-    --theme-panel-decoration-opacity: 0.34;
     --motion-duration: 620ms;
     --motion-easing: cubic-bezier(0.22, 1, 0.36, 1);
     --motion-distance: 9px;
@@ -322,18 +346,26 @@
     --theme-panel-shadow: 0 16px 42px rgba(45, 79, 108, 0.1);
     --theme-hover-shadow: 0 22px 52px rgba(45, 79, 108, 0.16);
     --theme-inset-highlight: rgba(255, 255, 255, 0.9);
-    --theme-control-highlight: rgba(255, 255, 255, 0.68);
+    --theme-control-highlight: rgba(255, 255, 255, 0.82);
     --theme-row-hover: rgba(0, 103, 197, 0.045);
+    --theme-control-bg: color-mix(in srgb, #ffffff 90%, var(--theme-border) 10%);
+    --theme-control-bg-hover: color-mix(in srgb, #ffffff 86%, var(--theme-primary) 10%);
+    --theme-control-bg-active: color-mix(in srgb, #ffffff 82%, var(--theme-primary) 14%);
+    --theme-control-fg: var(--theme-text-muted);
+    --theme-control-fg-hover: var(--theme-text);
+    --theme-header-shadow: 0 10px 28px rgba(45, 79, 108, 0.1);
     --theme-radius: 16px;
     --theme-control-radius: 10px;
     --theme-panel-blur: 20px;
     --theme-grid-size: 64px;
-    --theme-grid-opacity: 0.12;
+    --theme-grid-opacity: 0.08;
     --theme-scan-opacity: 0;
     --theme-panel-texture-opacity: 0;
-    --theme-noise-opacity: 0.022;
-    --theme-aurora-opacity: 0.55;
-    --theme-energy-opacity: 0.4;
+    --theme-noise-opacity: 0;
+    --theme-aurora-opacity: 0.28;
+    --theme-energy-opacity: 0.2;
+    --theme-noise-blend: normal;
+    --theme-panel-decoration-opacity: 0.28;
     --theme-font-body: "Manrope", "Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif;
     --theme-font-display: "Manrope", "Noto Sans SC", -apple-system, sans-serif;
     --theme-font-numeric: "Manrope", "Noto Sans SC", sans-serif;
@@ -343,7 +375,6 @@
     --theme-label-color: #5757c9;
     --theme-panel-clip: none;
     --theme-panel-decoration: linear-gradient(90deg, transparent, rgba(87, 87, 201, 0.34), rgba(255, 255, 255, 0.86), transparent);
-    --theme-panel-decoration-opacity: 0.48;
     --motion-duration: 560ms;
     --motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
     --motion-distance: 14px;
@@ -568,10 +599,13 @@
 
   .eva-badge {
     @apply inline-flex items-center whitespace-nowrap px-3 py-1.5 text-[13px] font-mono
-           border border-eva-border bg-eva-bg/50 text-eva-text-dim
-           cursor-pointer select-none;
+           border cursor-pointer select-none;
     min-height: 32px;
+    border-color: rgb(var(--theme-border-rgb) / 1);
+    background: var(--theme-control-bg);
+    color: var(--theme-control-fg);
     border-radius: var(--theme-control-radius);
+    box-shadow: inset 0 1px 0 var(--theme-control-highlight);
     transition:
       transform 180ms ease,
       border-color 180ms ease,
@@ -582,16 +616,17 @@
   }
 
   .eva-badge-active {
-    @apply border-eva-green/50 bg-eva-green/10 text-eva-green;
-    box-shadow: 0 0 10px rgba(var(--theme-primary-rgb), 0.14);
+    border-color: rgba(var(--theme-primary-rgb), 0.48);
+    background: var(--theme-control-bg-active);
+    color: var(--theme-primary);
+    box-shadow: 0 0 10px rgba(var(--theme-primary-rgb), 0.12);
   }
 
   .eva-badge:hover {
-    @apply border-eva-green/30 text-eva-text;
+    border-color: rgba(var(--theme-primary-rgb), 0.3);
+    color: var(--theme-control-fg-hover);
     transform: translateY(-1px);
-    background:
-      linear-gradient(180deg, var(--theme-control-highlight), transparent),
-      rgba(var(--theme-bg-rgb), 0.58);
+    background: var(--theme-control-bg-hover);
   }
 
   .stat-value {
@@ -609,7 +644,8 @@
   }
 
   .stat-card-icon {
-    @apply flex h-9 w-9 shrink-0 items-center justify-center border border-eva-border bg-eva-bg/45 text-base;
+    @apply flex h-9 w-9 shrink-0 items-center justify-center border border-eva-border text-base;
+    background: var(--theme-control-bg);
     border-radius: max(2px, calc(var(--theme-control-radius) - 1px));
     font-family: var(--theme-font-display);
     box-shadow: inset 0 1px 0 var(--theme-control-highlight);
@@ -651,11 +687,44 @@
     box-shadow:
       inset 0 1px 0 var(--theme-control-highlight),
       0 1px 0 rgba(var(--theme-border-strong-rgb), 0.38),
-      0 14px 32px rgba(0, 0, 0, 0.18);
+      var(--theme-header-shadow);
+  }
+
+  /* Header / filter / settings control surfaces — theme-aware, not hard dark stacks */
+  .control-surface {
+    border: 1px solid rgb(var(--theme-border-rgb) / 1);
+    background: var(--theme-control-bg);
+    color: var(--theme-control-fg);
+    border-radius: var(--theme-control-radius);
+    box-shadow: inset 0 1px 0 var(--theme-control-highlight);
+    transition:
+      transform 180ms ease,
+      border-color 180ms ease,
+      background-color 180ms ease,
+      color 180ms ease,
+      box-shadow 220ms ease;
+  }
+
+  .control-surface:hover:not(:disabled) {
+    border-color: rgba(var(--theme-primary-rgb), 0.32);
+    background: var(--theme-control-bg-hover);
+    color: var(--theme-primary);
+  }
+
+  .control-surface:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .control-surface-active {
+    border-color: rgba(var(--theme-primary-rgb), 0.45);
+    background: var(--theme-control-bg-active);
+    color: var(--theme-primary);
   }
 
   .control-cluster {
-    @apply flex items-center gap-1 border border-eva-border bg-eva-bg/65 p-0.5;
+    @apply flex items-center gap-1 border border-eva-border p-0.5;
+    background: var(--theme-control-bg);
     border-radius: var(--theme-control-radius);
     box-shadow: inset 0 1px 0 var(--theme-control-highlight);
   }
@@ -746,7 +815,9 @@
   }
 
   .theme-picker-trigger {
-    @apply flex min-h-10 shrink-0 items-center gap-2 border border-eva-border bg-eva-bg/55 px-3 py-1.5 text-xs font-mono text-eva-text sm:min-h-[32px];
+    @apply flex min-h-10 shrink-0 items-center gap-2 border border-eva-border px-3 py-1.5 text-xs font-mono sm:min-h-[32px];
+    background: var(--theme-control-bg);
+    color: var(--theme-control-fg);
     border-radius: var(--theme-control-radius);
     transition:
       transform 180ms ease,
@@ -968,7 +1039,18 @@
     opacity: var(--theme-noise-opacity);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.86' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     background-size: 180px 180px;
-    mix-blend-mode: overlay;
+    mix-blend-mode: var(--theme-noise-blend, overlay);
+  }
+
+  /* Light themes: hide grain layer entirely when opacity is 0 (avoids overlay dirt) */
+  :root[data-theme='editorial-paper'] .grain-overlay,
+  :root[data-theme='luminous-glass'] .grain-overlay {
+    display: none;
+  }
+
+  :root[data-theme='editorial-paper'] .scan-overlay,
+  :root[data-theme='luminous-glass'] .scan-overlay {
+    display: none;
   }
 
   /* ─── Brand energy rail on the very top edge ─────────── */
