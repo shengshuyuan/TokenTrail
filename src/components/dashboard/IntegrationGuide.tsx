@@ -541,7 +541,7 @@ function QuickCommandPanel({ onCopy }: { onCopy: () => void }) {
   const { lang } = useLang()
 
   return (
-    <div className="space-y-5 rounded-xl border border-eva-green/20 bg-eva-bg/25 p-4 sm:p-5">
+    <div className="control-inset space-y-5 rounded-xl border border-eva-green/20 p-4 sm:p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="text-[11px] font-mono uppercase tracking-[0.22em] text-eva-green/80">
@@ -630,7 +630,7 @@ function SourceOverview({
   }, [status])
 
   return (
-    <div className="rounded-lg border border-eva-green/15 bg-eva-bg/25 p-3 sm:p-4">
+    <div className="control-inset rounded-lg border border-eva-green/15 p-3 sm:p-4">
       <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h3 className="text-[15px] font-mono font-semibold tracking-wide text-eva-text">
@@ -658,7 +658,7 @@ function SourceOverview({
                   ? 'border-status-success/35 bg-status-success/5 hover:shadow-[0_0_22px_rgba(var(--eva-green-rgb),0.10)]'
                   : plan.recommended
                     ? 'border-eva-green/25 bg-eva-green/5'
-                    : 'border-eva-border/80 bg-eva-bg/20'
+                    : 'border-eva-border/80 bg-[var(--theme-control-bg)]'
               }`}
             >
               <div className="mb-1.5 flex items-center justify-between gap-2">

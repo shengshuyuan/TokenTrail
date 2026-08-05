@@ -93,11 +93,11 @@ const chartData = data.map(d => ({
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2 text-[11px] font-mono text-eva-text-dim sm:text-xs">
-        <span className="inline-flex items-center gap-1.5 rounded border border-eva-border bg-eva-bg/50 px-2.5 py-1.5">
+        <span className="control-inset inline-flex items-center gap-1.5 px-2.5 py-1.5">
           <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--theme-chart-1)' }} />
           TOKEN VOLUME
         </span>
-        <span className="inline-flex items-center gap-1.5 rounded border border-eva-border bg-eva-bg/50 px-2.5 py-1.5">
+        <span className="control-inset inline-flex items-center gap-1.5 px-2.5 py-1.5">
           <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--theme-chart-2)' }} />
           COST CURVE
         </span>

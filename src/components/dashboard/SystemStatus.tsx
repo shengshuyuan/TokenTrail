@@ -362,7 +362,7 @@ function SyncDetails({
         {lang === 'zh' ? '同步详情' : 'SYNC DETAILS'}
       </button>
       {expanded && (
-        <div className="mt-2 overflow-x-auto rounded border border-eva-border bg-eva-bg/20">
+        <div className="control-inset mt-2 overflow-x-auto">
           <table className="w-full text-xs font-mono text-left">
             <thead>
               <tr className="border-b border-eva-border text-eva-text-dim">

@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import type { TimeRange } from '@/types'
 import { useLang } from '@/lib/LanguageContext'
 
@@ -24,6 +25,8 @@ const TIME_RANGES: { value: TimeRange; label: string }[] = [
   { value: 90, label: '90D' },
 ]
 
+const CHIP_COLLAPSE_AT = 6
+
 export function FilterBar({
   timeRange,
   onTimeRangeChange,
@@ -38,7 +41,21 @@ export function FilterBar({
   sourceDisplayNames,
 }: FilterBarProps) {
   const { t } = useLang()
+  const [modelsExpanded, setModelsExpanded] = useState(false)
   const totalActive = selectedSources.length + selectedModels.length
+
+  const modelOverflow = availableModels.length > CHIP_COLLAPSE_AT
+  // Collapsed: keep selected models visible even if they fall past the first N.
+  const visibleModels = (() => {
+    if (modelsExpanded || !modelOverflow) return availableModels
+    const head = availableModels.slice(0, CHIP_COLLAPSE_AT)
+    const headIds = new Set(head.map(m => m.id))
+    const selectedExtra = availableModels.filter(
+      m => selectedModels.includes(m.id) && !headIds.has(m.id)
+    )
+    return [...head, ...selectedExtra]
+  })()
+  const hiddenModelCount = Math.max(0, availableModels.length - visibleModels.length)
 
   return (
     <div className="eva-panel px-4 py-3">
@@ -106,7 +123,7 @@ export function FilterBar({
           <>
             <div className="control-label pt-1.5">{t('filter.model')}</div>
             <div className="filter-scroll-row flex snap-x gap-2 overflow-x-auto pb-1.5">
-              {availableModels.map((model) => (
+              {visibleModels.map((model) => (
                 <button
                   key={model.id}
                   type="button"
@@ -117,6 +134,18 @@ export function FilterBar({
                   {model.name}
                 </button>
               ))}
+              {modelOverflow && (modelsExpanded || hiddenModelCount > 0) && (
+                <button
+                  type="button"
+                  onClick={() => setModelsExpanded(v => !v)}
+                  className="eva-badge snap-start"
+                  aria-expanded={modelsExpanded}
+                >
+                  {modelsExpanded
+                    ? t('filter.showLess')
+                    : t('filter.showMore', { n: hiddenModelCount })}
+                </button>
+              )}
               {selectedModels.length > 0 && (
                 <button
                   type="button"

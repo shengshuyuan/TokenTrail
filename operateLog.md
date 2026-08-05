@@ -30,3 +30,8 @@
 - **影响范围**：`src/app/globals.css`、`src/app/page.tsx`、`src/components/dashboard/SystemStatus.tsx`、`FilterBar.tsx`、`ShareCard.tsx`、`IntegrationGuide.tsx`、`src/lib/version.ts`、`package.json`
 - **变更摘要**：v0.2.2 样式优化：① 亮主题 control 层 token（修复同步/指南/分享/chips/Toggle 深色翻车）；② 首屏重排 KPI 紧跟筛选，系统状态默认折叠为摘要条；③ 亮主题关闭 grain/scan、减弱 aurora/energy 装饰。
 - **回滚指南**：`git checkout -- src/app/globals.css src/app/page.tsx src/components/dashboard src/lib/version.ts package.json package-lock.json docs/INTEGRATION.md operateLog.md`
+
+- **[2026-08-05 18:30:00 CST]** 🟡修改
+- **影响范围**：`src/app/globals.css`、`src/app/page.tsx`、`src/components/dashboard/*`、`src/lib/i18n.ts`、`src/lib/version.ts`、`package.json`
+- **变更摘要**：v0.2.3 仪表盘质感续修：① 补齐 residual control token；② 对比/占比图等高；③ 模型 chips +N 折叠；④ 图表点击联动筛选；⑤ 自动刷新 data-refresh；⑥ 原始记录表优化；⑦ neon KPI 辉光 + sparkline；⑧ review 修复：刷新不 remount、chips 保留已选、Bar onClick 兼容；⑨ 修复 CLI `parseFlags` 对 `--build` 布尔 flag 的解析，使 `install-service --build` 真正进入 production。
+- **回滚指南**：`git checkout -- src/app/globals.css src/app/page.tsx src/components/dashboard src/lib/i18n.ts src/lib/version.ts package.json bin/tokentrail.js operateLog.md`

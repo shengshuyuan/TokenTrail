@@ -639,6 +639,24 @@
     text-shadow: 0 0 20px rgba(var(--theme-primary-rgb), 0.08);
   }
 
+  /* neon-mecha: stronger phosphor glow on KPI digits */
+  :root[data-theme='neon-mecha'] .stat-value {
+    text-shadow:
+      0 0 10px rgba(var(--theme-primary-rgb), 0.28),
+      0 0 28px rgba(var(--theme-primary-rgb), 0.14);
+  }
+
+  .stat-sparkline {
+    display: block;
+    overflow: visible;
+    opacity: 0.92;
+  }
+
+  .stat-sparkline-fill {
+    fill: currentColor;
+    opacity: 0.12;
+  }
+
   .stat-card {
     min-height: 150px;
   }
@@ -747,10 +765,10 @@
   }
 
   .control-button-active {
-    @apply border border-eva-green/30 bg-eva-green/10 text-eva-green shadow-eva-green;
+    @apply border border-eva-green/30 text-eva-green shadow-eva-green;
     background:
       linear-gradient(180deg, rgba(var(--theme-primary-rgb), 0.16), rgba(var(--theme-primary-rgb), 0.06)),
-      rgba(var(--theme-bg-rgb), 0.54);
+      var(--theme-control-bg-active);
   }
 
   .control-button-idle {
@@ -758,11 +776,12 @@
   }
 
   .control-button-idle:hover {
-    background: rgba(var(--theme-panel-rgb), 0.42);
+    background: var(--theme-control-bg-hover);
   }
 
   .table-shell {
-    @apply overflow-x-auto border border-eva-border bg-eva-bg/35;
+    @apply overflow-x-auto border border-eva-border;
+    background: var(--theme-control-bg);
     border-radius: var(--theme-radius);
     box-shadow:
       inset 0 1px 0 var(--theme-control-highlight),
@@ -772,7 +791,7 @@
   .data-table thead {
     background:
       linear-gradient(180deg, var(--theme-control-highlight), transparent),
-      rgba(var(--theme-bg-rgb), 0.62);
+      color-mix(in srgb, var(--theme-control-bg) 70%, var(--theme-panel) 30%);
   }
 
   .data-table th {
@@ -849,7 +868,8 @@
   }
 
   .theme-preview-card {
-    @apply border border-eva-border bg-eva-bg/35 p-2 text-left;
+    @apply border border-eva-border p-2 text-left;
+    background: var(--theme-control-bg);
     border-radius: max(6px, calc(var(--theme-radius) - 3px));
     transition:
       transform 180ms ease,
@@ -911,8 +931,8 @@
     @apply inline-flex min-h-[30px] items-center rounded-full border px-3.5 py-1.5 text-[14px];
     border-color: rgba(var(--theme-border-strong-rgb), 0.72);
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent),
-      rgba(var(--theme-panel-rgb), 0.72);
+      linear-gradient(180deg, var(--theme-control-highlight), transparent),
+      var(--theme-control-bg);
     color: color-mix(in srgb, var(--theme-text) 76%, var(--theme-text-muted) 24%);
     font-family: var(--theme-font-mono);
     letter-spacing: 0.04em;
@@ -922,12 +942,12 @@
   .filter-surface {
     border-radius: calc(var(--theme-radius) + 2px);
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 48%),
+      linear-gradient(180deg, var(--theme-control-highlight), transparent 48%),
       rgba(var(--theme-panel-rgb), 0.94);
     border: 1px solid rgba(var(--theme-border-strong-rgb), 0.78);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.045),
-      0 18px 54px rgba(0, 0, 0, 0.26);
+      inset 0 1px 0 var(--theme-control-highlight),
+      var(--theme-panel-shadow);
   }
 
   .filter-section {
@@ -935,8 +955,8 @@
     border-radius: max(8px, calc(var(--theme-radius) + 4px));
     border-color: rgba(var(--theme-border-rgb), 0.84);
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 52%),
-      rgba(var(--theme-bg-rgb), 0.34);
+      linear-gradient(180deg, var(--theme-control-highlight), transparent 52%),
+      var(--theme-control-bg);
   }
 
   .filter-section::before {
@@ -964,9 +984,9 @@
     border-radius: 999px;
     border-color: rgba(var(--theme-border-rgb), 0.95);
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 58%),
-      rgba(var(--theme-bg-rgb), 0.58);
-    color: color-mix(in srgb, var(--theme-text-muted) 78%, var(--theme-text) 22%);
+      linear-gradient(180deg, var(--theme-control-highlight), transparent 58%),
+      var(--theme-control-bg);
+    color: var(--theme-control-fg);
     font-family: var(--theme-font-mono);
     transition:
       transform 160ms ease,
@@ -980,7 +1000,8 @@
   .filter-chip:hover {
     transform: translateY(-1px);
     border-color: rgba(var(--theme-primary-rgb), 0.35);
-    color: var(--theme-text);
+    color: var(--theme-control-fg-hover);
+    background: var(--theme-control-bg-hover);
   }
 
   .filter-chip:focus-visible {
@@ -993,8 +1014,8 @@
     border-color: rgba(var(--theme-primary-rgb), 0.56);
     background:
       linear-gradient(180deg, rgba(var(--theme-primary-rgb), 0.12), rgba(var(--theme-secondary-rgb), 0.06)),
-      rgba(var(--theme-bg-rgb), 0.68);
-    color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-primary) 32%);
+      var(--theme-control-bg-active);
+    color: var(--theme-primary);
     box-shadow:
       0 0 0 1px rgba(var(--theme-primary-rgb), 0.18),
       0 8px 24px rgba(var(--theme-primary-rgb), 0.1);
@@ -1003,8 +1024,8 @@
   .filter-clear-button {
     @apply inline-flex min-h-[38px] items-center rounded-full border px-3.5 py-2 text-[14px];
     border-color: rgba(var(--theme-border-rgb), 0.6);
-    color: color-mix(in srgb, var(--theme-text-muted) 86%, var(--theme-text) 14%);
-    background: rgba(var(--theme-bg-rgb), 0.32);
+    color: var(--theme-control-fg);
+    background: var(--theme-control-bg);
     font-family: var(--theme-font-mono);
     transition:
       transform 160ms ease,
@@ -1042,7 +1063,7 @@
     mix-blend-mode: var(--theme-noise-blend, overlay);
   }
 
-  /* Light themes: hide grain layer entirely when opacity is 0 (avoids overlay dirt) */
+  /* Light themes: hide grain / scan entirely (overlay blend reads dirty on paper) */
   :root[data-theme='editorial-paper'] .grain-overlay,
   :root[data-theme='luminous-glass'] .grain-overlay {
     display: none;
@@ -1051,6 +1072,23 @@
   :root[data-theme='editorial-paper'] .scan-overlay,
   :root[data-theme='luminous-glass'] .scan-overlay {
     display: none;
+  }
+
+  /* Light: panel texture + heavy dark-only decoration already zeroed via tokens.
+     Also keep energy rail subtle and static (no neon flow on paper). */
+  :root[data-theme='editorial-paper'] .header-energy-rail,
+  :root[data-theme='luminous-glass'] .header-energy-rail {
+    animation: none;
+    background-size: 100% 100%;
+  }
+
+  /* Nested control insets (legend chips, legend rows, empty code boxes) */
+  .control-inset {
+    border: 1px solid rgb(var(--theme-border-rgb) / 1);
+    background: var(--theme-control-bg);
+    color: var(--theme-control-fg);
+    border-radius: var(--theme-control-radius);
+    box-shadow: inset 0 1px 0 var(--theme-control-highlight);
   }
 
   /* ─── Brand energy rail on the very top edge ─────────── */

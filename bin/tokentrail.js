@@ -231,15 +231,34 @@ function prepareRuntimeCopy(nodePath) {
 function parseFlags(argv) {
   const flags = {}
   const positional = []
+  // Boolean long-flags that take no value (presence = true).
+  const BOOLEAN_FLAGS = new Set(['build', 'help', 'dev', 'force', 'yes'])
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i].startsWith('--') && i + 1 < argv.length) {
-      const key = argv[i].slice(2)
-      flags[key] = argv[++i]
-    } else if (argv[i] === '-h' || argv[i] === '--help') {
+    const arg = argv[i]
+    if (arg === '-h' || arg === '--help') {
       flags.help = true
-    } else {
-      positional.push(argv[i])
+      continue
     }
+    if (arg.startsWith('--')) {
+      const eq = arg.indexOf('=')
+      if (eq !== -1) {
+        // --key=value
+        const key = arg.slice(2, eq)
+        flags[key] = arg.slice(eq + 1)
+        continue
+      }
+      const key = arg.slice(2)
+      const next = argv[i + 1]
+      if (BOOLEAN_FLAGS.has(key) || next === undefined || next.startsWith('-')) {
+        // Boolean flag or terminal flag with no value.
+        flags[key] = true
+      } else {
+        flags[key] = next
+        i++
+      }
+      continue
+    }
+    positional.push(arg)
   }
   return { flags, positional }
 }

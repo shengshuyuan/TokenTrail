@@ -47,6 +47,8 @@ function DashboardInner() {
   const [syncResult, setSyncResult] = useState<string | null>(null)
   const [syncDetails, setSyncDetails] = useState<{ source: string; scanned: number; inserted: number; duplicates: number; errors: number }[] | null>(null)
   const [lastUpdated, setLastUpdated] = useState<number | null>(null)
+  /** True briefly after auto-refresh so .data-refresh can re-fire without remount. */
+  const [dataFlash, setDataFlash] = useState(false)
 
   // Available filter options (populated from data)
   const [availableSources, setAvailableSources] = useState<string[]>([])
@@ -96,6 +98,10 @@ function DashboardInner() {
         const { available_sources, available_models, ...statsData } = data as Record<string, unknown>
         setStats(statsData as unknown as StatsResponse)
         setLastUpdated(Date.now())
+        // Flash data area after auto-refresh (not first load / manual filter change).
+        if (isAutoRefresh) {
+          setDataFlash(true)
+        }
       }
       return true
     } catch (err) {
@@ -150,6 +156,13 @@ function DashboardInner() {
   useEffect(() => {
     fetchDataRef.current = () => fetchData(true)
   })
+
+  // Drop data-refresh class after animation so the next auto-refresh can re-trigger.
+  useEffect(() => {
+    if (!dataFlash) return
+    const timer = setTimeout(() => setDataFlash(false), 480)
+    return () => clearTimeout(timer)
+  }, [dataFlash])
 
   // Fetch on filter change
   useEffect(() => {
@@ -265,6 +278,20 @@ function DashboardInner() {
   const toggleModel = (model: string) => {
     setSelectedModels(prev =>
       prev.includes(model) ? prev.filter(m => m !== model) : [...prev, model]
+    )
+  }
+
+  /** Chart click: toggle a single source into the filter set. */
+  const selectSourceFromChart = (source: string) => {
+    setSelectedSources(prev =>
+      prev.length === 1 && prev[0] === source ? [] : [source]
+    )
+  }
+
+  /** Chart click: toggle a single model into the filter set. */
+  const selectModelFromChart = (model: string) => {
+    setSelectedModels(prev =>
+      prev.length === 1 && prev[0] === model ? [] : [model]
     )
   }
 
@@ -473,12 +500,14 @@ function DashboardInner() {
         </MotionGroup>
 
         {/* 2) KPI first — core numbers above system chrome */}
-        <StatsCards
-          stats={stats}
-          loading={loading}
-          currency={currency}
-          exchangeRate={USD_CNY_EXCHANGE_RATE.rate}
-        />
+        <div className={dataFlash ? 'data-refresh' : undefined}>
+          <StatsCards
+            stats={stats}
+            loading={loading}
+            currency={currency}
+            exchangeRate={USD_CNY_EXCHANGE_RATE.rate}
+          />
+        </div>
 
         {/* 3) System status — collapsed strip by default (expand for health grid) */}
         <MotionGroup>
@@ -559,7 +588,7 @@ function DashboardInner() {
             <div className="text-terminal text-lg mb-3">{t('empty.noSignal')}</div>
             <div className="text-xs font-mono text-eva-text-dim max-w-md mx-auto space-y-2">
               <p>{t('empty.waiting')}</p>
-              <div className="bg-eva-bg border border-eva-border rounded p-3 text-left mt-4">
+              <div className="control-inset rounded p-3 text-left mt-4">
                 <p className="text-eva-green/70 mb-1">{t('empty.testHint')}</p>
                 <p className="text-eva-text break-all">curl -X POST http://localhost:3820/api/report \</p>
                 <p className="text-eva-text break-all pl-4">-H &apos;Content-Type: application/json&apos; \</p>
@@ -574,7 +603,7 @@ function DashboardInner() {
 
         {/* Charts Grid */}
         {(hasData || loading) && (
-          <MotionGroup className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <MotionGroup className={`grid grid-cols-1 gap-6 lg:grid-cols-2 ${dataFlash ? 'data-refresh' : ''}`}>
             {/* Trend Chart */}
             <MotionItem className="lg:col-span-2" index={0}>
               <div className="eva-panel eva-panel-hover p-5">
@@ -597,8 +626,8 @@ function DashboardInner() {
             </MotionItem>
 
             {/* Comparison Chart */}
-            <MotionItem index={1}>
-              <div className="eva-panel eva-panel-hover p-5 h-full">
+            <MotionItem index={1} className="h-full">
+              <div className="eva-panel eva-panel-hover flex h-full min-h-[22rem] flex-col p-5">
                 <div className="section-title flex items-center justify-between gap-3">
                   <span className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-eva-purple text-eva-purple pulse-dot" />
@@ -606,20 +635,26 @@ function DashboardInner() {
                   </span>
                   <span className="hidden text-[13px] text-eva-text-dim/80 sm:inline">{t('comparison.topBreakdown')}</span>
                 </div>
-                <ComparisonChart
-                  bySource={stats?.by_source || []}
-                  byModel={stats?.by_model || []}
-                  loading={loading}
-                  currency={currency}
-                  exchangeRate={USD_CNY_EXCHANGE_RATE.rate}
-                  sourceDisplayNames={SOURCE_DISPLAY_NAMES}
-                />
+                <div className="flex flex-1 flex-col justify-center">
+                  <ComparisonChart
+                    bySource={stats?.by_source || []}
+                    byModel={stats?.by_model || []}
+                    loading={loading}
+                    currency={currency}
+                    exchangeRate={USD_CNY_EXCHANGE_RATE.rate}
+                    sourceDisplayNames={SOURCE_DISPLAY_NAMES}
+                    onSelectSource={selectSourceFromChart}
+                    onSelectModel={selectModelFromChart}
+                    selectedSources={selectedSources}
+                    selectedModels={selectedModels}
+                  />
+                </div>
               </div>
             </MotionItem>
 
             {/* Proportion Chart */}
-            <MotionItem index={2}>
-              <div className="eva-panel eva-panel-hover p-5 h-full overflow-visible">
+            <MotionItem index={2} className="h-full">
+              <div className="eva-panel eva-panel-hover flex h-full min-h-[22rem] flex-col overflow-visible p-5">
                 <div className="section-title flex items-center justify-between gap-3">
                   <span className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-eva-orange text-eva-orange pulse-dot" />
@@ -627,11 +662,15 @@ function DashboardInner() {
                   </span>
                   <span className="hidden text-[13px] text-eva-text-dim/80 sm:inline">{t('proportion.sourceMix')}</span>
                 </div>
-                <ProportionChart
-                  bySource={stats?.by_source || []}
-                  loading={loading}
-                  sourceDisplayNames={SOURCE_DISPLAY_NAMES}
-                />
+                <div className="flex flex-1 flex-col justify-center">
+                  <ProportionChart
+                    bySource={stats?.by_source || []}
+                    loading={loading}
+                    sourceDisplayNames={SOURCE_DISPLAY_NAMES}
+                    onSelectSource={selectSourceFromChart}
+                    selectedSources={selectedSources}
+                  />
+                </div>
               </div>
             </MotionItem>
 
@@ -660,6 +699,7 @@ function DashboardInner() {
                 showProjectNames={showProjectNames}
                 onPrev={() => setRawRecordsPage(page => Math.max(1, page - 1))}
                 onNext={() => setRawRecordsPage(page => page + 1)}
+                onGotoPage={(p) => setRawRecordsPage(p)}
               />
             </MotionItem>
           </MotionGroup>
@@ -761,12 +801,12 @@ function ProjectStatsPanel({
           <span className="h-1.5 w-1.5 rounded-full bg-eva-green text-eva-green pulse-dot" />
           {t('project.title')}
         </span>
-        <div className="flex items-center gap-1 rounded-full border border-eva-border bg-eva-bg/70 p-0.5">
+        <div className="control-cluster !rounded-full">
           <button
             type="button"
             onClick={() => setMetric('tokens')}
-            className={`pressable rounded-full px-3 py-1 text-[11px] font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
-              metric === 'tokens' ? 'bg-eva-text/15 text-eva-text' : 'text-eva-text-dim hover:text-eva-text'
+            className={`control-button !rounded-full ${
+              metric === 'tokens' ? 'control-button-active' : 'control-button-idle'
             }`}
           >
             {t('project.tokens')}
@@ -774,8 +814,8 @@ function ProjectStatsPanel({
           <button
             type="button"
             onClick={() => setMetric('cost')}
-            className={`pressable rounded-full px-3 py-1 text-[11px] font-mono transition-[transform,border-color,background-color,color,box-shadow] duration-200 ${
-              metric === 'cost' ? 'bg-eva-text/15 text-eva-text' : 'text-eva-text-dim hover:text-eva-text'
+            className={`control-button !rounded-full ${
+              metric === 'cost' ? 'control-button-active' : 'control-button-idle'
             }`}
           >
             {t('project.cost')}
@@ -808,13 +848,13 @@ function ProjectStatsPanel({
             {distribution.map(row => {
               const percentage = totalValue > 0 ? (row.value / totalValue) * 100 : 0
               return (
-                <div key={row.project} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-md px-2.5 py-2 font-mono text-sm transition-colors hover:bg-eva-bg/45">
+                <div key={row.project} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-md px-2.5 py-2 font-mono text-sm transition-colors hover:bg-[var(--theme-row-hover)]">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
                       <span className="truncate text-eva-text">{displayProjectName(row.project, showProjectNames, projectLabels)}</span>
                     </div>
-                    <div className="mt-1 h-1.5 rounded-full bg-eva-bg">
+                    <div className="mt-1 h-1.5 rounded-full bg-[var(--theme-control-bg)]">
                       <div className="h-full rounded-full" style={{ width: `${Math.max(percentage, 1)}%`, backgroundColor: row.color }} />
                     </div>
                   </div>
@@ -891,6 +931,15 @@ function buildConicGradient(rows: ProjectDistributionRow[]) {
   return `conic-gradient(${stops.join(', ')})`
 }
 
+function formatCompactTimestamp(ts: number): string {
+  const d = new Date(ts)
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  return `${mm}-${dd} ${hh}:${mi}`
+}
+
 function RawRecordsPanel({
   records,
   total,
@@ -901,6 +950,7 @@ function RawRecordsPanel({
   showProjectNames,
   onPrev,
   onNext,
+  onGotoPage,
 }: {
   records: UsageRecord[]
   total: number
@@ -911,14 +961,24 @@ function RawRecordsPanel({
   showProjectNames: boolean
   onPrev: () => void
   onNext: () => void
+  onGotoPage: (page: number) => void
 }) {
-  const { t, lang } = useLang()
+  const { t } = useLang()
+  const [gotoInput, setGotoInput] = useState('')
   const pageSize = 10
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const canPrev = page > 1
   const canNext = page < totalPages
   const projectLabels = { hidden: t('raw.hidden'), unknown: t('raw.unknown') }
-  const timeLocale = lang === 'zh' ? 'zh-CN' : 'en-US'
+  const colCount = showProjectNames ? 9 : 8
+
+  const submitGoto = () => {
+    const n = Number.parseInt(gotoInput, 10)
+    if (!Number.isFinite(n)) return
+    const clamped = Math.min(totalPages, Math.max(1, n))
+    onGotoPage(clamped)
+    setGotoInput('')
+  }
 
   return (
     <section className="eva-panel eva-panel-hover p-5">
@@ -932,12 +992,14 @@ function RawRecordsPanel({
         </span>
       </div>
       <div className="table-shell">
-        <table className="data-table min-w-[960px] w-full text-left font-mono text-[13px]">
+        <table className={`data-table w-full text-left font-mono text-[13px] ${showProjectNames ? 'min-w-[960px]' : 'min-w-[820px]'}`}>
           <thead className="text-eva-text-dim">
             <tr className="border-b border-eva-border">
               <th className="py-2 pr-4 font-normal">{t('raw.col.time')}</th>
               <th className="py-2 pr-4 font-normal">{t('raw.col.source')}</th>
-              <th className="py-2 pr-4 font-normal">{t('raw.col.project')}</th>
+              {showProjectNames && (
+                <th className="py-2 pr-4 font-normal">{t('raw.col.project')}</th>
+              )}
               <th className="py-2 pr-4 font-normal">{t('raw.col.model')}</th>
               <th className="num py-2 pr-4 font-normal">{t('raw.col.input')}</th>
               <th className="num py-2 pr-4 font-normal">{t('raw.col.cached')}</th>
@@ -949,22 +1011,24 @@ function RawRecordsPanel({
           <tbody>
             {loading && records.length === 0 ? (
               <tr>
-                <td className="py-5 text-eva-text-dim" colSpan={9}>LOADING...</td>
+                <td className="py-5 text-eva-text-dim" colSpan={colCount}>LOADING...</td>
               </tr>
             ) : records.length === 0 ? (
               <tr>
-                <td className="py-5 text-eva-text-dim" colSpan={9}>NO RAW RECORDS</td>
+                <td className="py-5 text-eva-text-dim" colSpan={colCount}>NO RAW RECORDS</td>
               </tr>
             ) : records.map(record => (
               <tr key={record.id} className="border-b border-eva-border/60 last:border-0">
                 <td className="whitespace-nowrap py-2 pr-4 text-eva-text-dim">
-                  {new Date(record.timestamp).toLocaleString(timeLocale, { hour12: false })}
+                  {formatCompactTimestamp(record.timestamp)}
                 </td>
                 <td className="py-2 pr-4 text-eva-text">{SOURCE_DISPLAY_NAMES[record.source] || record.source}</td>
-                <td className="max-w-[14rem] truncate py-2 pr-4 text-eva-text">
-                  {displayProjectName(record.project, showProjectNames, projectLabels)}
-                </td>
-                <td className="max-w-[16rem] truncate py-2 pr-4 text-eva-text-dim">{record.model}</td>
+                {showProjectNames && (
+                  <td className="max-w-[14rem] truncate py-2 pr-4 text-eva-text">
+                    {displayProjectName(record.project, showProjectNames, projectLabels)}
+                  </td>
+                )}
+                <td className="max-w-[20rem] truncate py-2 pr-4 text-eva-text-dim">{record.model}</td>
                 <td className="num py-2 pr-4 text-eva-green">{formatNumber(record.input_tokens)}</td>
                 <td className="num py-2 pr-4 text-eva-text-dim/75">{formatNumber(record.cached_input_tokens)}</td>
                 <td className="num py-2 pr-4 text-eva-green">{formatNumber(record.output_tokens)}</td>
@@ -975,16 +1039,16 @@ function RawRecordsPanel({
           </tbody>
         </table>
       </div>
-      <div className="mt-4 flex items-center justify-between gap-3">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <span className="text-sm font-mono text-eva-text-dim">
           {t('raw.page', { n: page, total: totalPages })}
         </span>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={onPrev}
             disabled={!canPrev}
-            className="pressable rounded border border-eva-border bg-eva-bg/60 px-3 py-1.5 text-sm font-mono text-eva-text-dim transition-[transform,border-color,color] duration-150 disabled:opacity-40 enabled:hover:border-eva-green/30 enabled:hover:text-eva-green"
+            className="pressable control-surface px-3 py-1.5 text-sm font-mono disabled:opacity-40"
           >
             {t('raw.prev')}
           </button>
@@ -992,10 +1056,36 @@ function RawRecordsPanel({
             type="button"
             onClick={onNext}
             disabled={!canNext}
-            className="pressable rounded border border-eva-border bg-eva-bg/60 px-3 py-1.5 text-sm font-mono text-eva-text-dim transition-[transform,border-color,color] duration-150 disabled:opacity-40 enabled:hover:border-eva-green/30 enabled:hover:text-eva-green"
+            className="pressable control-surface px-3 py-1.5 text-sm font-mono disabled:opacity-40"
           >
             {t('raw.next')}
           </button>
+          {totalPages > 1 && (
+            <form
+              className="flex items-center gap-1.5"
+              onSubmit={(e) => {
+                e.preventDefault()
+                submitGoto()
+              }}
+            >
+              <input
+                type="number"
+                min={1}
+                max={totalPages}
+                value={gotoInput}
+                onChange={(e) => setGotoInput(e.target.value)}
+                placeholder={t('raw.gotoPlaceholder')}
+                className="control-inset w-16 px-2 py-1.5 text-center text-sm font-mono text-eva-text outline-none focus:border-eva-green/40"
+                aria-label={t('raw.gotoPlaceholder')}
+              />
+              <button
+                type="submit"
+                className="pressable control-surface px-2.5 py-1.5 text-sm font-mono"
+              >
+                {t('raw.goto')}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </section>

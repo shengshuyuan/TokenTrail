@@ -40,6 +40,9 @@ const translations: Record<string, Record<Lang, string>> = {
   'filter.modelHint': { zh: '限制模型统计范围', en: 'Limits which models are included' },
   'filter.clearAll': { zh: '清除全部 ({n})', en: 'CLEAR ALL ({n})' },
   'filter.clear': { zh: '清除', en: 'CLEAR' },
+  'filter.showMore': { zh: '+{n}', en: '+{n}' },
+  'filter.showLess': { zh: '收起', en: 'LESS' },
+  'filter.chartHint': { zh: '点击图表可筛选', en: 'Click chart to filter' },
 
   // StatsCards
   'stats.totalTokens': { zh: '总消耗', en: 'TOTAL TOKENS' },
@@ -52,6 +55,7 @@ const translations: Record<string, Record<Lang, string>> = {
   'stats.activeDays': { zh: '活跃天数均值', en: 'active days average' },
   'stats.costVelocity': { zh: '费用速率', en: 'cost velocity' },
   'stats.capturedCalls': { zh: '已捕获调用', en: 'captured calls' },
+  'stats.sparkHint': { zh: '近 7 天趋势', en: 'Last 7 days' },
 
   // TrendChart
   'trend.title': { zh: '趋势', en: 'TREND' },
@@ -158,6 +162,8 @@ const translations: Record<string, Record<Lang, string>> = {
   'raw.page': { zh: '第 {n} / {total} 页', en: 'PAGE {n} / {total}' },
   'raw.prev': { zh: '上一页', en: 'PREV' },
   'raw.next': { zh: '下一页', en: 'NEXT' },
+  'raw.goto': { zh: '跳转', en: 'GO' },
+  'raw.gotoPlaceholder': { zh: '页码', en: 'page' },
   'raw.hidden': { zh: '已隐藏', en: 'hidden' },
   'raw.unknown': { zh: '未知', en: 'unknown' },
 

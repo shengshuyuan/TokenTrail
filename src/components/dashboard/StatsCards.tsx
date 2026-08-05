@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import type { StatsResponse, Currency } from '@/types'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { DailyStat, StatsResponse, Currency } from '@/types'
 import { formatTokens, formatCost, formatNumber } from '@/lib/format'
 import { formatExchangeRateDate, USD_CNY_EXCHANGE_RATE } from '@/lib/currency'
 import { useLang } from '@/lib/LanguageContext'
@@ -75,10 +75,75 @@ function AnimatedValue({ value, format }: { value: number; format: (v: number) =
   return <span className="inline-block">{format(display)}</span>
 }
 
+/** Compact 7-day trend polyline for KPI cards. */
+function Sparkline({
+  values,
+  toneClass,
+}: {
+  values: number[]
+  toneClass: string
+}) {
+  const path = useMemo(() => {
+    if (values.length < 2) return null
+    const w = 72
+    const h = 22
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    const range = max - min || 1
+    const coords = values.map((v, i) => {
+      const x = (i / (values.length - 1)) * w
+      const y = h - 1 - ((v - min) / range) * (h - 3)
+      return [x, y] as const
+    })
+    const line = coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+    // Soft fill under the line for a bit of mass without visual noise.
+    const area = `0,${h} ${line} ${w},${h}`
+    const end = coords[coords.length - 1]
+    return { w, h, line, area, endX: end[0], endY: end[1] }
+  }, [values])
+
+  if (!path) {
+    return <span className="inline-block h-[22px] w-[72px]" aria-hidden="true" />
+  }
+
+  return (
+    <svg
+      width={path.w}
+      height={path.h}
+      viewBox={`0 0 ${path.w} ${path.h}`}
+      className={`stat-sparkline ${toneClass}`}
+      aria-hidden="true"
+    >
+      <polygon points={path.area} className="stat-sparkline-fill" />
+      <polyline
+        points={path.line}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle cx={path.endX} cy={path.endY} r="1.8" fill="currentColor" />
+    </svg>
+  )
+}
+
+function lastNDaily(daily: DailyStat[] | undefined, n = 7): DailyStat[] {
+  if (!daily || daily.length === 0) return []
+  return daily.slice(-n)
+}
+
 export function StatsCards({ stats, loading, currency, exchangeRate }: StatsCardsProps) {
   const { t } = useLang()
+  const recent = lastNDaily(stats?.daily, 7)
+  const tokenSeries = recent.map(d => d.total_tokens)
+  const costSeries = recent.map(d => d.cost_usd)
+  const requestSeries = recent.map(d => d.count)
+
   const cards = [
     {
+      key: 'tokens',
       label: t('stats.totalTokens'),
       rawValue: stats?.total_tokens ?? 0,
       format: (v: number) => formatTokens(v),
@@ -86,8 +151,10 @@ export function StatsCards({ stats, loading, currency, exchangeRate }: StatsCard
       icon: '⬡',
       tone: 'stat-tone-primary',
       accent: 'bg-eva-green',
+      spark: tokenSeries,
     },
     {
+      key: 'cost',
       label: t('stats.totalCost'),
       rawValue: stats?.total_cost_usd ?? 0,
       format: (v: number) => formatCost(v, currency, exchangeRate),
@@ -97,8 +164,10 @@ export function StatsCards({ stats, loading, currency, exchangeRate }: StatsCard
       icon: '◆',
       tone: 'stat-tone-secondary',
       accent: 'bg-eva-purple',
+      spark: costSeries,
     },
     {
+      key: 'daily-tokens',
       label: t('stats.dailyAvg'),
       rawValue: stats?.avg_daily_tokens ?? 0,
       format: (v: number) => formatTokens(v),
@@ -106,8 +175,10 @@ export function StatsCards({ stats, loading, currency, exchangeRate }: StatsCard
       icon: '◈',
       tone: 'stat-tone-tertiary',
       accent: 'bg-eva-orange',
+      spark: tokenSeries,
     },
     {
+      key: 'daily-cost',
       label: t('stats.dailyCost'),
       rawValue: stats?.avg_daily_cost_usd ?? 0,
       format: (v: number) => formatCost(v, currency, exchangeRate),
@@ -115,8 +186,10 @@ export function StatsCards({ stats, loading, currency, exchangeRate }: StatsCard
       icon: '◇',
       tone: 'stat-tone-tertiary',
       accent: 'bg-eva-orange',
+      spark: costSeries,
     },
     {
+      key: 'requests',
       label: t('stats.requests'),
       rawValue: stats?.total_requests ?? 0,
       format: (v: number) => formatNumber(Math.round(v)),
@@ -124,22 +197,28 @@ export function StatsCards({ stats, loading, currency, exchangeRate }: StatsCard
       icon: '⬢',
       tone: 'stat-tone-neutral',
       accent: 'bg-eva-text',
+      spark: requestSeries,
     },
   ]
 
   return (
     <MotionGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
       {cards.map((card, index) => (
-        <MotionItem key={card.label} index={index}>
-          <div className="eva-panel eva-panel-hover eva-panel-stat min-h-[116px] p-4">
+        <MotionItem key={card.key} index={index}>
+          <div className="eva-panel eva-panel-hover eva-panel-stat min-h-[132px] p-4">
             <span className="stat-sheen" aria-hidden="true" />
             <div className={`stat-accent-rail ${card.accent}`} />
             <div className="mb-2 flex items-center gap-2">
-              <span className={`stat-icon flex h-6 w-6 shrink-0 items-center justify-center rounded border border-eva-border bg-eva-bg/45 text-xs ${card.tone}`}>
+              <span className={`stat-icon flex h-6 w-6 shrink-0 items-center justify-center rounded border border-eva-border text-xs ${card.tone}`}>
                 {card.icon}
               </span>
               <span className="theme-label truncate text-[13px] font-semibold uppercase">
                 {card.label}
+              </span>
+              <span className="ml-auto shrink-0 opacity-90" title={t('stats.sparkHint')}>
+                {!loading && stats && card.spark.length >= 2 ? (
+                  <Sparkline values={card.spark} toneClass={card.tone} />
+                ) : null}
               </span>
             </div>
             <div className={`stat-value ${card.tone} ${loading && !stats ? 'animate-pulse' : ''}`}>
