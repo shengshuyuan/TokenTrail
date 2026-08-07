@@ -7,7 +7,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { backfillProjectByRequestPrefix, correctProjectByRequestId, getDb, insertUsageRecord, normalizeStoredProjectNames, upsertModelPricing, getConfig } from './db'
+import { backfillProjectByRequestPrefix, correctProjectByRequestId, getDb, insertUsageRecord, upsertUsageRecordByRequestId, normalizeStoredProjectNames, upsertModelPricing, getConfig } from './db'
 import { calculateCost } from './pricing'
 import { ensureInit } from './init'
 const { findTraeHistoryFiles, parseTraeHistoryFile } = require('./traework.js') as {
@@ -366,6 +366,8 @@ const LOCAL_USAGE_SOURCES: LocalUsageSource[] = [
   { name: 'openclaw', dir: path.join(process.env.HOME || '/root', '.openclaw', 'usage') },
   { name: 'hermes', dir: path.join(process.env.HOME || '/root', '.hermes', 'usage') },
   { name: 'grok', dir: path.join(process.env.HOME || '/root', '.grok', 'usage') },
+  { name: 'antigravity', dir: path.join(process.env.HOME || '/root', '.gemini', 'antigravity-cli', 'usage') },
+  { name: 'antigravity', dir: path.join(process.env.HOME || '/root', '.antigravity', 'usage') },
 ]
 
 /**
@@ -1007,6 +1009,113 @@ async function syncVibeCafe(): Promise<SyncResult> {
   return result
 }
 
+// ─── Antigravity (Antigravity CLI / AGY) 本地对话日志扫描 ────
+
+function syncAntigravityTranscripts(): SyncResult {
+  const start = Date.now()
+  const result: SyncResult = {
+    source: 'antigravity',
+    scanned: 0,
+    inserted: 0,
+    duplicates: 0,
+    errors: 0,
+    duration_ms: 0,
+  }
+
+  const brainDirs = [
+    path.join(process.env.HOME || '/root', '.gemini', 'antigravity-cli', 'brain'),
+    path.join(process.env.HOME || '/root', '.antigravity', 'brain'),
+  ]
+
+  for (const brainDir of brainDirs) {
+    if (!fs.existsSync(brainDir)) continue
+
+    let convDirs: string[] = []
+    try {
+      convDirs = fs.readdirSync(brainDir).filter(name => {
+        try {
+          return fs.statSync(path.join(brainDir, name)).isDirectory()
+        } catch {
+          return false
+        }
+      })
+    } catch {
+      continue
+    }
+
+    for (const convId of convDirs) {
+      const logDir = path.join(brainDir, convId, '.system_generated', 'logs')
+      const transcriptPath = path.join(logDir, 'transcript.jsonl')
+      if (!fs.existsSync(transcriptPath)) continue
+
+      try {
+        const lines = fs.readFileSync(transcriptPath, 'utf-8').split('\n').filter(Boolean)
+        let totalCharsInput = 0
+        let totalCharsOutput = 0
+        let lastTimestamp = Date.now()
+
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line)
+            if (entry.created_at) {
+              const ts = new Date(entry.created_at).getTime()
+              if (!isNaN(ts)) lastTimestamp = ts
+            }
+
+            if (entry.source === 'USER_EXPLICIT' && entry.content) {
+              totalCharsInput += typeof entry.content === 'string' ? entry.content.length : 100
+            } else if (entry.source === 'MODEL' && entry.content) {
+              totalCharsOutput += typeof entry.content === 'string' ? entry.content.length : 100
+            }
+          } catch {
+            // Ignore invalid json
+          }
+        }
+
+        if (totalCharsInput > 0 || totalCharsOutput > 0) {
+          const inputTokens = Math.max(1, Math.round(totalCharsInput / 3.5))
+          const outputTokens = Math.max(1, Math.round(totalCharsOutput / 3.5))
+          const model = 'gemini-3.6-flash'
+          const cost_usd = calculateCost({
+            model,
+            input_tokens: inputTokens,
+            cached_input_tokens: 0,
+            output_tokens: outputTokens,
+            reasoning_tokens: 0,
+          })
+
+          // Conversation-level totals grow over time — upsert so re-sync refreshes counts.
+          const upsertResult = upsertUsageRecordByRequestId({
+            source: 'antigravity',
+            provider: 'google',
+            project: 'Antigravity',
+            model,
+            input_tokens: inputTokens,
+            cached_input_tokens: 0,
+            output_tokens: outputTokens,
+            reasoning_tokens: 0,
+            cost_usd,
+            request_id: `antigravity-${convId}`,
+            timestamp: lastTimestamp,
+          })
+
+          result.scanned++
+          if (upsertResult.updated || !upsertResult.duplicate) {
+            result.inserted++
+          } else {
+            result.duplicates++
+          }
+        }
+      } catch {
+        result.errors++
+      }
+    }
+  }
+
+  result.duration_ms = Date.now() - start
+  return result
+}
+
 // ─── 统一入口 ─────────────────────────────────────────────────
 
 let _syncing = false
@@ -1049,6 +1158,13 @@ export async function syncAll(): Promise<SyncResult[]> {
       results.push(syncKimiCode())
     } catch {
       results.push({ source: 'kimi-code', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
+    }
+
+    // Antigravity Transcripts
+    try {
+      results.push(syncAntigravityTranscripts())
+    } catch {
+      results.push({ source: 'antigravity', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
     }
 
     // 本地 JSONL 用量文件（OpenClaw、Hermes、Grok 可选 usage 目录）

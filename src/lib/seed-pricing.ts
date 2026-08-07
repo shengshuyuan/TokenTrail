@@ -44,6 +44,8 @@ export function seedPricing() {
     { model_id: 'gpt-5.4', display_name: 'GPT-5.4', provider: 'openai', input_price_per_1m: 5.00, cached_input_price_per_1m: 1.25, output_price_per_1m: 15.00, reasoning_price_per_1m: 0 },
 
     // ─── Google ─── cached ≈ 50% of input (estimated)
+    { model_id: 'gemini-3.6-flash', display_name: 'Gemini 3.6 Flash', provider: 'google', input_price_per_1m: 0.15, cached_input_price_per_1m: 0.075, output_price_per_1m: 0.60, reasoning_price_per_1m: 0 },
+    { model_id: 'gemini-3.6-pro', display_name: 'Gemini 3.6 Pro', provider: 'google', input_price_per_1m: 1.25, cached_input_price_per_1m: 0.625, output_price_per_1m: 10.00, reasoning_price_per_1m: 0 },
     { model_id: 'gemini-2.5-pro', display_name: 'Gemini 2.5 Pro', provider: 'google', input_price_per_1m: 1.25, cached_input_price_per_1m: 0.625, output_price_per_1m: 10.00, reasoning_price_per_1m: 0 },
     { model_id: 'gemini-2.5-flash', display_name: 'Gemini 2.5 Flash', provider: 'google', input_price_per_1m: 0.15, cached_input_price_per_1m: 0.075, output_price_per_1m: 0.60, reasoning_price_per_1m: 0 },
     { model_id: 'gemini-2.0-flash', display_name: 'Gemini 2.0 Flash', provider: 'google', input_price_per_1m: 0.10, cached_input_price_per_1m: 0.05, output_price_per_1m: 0.40, reasoning_price_per_1m: 0 },

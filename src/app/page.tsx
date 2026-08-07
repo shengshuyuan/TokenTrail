@@ -45,10 +45,13 @@ function DashboardInner() {
   const [rawRecordsLoading, setRawRecordsLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
+  const [syncOk, setSyncOk] = useState(false)
   const [syncDetails, setSyncDetails] = useState<{ source: string; scanned: number; inserted: number; duplicates: number; errors: number }[] | null>(null)
   const [lastUpdated, setLastUpdated] = useState<number | null>(null)
   /** True briefly after auto-refresh so .data-refresh can re-fire without remount. */
   const [dataFlash, setDataFlash] = useState(false)
+  const syncClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const ALLOWED_TIME_RANGES: TimeRange[] = [1, 7, 30, 90]
 
   // Available filter options (populated from data)
   const [availableSources, setAvailableSources] = useState<string[]>([])
@@ -87,11 +90,29 @@ function DashboardInner() {
 
       // Extract available filters from response
       if (requestId === statsRequestId.current) {
+        const nextSources: string[] = Array.isArray(data.available_sources) ? data.available_sources : []
+        const nextModels: { id: string; name: string }[] = Array.isArray(data.available_models) ? data.available_models : []
         if (data.available_sources) {
-          setAvailableSources(data.available_sources)
+          setAvailableSources(nextSources)
         }
         if (data.available_models) {
-          setAvailableModels(data.available_models)
+          setAvailableModels(nextModels)
+        }
+        // Drop selections that no longer appear in the current window's options
+        // (otherwise chips vanish while the filter still empties the dashboard).
+        if (nextSources.length > 0) {
+          const allowed = new Set(nextSources)
+          setSelectedSources(prev => {
+            const next = prev.filter(s => allowed.has(s))
+            return next.length === prev.length ? prev : next
+          })
+        }
+        if (nextModels.length > 0) {
+          const allowed = new Set(nextModels.map(m => m.id))
+          setSelectedModels(prev => {
+            const next = prev.filter(m => allowed.has(m))
+            return next.length === prev.length ? prev : next
+          })
         }
 
         // Remove filter metadata from stats
@@ -187,7 +208,8 @@ function DashboardInner() {
       if (paused) return
       fetchDataRef.current().then(success => {
         if (!success) {
-          // On error, retry in 10s instead of waiting full 60s
+          // On error, retry in 10s instead of waiting full 60s (replace prior retry)
+          if (retryTimeout) clearTimeout(retryTimeout)
           retryTimeout = setTimeout(tick, 10_000)
         }
       })
@@ -253,8 +275,8 @@ function DashboardInner() {
       const saved = localStorage.getItem('tokentrail-prefs')
       if (saved) {
         const p = JSON.parse(saved)
-        if (p.timeRange) setTimeRange(p.timeRange)
-        if (p.currency) setCurrency(p.currency)
+        if (ALLOWED_TIME_RANGES.includes(p.timeRange)) setTimeRange(p.timeRange as TimeRange)
+        if (p.currency === 'USD' || p.currency === 'RMB') setCurrency(p.currency)
         savedTheme = p.theme
         if (typeof p.showProjectNames === 'boolean') setShowProjectNames(p.showProjectNames)
         if (typeof p.showRawRecords === 'boolean') setShowRawRecords(p.showRawRecords)
@@ -281,25 +303,26 @@ function DashboardInner() {
     )
   }
 
-  /** Chart click: toggle a single source into the filter set. */
+  /** Chart click uses the same multi-select toggle as filter chips. */
   const selectSourceFromChart = (source: string) => {
-    setSelectedSources(prev =>
-      prev.length === 1 && prev[0] === source ? [] : [source]
-    )
+    toggleSource(source)
   }
 
-  /** Chart click: toggle a single model into the filter set. */
+  /** Chart click uses the same multi-select toggle as filter chips. */
   const selectModelFromChart = (model: string) => {
-    setSelectedModels(prev =>
-      prev.length === 1 && prev[0] === model ? [] : [model]
-    )
+    toggleModel(model)
   }
 
   const handleSync = async () => {
     if (syncing) return
     setSyncing(true)
     setSyncResult(null)
+    setSyncOk(false)
     setSyncDetails(null)
+    if (syncClearTimerRef.current) {
+      clearTimeout(syncClearTimerRef.current)
+      syncClearTimerRef.current = null
+    }
     try {
       const res = await fetch('/api/sync', { method: 'POST' })
       const data = await res.json()
@@ -316,21 +339,35 @@ function DashboardInner() {
         if (total_duplicates > 0) parts.push(`${total_duplicates} dup`)
         if (total_errors > 0) parts.push(`${total_errors} err`)
         setSyncResult(parts.length > 0 ? `${parts.join(' · ')} (${(duration_ms / 1000).toFixed(1)}s)` : t('sync.updated'))
+        setSyncOk(total_errors === 0)
         setSyncDetails(data.results || null)
         // 自动刷新数据，使用 isAutoRefresh=true 显示刷新指示器
         await fetchData(true)
         await fetchRawRecords()
       } else {
         setSyncResult(t('sync.failed'))
+        setSyncOk(false)
       }
     } catch (err) {
       setSyncResult(err instanceof Error ? err.message : t('sync.networkError'))
+      setSyncOk(false)
     } finally {
       setSyncing(false)
       // 8 秒后清除结果（给用户更多时间看到详情）
-      setTimeout(() => { setSyncResult(null); setSyncDetails(null) }, 8000)
+      syncClearTimerRef.current = setTimeout(() => {
+        setSyncResult(null)
+        setSyncDetails(null)
+        setSyncOk(false)
+        syncClearTimerRef.current = null
+      }, 8000)
     }
   }
+
+  useEffect(() => {
+    return () => {
+      if (syncClearTimerRef.current) clearTimeout(syncClearTimerRef.current)
+    }
+  }, [])
 
   const loading = initialLoading
   const hasData = stats && stats.total_requests > 0
@@ -347,25 +384,43 @@ function DashboardInner() {
     ? new Date(lastUpdated).toLocaleTimeString(lang === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit' })
     : '--:--'
   const activeTheme = getThemeDefinition(theme)
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null
+    const panel = target?.closest('.eva-panel, .eva-panel-stat') as HTMLElement | null
+    if (panel) {
+      const rect = panel.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      panel.style.setProperty('--spotlight-x', `${x.toFixed(1)}px`)
+      panel.style.setProperty('--spotlight-y', `${y.toFixed(1)}px`)
+    }
+  }, [])
 
   return (
-    <div className="dashboard-shell min-h-screen">
+    <div className="dashboard-shell min-h-screen" onMouseMove={handleMouseMove}>
       {/* Header */}
       <header className="glass-header z-40 border-b border-eva-border backdrop-blur-xl sm:sticky sm:top-0">
         <div className="mx-auto max-w-[1520px] px-4 sm:px-6 lg:px-8">
           <div className="flex min-h-16 flex-col gap-3 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
-              <div className="relative h-10 w-10 shrink-0">
-                {/* A 40px local icon does not benefit from the image optimizer. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/logo-app.png"
-                  alt="TokenTrail logo"
-                  className="brand-logo h-full w-full rounded-lg"
+              <div className="brand-logo relative h-10 w-10 shrink-0 rounded-lg">
+                <span
+                  className="block h-full w-full rounded-lg"
+                  style={{
+                    WebkitMask: 'url(/logo-app.png) center/contain no-repeat',
+                    mask: 'url(/logo-app.png) center/contain no-repeat',
+                    background: 'linear-gradient(135deg, var(--theme-primary), var(--theme-secondary))',
+                  }}
+                  role="img"
+                  aria-label="TokenTrail logo"
                 />
                 <span
                   className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-eva-bg ${
-                    refreshing ? 'bg-status-warning animate-pulse' : 'bg-status-success shadow-[0_0_12px_rgba(var(--status-success-rgb),0.38)]'
+                    refreshing
+                      ? 'bg-status-warning animate-pulse'
+                      : error
+                        ? 'bg-status-danger'
+                        : 'bg-status-success shadow-[0_0_12px_rgba(var(--status-success-rgb),0.38)]'
                   }`}
                   aria-hidden="true"
                 />
@@ -454,7 +509,9 @@ function DashboardInner() {
                   syncing
                     ? 'border-status-warning/50 bg-status-warning/10 text-status-warning animate-pulse'
                     : syncResult
-                      ? 'border-status-success/50 bg-status-success/10 text-status-success'
+                      ? syncOk
+                        ? 'border-status-success/50 bg-status-success/10 text-status-success'
+                        : 'border-status-danger/50 bg-status-danger/10 text-status-danger'
                       : ''
                 }`}
               >
@@ -582,8 +639,8 @@ function DashboardInner() {
           </MotionItem>
         </MotionGroup>
 
-        {/* Empty State */}
-        {!loading && !hasData && (
+        {/* Empty State — only when fetch succeeded and there is truly no data */}
+        {!loading && !error && !hasData && (
           <div className="eva-panel p-8 text-center">
             <div className="text-terminal text-lg mb-3">{t('empty.noSignal')}</div>
             <div className="text-xs font-mono text-eva-text-dim max-w-md mx-auto space-y-2">

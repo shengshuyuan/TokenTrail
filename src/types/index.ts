@@ -121,4 +121,7 @@ export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   'hermes': 'Hermes',
   'lobster': 'Lobster',
   'traework': 'TraeWork',
+  'antigravity': 'Antigravity',
+  'grok': 'Grok',
+  'vibecafe': 'VibeCafé',
 }

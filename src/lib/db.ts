@@ -275,6 +275,89 @@ export function insertUsageRecord(record: {
   return { success: true, cost_usd: record.cost_usd, id: result.lastInsertRowid as number, duplicate: false, project_backfilled: false }
 }
 
+/**
+ * Insert or refresh a usage row keyed by request_id.
+ * Used by conversation-level scanners (e.g. Antigravity) where token totals grow over time.
+ * Returns `updated: true` when an existing row's token totals are raised.
+ */
+export function upsertUsageRecordByRequestId(record: {
+  source: string
+  provider?: string
+  project?: string
+  model: string
+  input_tokens: number
+  cached_input_tokens: number
+  output_tokens: number
+  reasoning_tokens: number
+  cost_usd: number
+  request_id: string
+  timestamp: number
+}): { success: boolean; cost_usd: number; id: number; duplicate: boolean; updated: boolean } {
+  const db = getDb()
+  const requestId = String(record.request_id).trim()
+  if (!requestId) {
+    const inserted = insertUsageRecord(record)
+    return { ...inserted, updated: false }
+  }
+
+  const existing = db.prepare(
+    'SELECT id, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens FROM usage_records WHERE request_id = ?'
+  ).get(requestId) as {
+    id: number
+    input_tokens: number
+    cached_input_tokens: number
+    output_tokens: number
+    reasoning_tokens: number
+  } | undefined
+
+  if (!existing) {
+    const inserted = insertUsageRecord(record)
+    return { success: inserted.success, cost_usd: inserted.cost_usd, id: inserted.id, duplicate: false, updated: false }
+  }
+
+  const input_tokens = sanitizeTokenCount(record.input_tokens)
+  const cached_input_tokens = sanitizeTokenCount(record.cached_input_tokens)
+  const output_tokens = sanitizeTokenCount(record.output_tokens)
+  const reasoning_tokens = sanitizeTokenCount(record.reasoning_tokens)
+  const timestamp = Number.isFinite(record.timestamp) ? Math.trunc(record.timestamp) : Date.now()
+  const grew =
+    input_tokens > existing.input_tokens ||
+    cached_input_tokens > existing.cached_input_tokens ||
+    output_tokens > existing.output_tokens ||
+    reasoning_tokens > existing.reasoning_tokens
+
+  if (!grew) {
+    return { success: true, cost_usd: 0, id: existing.id, duplicate: true, updated: false }
+  }
+
+  db.prepare(`
+    UPDATE usage_records
+    SET model = @model,
+        provider = COALESCE(@provider, provider),
+        project = @project,
+        input_tokens = @input_tokens,
+        cached_input_tokens = @cached_input_tokens,
+        output_tokens = @output_tokens,
+        reasoning_tokens = @reasoning_tokens,
+        cost_usd = @cost_usd,
+        timestamp = @timestamp
+    WHERE id = @id
+  `).run({
+    id: existing.id,
+    model: record.model,
+    provider: record.provider || null,
+    project: normalizeProjectName(record.project),
+    input_tokens,
+    cached_input_tokens,
+    output_tokens,
+    reasoning_tokens,
+    cost_usd: record.cost_usd,
+    timestamp,
+  })
+
+  return { success: true, cost_usd: record.cost_usd, id: existing.id, duplicate: false, updated: true }
+}
+
 function normalizeProjectName(project?: string): string {
   const value = project?.trim()
   return value || 'unknown'

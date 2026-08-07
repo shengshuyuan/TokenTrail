@@ -809,14 +809,11 @@ function Modal({ onClose }: { onClose: () => void }) {
     <>
       <Toast message={toastMsg} visible={toastVisible} />
 
-      {/* Backdrop */}
+      {/* Full-screen shell: click outside dialog closes (backdrop is under the shell). */}
       <div
-        className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm animate-fade-in"
+        className="fixed inset-0 z-[90] flex items-start justify-center bg-black/60 px-3 pt-3 backdrop-blur-sm animate-fade-in sm:px-8 sm:pt-8 md:px-12 lg:px-48 lg:pt-12"
         onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div className="fixed inset-3 z-[95] flex items-start justify-center pt-3 sm:inset-8 sm:pt-8 md:inset-12 lg:inset-x-48 lg:inset-y-12">
+      >
         <div
           ref={dialogRef}
           role="dialog"
@@ -828,6 +825,7 @@ function Modal({ onClose }: { onClose: () => void }) {
             background: 'var(--eva-panel)',
             boxShadow: '0 25px 80px rgba(0,0,0,0.5), 0 0 60px rgba(var(--eva-green-rgb), 0.05)',
           }}
+          onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
           <div
@@ -948,6 +946,8 @@ export function IntegrationGuide() {
       <button
         type="button"
         onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         className="control-surface pressable min-h-10 shrink-0 px-3 py-1.5 text-xs font-mono sm:min-h-[32px]"
       >
         {t('guide.title')}
