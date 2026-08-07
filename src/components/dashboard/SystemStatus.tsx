@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useLang } from '@/lib/LanguageContext'
+import { SOURCE_DISPLAY_NAMES } from '@/types'
 
 interface SourceHealth {
   source: string
@@ -48,19 +49,8 @@ function formatRelativeTime(isoString: string | null, lang: 'zh' | 'en'): string
   return lang === 'zh' ? `${days} 天前` : `${days}d ago`
 }
 
-const SOURCE_DISPLAY: Record<string, string> = {
-  'claude-code': 'Claude Code',
-  'kimi-code': 'Kimi Code',
-  'codex': 'Codex',
-  'vibecafe': 'VibeCafé',
-  'openclaw': 'OpenClaw',
-  'hermes': 'Hermes',
-  'lobster': 'Lobster',
-  'traework': 'TraeWork',
-}
-
 function sourceDisplayName(source: string): string {
-  return SOURCE_DISPLAY[source] || source
+  return SOURCE_DISPLAY_NAMES[source] || source
 }
 
 export function SystemStatus({

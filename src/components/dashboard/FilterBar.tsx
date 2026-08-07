@@ -84,7 +84,7 @@ export function FilterBar({
                 onClearSources()
                 onClearModels()
               }}
-              className="hidden text-[10px] font-mono text-eva-text-dim transition-colors hover:text-eva-orange sm:inline-flex"
+              className="inline-flex shrink-0 text-[10px] font-mono text-eva-text-dim transition-colors hover:text-eva-orange"
             >
               {t('filter.clearAll', { n: totalActive })}
             </button>

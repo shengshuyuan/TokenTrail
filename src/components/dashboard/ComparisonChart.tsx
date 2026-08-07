@@ -131,6 +131,7 @@ export function ComparisonChart({
         <button
           type="button"
           onClick={() => setMode('source')}
+          aria-pressed={mode === 'source'}
           className={`control-surface rounded-full px-3 py-1 text-[11px] font-mono ${
             mode === 'source' ? 'control-surface-active' : ''
           }`}
@@ -140,6 +141,7 @@ export function ComparisonChart({
         <button
           type="button"
           onClick={() => setMode('model')}
+          aria-pressed={mode === 'model'}
           className={`control-surface rounded-full px-3 py-1 text-[11px] font-mono ${
             mode === 'model' ? 'control-surface-active' : ''
           }`}

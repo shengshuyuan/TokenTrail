@@ -186,11 +186,26 @@ function bootstrap(plistPath) {
 }
 
 function findServiceNodePath() {
-  const candidates = [
-    path.join(os.homedir(), '.nvm', 'versions', 'node', 'v20.20.2', 'bin', 'node'),
-    process.execPath,
-  ]
-  return candidates.find(candidate => fs.existsSync(candidate)) || process.execPath
+  // Prefer the node that is running this CLI so LaunchAgent and native modules match.
+  if (process.env.TOKENTRAIL_NODE && fs.existsSync(process.env.TOKENTRAIL_NODE)) {
+    return process.env.TOKENTRAIL_NODE
+  }
+  if (process.execPath && fs.existsSync(process.execPath)) {
+    return process.execPath
+  }
+  const nvmDir = path.join(os.homedir(), '.nvm', 'versions', 'node')
+  try {
+    if (fs.existsSync(nvmDir)) {
+      const versions = fs.readdirSync(nvmDir).filter(v => v.startsWith('v')).sort().reverse()
+      for (const version of versions) {
+        const candidate = path.join(nvmDir, version, 'bin', 'node')
+        if (fs.existsSync(candidate)) return candidate
+      }
+    }
+  } catch {
+    // fall through
+  }
+  return process.execPath
 }
 
 function runWithNodePath(nodePath, command, args, cwd) {
@@ -653,6 +668,9 @@ function cmdHelp() {
   console.log('    daemon restart     restart 的别名')
   console.log('    daemon uninstall   uninstall-service 的别名')
   console.log('')
+  console.log('  install-service 选项:')
+  console.log('    --build            构建 production 并常驻 production 模式（推荐）')
+  console.log('')
   console.log('  report 选项:')
   console.log('    --source <名称>    数据来源（如 openclaw、hermes）')
   console.log('    --model <ID>       模型 ID（如 gpt-4.1）')
@@ -665,7 +683,7 @@ function cmdHelp() {
   console.log('')
   console.log('  示例:')
   console.log('    tokentrail setup')
-  console.log('    tokentrail install-service')
+  console.log('    tokentrail install-service --build')
   console.log('    tokentrail doctor')
   console.log('    tokentrail sync')
   console.log('    tokentrail report --source openclaw --model gpt-4.1 --input 5000 --output 1200')
