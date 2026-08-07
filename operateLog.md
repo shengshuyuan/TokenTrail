@@ -36,6 +36,11 @@
 - **变更摘要**：v0.2.3 仪表盘质感续修：① 补齐 residual control token；② 对比/占比图等高；③ 模型 chips +N 折叠；④ 图表点击联动筛选；⑤ 自动刷新 data-refresh；⑥ 原始记录表优化；⑦ neon KPI 辉光 + sparkline；⑧ review 修复：刷新不 remount、chips 保留已选、Bar onClick 兼容；⑨ 修复 CLI `parseFlags` 对 `--build` 布尔 flag 的解析，使 `install-service --build` 真正进入 production。
 - **回滚指南**：`git checkout -- src/app/globals.css src/app/page.tsx src/components/dashboard src/lib/i18n.ts src/lib/version.ts package.json bin/tokentrail.js operateLog.md`
 
+- **[2026-08-08 12:00:00 CST]** 🟡修改
+- **影响范围**：`src/app/page.tsx`、`src/lib/db.ts`、`src/lib/sync.ts`、`src/lib/themes.ts`、`src/app/globals.css`、`src/components/dashboard/*`、`bin/tokentrail.js`、`src/types/index.ts`、`src/lib/seed-pricing.ts`
+- **变更摘要**：v0.2.4 代码 review 修复 + 主题/同步增强：① sync 失败样式不再显示成功绿；② 请求失败时不展示「无数据」空态；③ 时间窗口切换后剪枝失效筛选；④ IntegrationGuide 点击遮罩关闭；⑤ 图表筛选与 chips 同为 multi-toggle；⑥ 自动刷新 retry 防堆叠；⑦ SystemStatus 统一 SOURCE_DISPLAY_NAMES；⑧ CLI node 路径优先 process.execPath、文档 --build；⑨ Antigravity 同步 upsert 会话累计 token；⑩ spotlight glass / ember-paper 主题微调。
+- **回滚指南**：`git checkout -- src bin operateLog.md package.json`
+
 - **[2026-08-08 00:24:33 CST]** 🟡修改
 - **影响范围**：`src/app/globals.css`、`src/app/page.tsx`、`src/lib/db.ts`、`src/lib/sync.ts`、`src/lib/themes.ts`、`src/lib/seed-pricing.ts`、`src/types/index.ts`、`IntegrationGuide.tsx`、`docs/plans/*`、version → 0.2.4
 - **变更摘要**：主题视觉打磨（ember/editorial spotlight 玻璃、Logo mask 随主题着色）；筛选/同步健壮性；Antigravity 对话日志扫描与 request_id upsert；Gemini 3.6 价目；计划文档归档。

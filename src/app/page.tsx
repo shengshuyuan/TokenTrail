@@ -23,6 +23,8 @@ export default function DashboardPage() {
   return <DashboardInner />
 }
 
+const ALLOWED_TIME_RANGES: TimeRange[] = [1, 7, 30, 90]
+
 function DashboardInner() {
   const { lang, setLang, t } = useLang()
   const [stats, setStats] = useState<StatsResponse | null>(null)
@@ -51,7 +53,6 @@ function DashboardInner() {
   /** True briefly after auto-refresh so .data-refresh can re-fire without remount. */
   const [dataFlash, setDataFlash] = useState(false)
   const syncClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const ALLOWED_TIME_RANGES: TimeRange[] = [1, 7, 30, 90]
 
   // Available filter options (populated from data)
   const [availableSources, setAvailableSources] = useState<string[]>([])
