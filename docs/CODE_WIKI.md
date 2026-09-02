@@ -1,19 +1,25 @@
 # TokenTrail Code Wiki
 
-> 生成时间：2026-06-29
-> 适用范围：当前仓库主应用、CLI、API、数据层与 Dashboard 前端
+> 更新时间：2026-09-02（0.3.0 账号额度中心）
+> 适用范围：当前仓库主应用、CLI、API、数据层、额度适配器与 Dashboard 前端
 > 说明：本仓库几乎没有传统意义上的“类（class）”，核心实现以 `函数 + React 组件 + Next.js Route Handler` 为主，因此本文档重点解释关键函数、组件和模块边界。
 
 ## 1. 项目是什么
 
-TokenTrail 是一个本地优先的 AI Token 用量追踪器。它把来自 Claude Code、Codex、OpenClaw、Hermes 以及其他兼容工具的真实 token 用量统一写入本地 SQLite，然后通过一个 Next.js Dashboard 展示趋势、费用、来源分布、模型分布、项目归因和系统状态。
+TokenTrail 是一个本地优先的 AI 编程面板，跑在本机 Next.js + SQLite 上，不需要云账号。它做两件事：
 
-它包含 4 条核心能力链路：
+1. **用量统计**：把 Claude Code、Codex、Kimi Code、OpenClaw、Hermes 以及其他兼容工具的真实 token 用量写入本地 SQLite，展示趋势、费用、来源分布、模型分布、项目归因和系统状态。
+2. **账号额度**：读取 Codex、Gemini、Grok、GLM Coding Plan、Kimi Code 的官方剩余额度（5 小时 / 每周窗口、加油包、重置倒计时）。授权优先走各家官方 CLI 的可见终端登录；API Key 只作兜底，存在 macOS 钥匙串。
 
-1. 本地扫描：扫描 Claude Code 和 Codex 的本地会话 JSONL。
+用量和额度共用 Dashboard，不共用数据模型：`usage_records` 记已经花掉的 token，`quota_snapshots` 记官方套餐还剩多少。快照里不写 token、邮箱或账号 ID。
+
+核心能力链路：
+
+1. 本地扫描：扫描 Claude Code、Codex、Kimi Code 的本地会话 JSONL。
 2. 主动上报：其他工具直接调用 `/api/report` 上报一条记录。
 3. 代理采集：把 OpenAI 兼容 SDK 指向 `/proxy/openai/*`，自动记录 usage。
-4. 本地常驻：CLI 可在 macOS 上注册 LaunchAgent，让服务和定时同步长期运行。
+4. 账号额度：`src/lib/quotas/providers/*` 适配器读官方 CLI / 官方接口，写入规范化快照。
+5. 本地常驻：CLI 可在 macOS 上注册 LaunchAgent，让服务和定时同步长期运行。
 
 ## 2. 技术栈
 
@@ -38,6 +44,7 @@ TokenTrail/
 │   ├── INTEGRATION.md             # 接入说明
 │   ├── OPERATIONS.md              # 常驻运行与排障手册
 │   ├── PRD.md                     # 产品说明
+│   ├── QUOTA_MANUAL_GUIDE.md      # 账号额度授权与产品边界
 │   ├── SKILL.md                   # 给 AI 工具使用的技能描述
 │   └── CODE_WIKI.md               # 本文档
 ├── packages/
@@ -48,21 +55,22 @@ TokenTrail/
 │   └── verify-local.js            # 本机验收脚本
 ├── src/
 │   ├── app/
-│   │   ├── api/                   # Route Handlers
+│   │   ├── api/                   # Route Handlers（含 /api/quotas）
 │   │   ├── globals.css            # 全局样式与主题系统
 │   │   ├── layout.tsx             # 根布局
 │   │   ├── page.tsx               # Dashboard 主页面
 │   │   └── providers.tsx          # 全局 Provider
 │   ├── components/
-│   │   ├── dashboard/             # Dashboard 子组件
+│   │   ├── dashboard/             # Dashboard 子组件（含 QuotaCenter）
 │   │   ├── Motion.tsx             # 轻量动效包装
 │   │   └── ThemePicker.tsx        # 主题选择器
 │   ├── lib/
-│   │   ├── db.ts                  # SQLite 数据访问
+│   │   ├── db.ts                  # SQLite 数据访问（含 quota_snapshots）
 │   │   ├── init.ts                # 初始化入口
 │   │   ├── pricing.ts             # 费用计算
 │   │   ├── seed-pricing.ts        # 价格表初始化
 │   │   ├── sync.ts                # 多来源同步引擎
+│   │   ├── quotas/                # 额度适配器、状态机、CLI 登录、钥匙串
 │   │   ├── i18n.ts                # 词典
 │   │   ├── LanguageContext.tsx    # 语言上下文
 │   │   ├── themes.ts              # 主题定义
@@ -163,7 +171,8 @@ flowchart LR
 
 - Web、API 和 Dashboard 都跑在同一个 Next.js 应用里，不是前后端分离项目。
 - CLI 不是独立后端，它本质上是“本地服务管理器 + HTTP 客户端”。
-- 所有数据最后都收敛到 SQLite，再由统计接口统一查询。
+- 所有用量数据最后都收敛到 SQLite `usage_records`，再由统计接口统一查询。
+- 账号额度是第二条流水线：适配器 → 规范化快照 → `quota_snapshots` → `/api/quotas` → QuotaCenter。凭证走钥匙串，不进快照。
 - 前端页面只有一个主要页面：`src/app/page.tsx`。
 
 ## 6. 核心数据流

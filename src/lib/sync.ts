@@ -7,7 +7,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { backfillProjectByRequestPrefix, correctProjectByRequestId, getDb, insertUsageRecord, upsertUsageRecordByRequestId, normalizeStoredProjectNames, upsertModelPricing, getConfig } from './db'
+import { backfillProjectByRequestPrefix, correctProjectByRequestId, getDb, insertUsageRecord, replaceUsageRecordByRequestId, upsertUsageRecordByRequestId, normalizeStoredProjectNames, upsertModelPricing, getConfig, removeUnknownCodexUsageRecords, removeOverlappingAggregateUsageRecords } from './db'
 import { calculateCost } from './pricing'
 import { ensureInit } from './init'
 const { findTraeHistoryFiles, parseTraeHistoryFile } = require('./traework.js') as {
@@ -47,6 +47,17 @@ const { createKimiHomeContext, parseKimiWireLine, resolveKimiWireContext } = req
     context: { homeDir: string; sessionsDir: string; sessionIndex: Map<string, string>; legacyWorkDirs: Map<string, string> },
     filePath: string
   ) => { relativePath: string; project: string }
+}
+const { createCodexSessionUsageParser, extractCodexModel, isCodexInternalModel } = require('./codex.js') as {
+  createCodexSessionUsageParser: () => { parse: (entry: Record<string, unknown>) => {
+    model: string
+    input_tokens: number
+    cached_input_tokens: number
+    output_tokens: number
+    reasoning_tokens: number
+  } | null }
+  extractCodexModel: (entry: Record<string, unknown>) => string | undefined
+  isCodexInternalModel: (model: string) => boolean
 }
 
 // ─── 类型 ──────────────────────────────────────────────────────
@@ -186,8 +197,8 @@ function syncCodex(): SyncResult {
 
     try {
       const lines = fs.readFileSync(filePath, 'utf-8').split('\n')
-      let currentModel: string | undefined
       let currentProject: string | undefined
+      const parser = createCodexSessionUsageParser()
 
       for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
         const line = lines[lineIdx]
@@ -196,43 +207,34 @@ function syncCodex(): SyncResult {
         try {
           const entry = JSON.parse(line)
 
-          const contextualModel = extractCodexModel(entry)
-          if (contextualModel) {
-            currentModel = contextualModel
-          }
           const contextualProject = extractCodexProject(entry)
           if (contextualProject) {
             currentProject = contextualProject
             backfillProjectByRequestPrefix(`codex:${relativePath}:`, currentProject)
           }
 
-          if (entry.type !== 'event_msg') continue
-          if (entry.payload?.type !== 'token_count') continue
-
-          const info = entry.payload.info
-          if (!info?.last_token_usage) continue
-
-          const usage = info.last_token_usage
-          if (!usage.input_tokens && !usage.output_tokens && !usage.cached_input_tokens && !usage.reasoning_output_tokens) continue
+          const usage = parser.parse(entry)
+          if (!usage) continue
 
           const requestId = `codex:${relativePath}:L${lineIdx}`
           const rawTs = entry.timestamp ? new Date(entry.timestamp).getTime() : Date.now()
           const timestamp = Number.isFinite(rawTs) ? rawTs : Date.now()
-          const model = extractCodexModel(entry) || currentModel || 'unknown-codex'
+          const model = usage.model
 
           ensureModelPricing(model)
 
-          const input_tokens = usage.input_tokens || 0
-          const cached_input_tokens = usage.cached_input_tokens || 0
-          const output_tokens = usage.output_tokens || 0
-          const reasoning_tokens = usage.reasoning_output_tokens || 0
+          const input_tokens = usage.input_tokens
+          const cached_input_tokens = usage.cached_input_tokens
+          const output_tokens = usage.output_tokens
+          const reasoning_tokens = usage.reasoning_tokens
 
           const cost_usd = calculateCost({ model, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens })
 
-          const insertResult = insertUsageRecord({
+          const insertResult = replaceUsageRecordByRequestId({
             source: 'codex',
             project: currentProject,
             model,
+            is_internal: isCodexInternalModel(model),
             input_tokens,
             cached_input_tokens,
             output_tokens,
@@ -253,6 +255,11 @@ function syncCodex(): SyncResult {
       result.errors++
     }
   }
+
+  // Versions before v0.2.5 persisted pre-context inherited history as
+  // "unknown-codex". Valid records above update in place; the remainder has
+  // no reliable model attribution and must not appear in model statistics.
+  removeUnknownCodexUsageRecords()
 
   result.duration_ms = Date.now() - start
   return result
@@ -985,6 +992,8 @@ async function syncVibeCafe(): Promise<SyncResult> {
           source,
           project: bucket.project || bucket.hostname,
           model,
+          is_internal: isCodexInternalModel(model),
+          is_aggregate: true,
           input_tokens,
           cached_input_tokens,
           output_tokens,
@@ -1004,6 +1013,8 @@ async function syncVibeCafe(): Promise<SyncResult> {
   } catch {
     result.errors++
   }
+
+  removeOverlappingAggregateUsageRecords()
 
   result.duration_ms = Date.now() - start
   return result
@@ -1248,23 +1259,6 @@ function findAllJsonl(dir: string): string[] {
 }
 
 /** 从 Codex session entry 读取真实模型名，避免用 reasoning tokens 猜成 o4-mini/gpt-4.1。 */
-function extractCodexModel(entry: Record<string, unknown>): string | undefined {
-  const direct = pickString(entry.model)
-  if (direct) return direct
-
-  const payload = entry.payload as Record<string, unknown> | undefined
-  const payloadModel = pickString(payload?.model)
-  if (payloadModel) return payloadModel
-
-  const collaborationMode = payload?.collaboration_mode as Record<string, unknown> | undefined
-  const modeSettings = collaborationMode?.settings as Record<string, unknown> | undefined
-  const modeModel = pickString(modeSettings?.model)
-  if (modeModel) return modeModel
-
-  const settings = payload?.settings as Record<string, unknown> | undefined
-  return pickString(settings?.model)
-}
-
 function pickString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }

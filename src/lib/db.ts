@@ -32,6 +32,8 @@ export function getDb(): Database.Database {
       cached_input_tokens INTEGER NOT NULL DEFAULT 0,
       output_tokens INTEGER NOT NULL DEFAULT 0,
       reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+      is_internal INTEGER NOT NULL DEFAULT 0,
+      is_aggregate INTEGER NOT NULL DEFAULT 0,
       cost_usd REAL NOT NULL DEFAULT 0,
       request_id TEXT,
       timestamp INTEGER NOT NULL,
@@ -59,11 +61,22 @@ export function getDb(): Database.Database {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS quota_snapshots (
+      provider TEXT PRIMARY KEY,
+      snapshot_json TEXT NOT NULL,
+      fetched_at INTEGER,
+      last_success_at INTEGER,
+      last_error_code TEXT
+    );
   `)
 
   ensureUsageRecordsProjectColumn(_db)
   ensureUsageRecordsProviderColumn(_db)
   ensureUsageRecordsTimestampValues(_db)
+  ensureUsageRecordsInternalColumn(_db)
+  ensureUsageRecordsAggregateColumn(_db)
+  markLegacyInternalCodexUsageRecords(_db)
   _db.exec('CREATE INDEX IF NOT EXISTS idx_usage_project ON usage_records(project);')
 
   return _db
@@ -81,6 +94,30 @@ function ensureUsageRecordsProviderColumn(db: Database.Database) {
   if (!columns.some(column => column.name === 'provider')) {
     db.exec("ALTER TABLE usage_records ADD COLUMN provider TEXT;")
   }
+}
+
+function ensureUsageRecordsInternalColumn(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(usage_records)').all() as { name: string }[]
+  if (!columns.some(column => column.name === 'is_internal')) {
+    db.exec('ALTER TABLE usage_records ADD COLUMN is_internal INTEGER NOT NULL DEFAULT 0;')
+  }
+}
+
+function ensureUsageRecordsAggregateColumn(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(usage_records)').all() as { name: string }[]
+  if (!columns.some(column => column.name === 'is_aggregate')) {
+    db.exec('ALTER TABLE usage_records ADD COLUMN is_aggregate INTEGER NOT NULL DEFAULT 0;')
+  }
+  db.prepare("UPDATE usage_records SET is_aggregate = 1 WHERE request_id LIKE 'vc:%' AND is_aggregate = 0").run()
+}
+
+function markLegacyInternalCodexUsageRecords(db: Database.Database) {
+  db.prepare(`
+    UPDATE usage_records
+    SET is_internal = 1
+    WHERE model = 'codex-auto-review'
+      AND is_internal = 0
+  `).run()
 }
 
 function normalizeStoredTimestamp(value: unknown): number | null {
@@ -209,6 +246,8 @@ export function insertUsageRecord(record: {
   cached_input_tokens: number
   output_tokens: number
   reasoning_tokens: number
+  is_internal?: boolean
+  is_aggregate?: boolean
   cost_usd: number
   request_id?: string
   timestamp: number
@@ -248,8 +287,8 @@ export function insertUsageRecord(record: {
   }
 
   const stmt = db.prepare(`
-    INSERT INTO usage_records (source, provider, project, model, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens, cost_usd, request_id, timestamp)
-    VALUES (@source, @provider, @project, @model, @input_tokens, @cached_input_tokens, @output_tokens, @reasoning_tokens, @cost_usd, @request_id, @timestamp)
+    INSERT INTO usage_records (source, provider, project, model, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens, is_internal, is_aggregate, cost_usd, request_id, timestamp)
+    VALUES (@source, @provider, @project, @model, @input_tokens, @cached_input_tokens, @output_tokens, @reasoning_tokens, @is_internal, @is_aggregate, @cost_usd, @request_id, @timestamp)
     ON CONFLICT(request_id) WHERE request_id IS NOT NULL DO NOTHING
   `)
 
@@ -262,6 +301,8 @@ export function insertUsageRecord(record: {
     cached_input_tokens,
     output_tokens,
     reasoning_tokens,
+    is_internal: record.is_internal ? 1 : 0,
+    is_aggregate: record.is_aggregate ? 1 : 0,
     cost_usd: record.cost_usd,
     request_id: requestId,
     timestamp,
@@ -273,6 +314,101 @@ export function insertUsageRecord(record: {
   }
 
   return { success: true, cost_usd: record.cost_usd, id: result.lastInsertRowid as number, duplicate: false, project_backfilled: false }
+}
+
+/**
+ * Replaces a locally-derived record when its stable source position is read
+ * again. Parser upgrades can then correct historical rows without duplicates.
+ */
+export function replaceUsageRecordByRequestId(record: {
+  source: string
+  provider?: string
+  project?: string
+  model: string
+  input_tokens: number
+  cached_input_tokens: number
+  output_tokens: number
+  reasoning_tokens: number
+  is_internal?: boolean
+  is_aggregate?: boolean
+  cost_usd: number
+  request_id: string
+  timestamp: number
+}) {
+  const db = getDb()
+  const requestId = String(record.request_id).trim()
+  if (!requestId) return insertUsageRecord(record)
+
+  const existing = db.prepare('SELECT id FROM usage_records WHERE request_id = ?').get(requestId) as { id: number } | undefined
+  if (!existing) return insertUsageRecord({ ...record, request_id: requestId })
+
+  const input_tokens = sanitizeTokenCount(record.input_tokens)
+  const cached_input_tokens = sanitizeTokenCount(record.cached_input_tokens)
+  const output_tokens = sanitizeTokenCount(record.output_tokens)
+  const reasoning_tokens = sanitizeTokenCount(record.reasoning_tokens)
+  const timestamp = Number.isFinite(record.timestamp) ? Math.trunc(record.timestamp) : Date.now()
+
+  db.prepare(`
+    UPDATE usage_records
+    SET source = @source,
+        provider = @provider,
+        project = @project,
+        model = @model,
+        input_tokens = @input_tokens,
+        cached_input_tokens = @cached_input_tokens,
+        output_tokens = @output_tokens,
+        reasoning_tokens = @reasoning_tokens,
+        is_internal = @is_internal,
+        is_aggregate = @is_aggregate,
+        cost_usd = @cost_usd,
+        timestamp = @timestamp
+    WHERE id = @id
+  `).run({
+    id: existing.id,
+    source: normalizeSource(record.source),
+    provider: record.provider || null,
+    project: normalizeProjectName(record.project),
+    model: record.model,
+    input_tokens,
+    cached_input_tokens,
+    output_tokens,
+    reasoning_tokens,
+    is_internal: record.is_internal ? 1 : 0,
+    is_aggregate: record.is_aggregate ? 1 : 0,
+    cost_usd: record.cost_usd,
+    timestamp,
+  })
+
+  return { success: true, cost_usd: record.cost_usd, id: existing.id, duplicate: true, project_backfilled: false }
+}
+
+/** Remove legacy Codex rows created before a session declared any model. */
+export function removeUnknownCodexUsageRecords(): number {
+  const db = getDb()
+  return db.prepare(`DELETE FROM usage_records WHERE source = 'codex' AND model = 'unknown-codex'`).run().changes
+}
+
+/**
+ * A VibeCafé row is a daily aggregate. When the same source, model, and local
+ * day is already present in a raw local log, retain the raw events only. Keep
+ * aggregates for days absent from the local scanner so historical coverage is
+ * not lost.
+ */
+export function removeOverlappingAggregateUsageRecords(): number {
+  const db = getDb()
+  return db.prepare(`
+    DELETE FROM usage_records AS aggregate_row
+    WHERE aggregate_row.is_aggregate = 1
+      AND EXISTS (
+        SELECT 1
+        FROM usage_records AS local_row
+        WHERE local_row.is_aggregate = 0
+          AND local_row.source = aggregate_row.source
+          AND local_row.model = aggregate_row.model
+          AND date(ROUND((local_row.timestamp + 28800000) / 1000), 'unixepoch') =
+              date(ROUND((aggregate_row.timestamp + 28800000) / 1000), 'unixepoch')
+      )
+  `).run().changes
 }
 
 /**
@@ -477,7 +613,7 @@ export function getAggregatedStats(filters: FilterParams) {
       COUNT(*) as count
     FROM usage_records u
     LEFT JOIN model_pricing mp ON u.model = mp.model_id
-    ${joined.sql}
+    ${joined.sql} AND u.is_internal = 0
     GROUP BY u.model
     ORDER BY total_tokens DESC
   `).all(...joined.params) as { model: string; display_name: string; total_tokens: number; cost_usd: number; count: number }[]
@@ -579,4 +715,44 @@ export function getConfig(key: string): string | undefined {
 export function setConfig(key: string, value: string): void {
   const db = getDb()
   db.prepare('INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)').run(key, value)
+}
+
+export function deleteConfig(key: string): void {
+  const db = getDb()
+  db.prepare('DELETE FROM app_config WHERE key = ?').run(key)
+}
+
+// ─── 账号额度快照 ─────────────────────────────────────────────
+// 只保存规范化后的额度快照（无凭证、无邮箱、无完整账号/团队 ID）。
+
+export interface QuotaSnapshotRow {
+  provider: string
+  snapshot_json: string
+  fetched_at: number | null
+  last_success_at: number | null
+  last_error_code: string | null
+}
+
+export function loadQuotaSnapshotRows(): QuotaSnapshotRow[] {
+  const db = getDb()
+  return db
+    .prepare('SELECT provider, snapshot_json, fetched_at, last_success_at, last_error_code FROM quota_snapshots')
+    .all() as QuotaSnapshotRow[]
+}
+
+export function saveQuotaSnapshotRows(rows: QuotaSnapshotRow[]): void {
+  const db = getDb()
+  const stmt = db.prepare(`
+    INSERT INTO quota_snapshots (provider, snapshot_json, fetched_at, last_success_at, last_error_code)
+    VALUES (@provider, @snapshot_json, @fetched_at, @last_success_at, @last_error_code)
+    ON CONFLICT(provider) DO UPDATE SET
+      snapshot_json = @snapshot_json,
+      fetched_at = @fetched_at,
+      last_success_at = @last_success_at,
+      last_error_code = @last_error_code
+  `)
+  const write = db.transaction(() => {
+    for (const row of rows) stmt.run(row)
+  })
+  write()
 }

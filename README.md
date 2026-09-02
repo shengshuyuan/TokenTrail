@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Local-first AI token usage dashboard for Claude Code, Codex, Kimi Code, and custom AI tools.**
+**Local-first AI coding usage dashboard: token spend, plus live account quotas for Codex, Gemini, Grok, GLM, and Kimi.**
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
@@ -10,29 +10,68 @@
 
 ---
 
-TokenTrail helps developers understand where their AI coding tokens go. It reads local usage data from Claude Code, Codex, and Kimi Code, accepts usage reports from other tools, stores everything in SQLite on your machine, and turns it into a dashboard for cost trends, model breakdowns, source health, project attribution, and raw-record inspection.
+TokenTrail is a local dashboard for AI coding work. It does two jobs on your machine, without a cloud account:
+
+1. **Usage tracking** — read real token counts from Claude Code, Codex, Kimi Code, Grok, and any tool that reports via JSONL / CLI / HTTP; store them in SQLite; show cost trends, model mix, project attribution, source health, and raw records.
+2. **Account quotas** — show official remaining limits (5-hour / weekly windows, booster packs, reset countdowns) for Codex, Gemini, Grok, GLM Coding Plan, and Kimi Code. Login prefers each provider’s official CLI in a visible Terminal window; API keys are a fallback and are never mixed across products.
 
 ![TokenTrail dashboard](./docs/assets/tokentrail-dashboard.png)
+
+## What's new in 0.3.0
+
+Account Quotas is now a first-class panel next to usage tracking.
+
+- One dashboard for **tokens already spent** and **official remaining subscription limits**
+- Codex / Gemini / Grok / Kimi login opens a visible macOS Terminal running the official CLI (`codex login`, `gemini`, `grok login --oauth`, `kimi login`). GLM uses a Coding Plan token
+- API keys are fallback only, stored in the macOS Keychain, never in SQLite snapshots
+- Product boundaries stay explicit: ChatGPT login ≠ OpenAI API key; Grok OAuth ≠ Management Key; Kimi Code ≠ Moonshot wallet; Gemini without a GCP quota project is shown as signed-in, not as a fake 0%
+
+Full release notes: [CHANGELOG.md](./CHANGELOG.md).
 
 ## Why TokenTrail
 
 - **Local-first by default** — usage data stays on your machine; no cloud account is required.
-- **Built for AI coding workflows** — tracks Claude Code, Codex, and any tool that integrates via the included SDK or HTTP API.
-- **Cost and token visibility** — compare spend by day, model, source, and project instead of guessing from provider bills.
+- **Usage and quotas together** — see what you already spent, and how much official subscription quota is left, in one dashboard.
+- **Official login first** — Codex / Gemini / Grok / Kimi authorization opens the real CLI (`codex login`, `gemini`, `grok login --oauth`, `kimi login`). TokenTrail does not scrape cookies or invent numbers.
+- **Keys stay off the snapshot** — API keys go to the macOS Keychain; SQLite only keeps Team ID, Project ID, Base URL, and normalized quota snapshots.
 - **Inspectable data** — review raw records, sync results, duplicate counts, and source health when numbers look suspicious.
 - **Background sync on macOS** — LaunchAgent keeps the dashboard and sync job running after login.
-- **Privacy-friendly project display** — project names can be hidden in the dashboard when you want a safer screen-share view.
+- **Privacy-friendly project display** — project names can be hidden when you share or record the screen.
 
 ## What You Get
 
 | Area | What it shows |
 | --- | --- |
+| Account Quotas | Official remaining limits for Codex, Gemini, Grok, GLM, and Kimi: 5h/weekly windows, booster packs, reset countdowns, CLI login, and Keychain-stored keys |
 | Usage dashboard | Daily/monthly token and cost trends, model mix, source comparison |
 | Project stats | Usage by project, with optional project-name hiding |
 | Source health | Claude Code, Codex, API sync status, last sync result, duplicate/error counts |
 | Raw records | Searchable usage records for auditing and debugging |
 | Pricing | Built-in model pricing table and auto-registration for unknown models |
 | API and CLI | Report custom usage from scripts, agents, local services, or other tools |
+
+## How it works
+
+TokenTrail keeps two pipelines on the same machine. They share the dashboard, not the data model.
+
+**Usage** answers “what did I already spend?”
+Local JSONL scans (Claude Code, Codex, Kimi Code), optional JSONL from other tools, HTTP `POST /api/report`, and an OpenAI-compatible local proxy. Records land in SQLite `usage_records` with pricing applied.
+
+**Quotas** answers “how much official plan is left?”
+Each provider has an adapter under `src/lib/quotas/providers/`. Adapters read official CLI sessions or official APIs, then write a normalized snapshot (`windows`, `boosters`, `status`, `source`) to `quota_snapshots`. Tokens never go into that table.
+
+Statuses you may see:
+
+| Status | Meaning |
+| --- | --- |
+| `healthy` | Official data, usage below warning |
+| `warning` / `critical` / `exhausted` | About 80% / 95% / 100% of a window |
+| `auth_error` | Login expired or rejected — sign in again |
+| `not_configured` | No CLI login and no usable key |
+| `unsupported` | Logged in, but this account has no readable quota (for example Gemini without a GCP project) |
+| `unsupported_version` | Official response shape changed — TokenTrail will not invent percentages |
+| `stale` / `network_error` | Last good snapshot kept; refresh failed or is old |
+| `manual` | You typed the numbers yourself |
 
 ## Quick Start
 
@@ -168,6 +207,41 @@ Convenience for existing VibeCafé users. Not a primary method. **`vibecafe_api_
 { "server_url": "http://localhost:3820", "vibecafe_api_key": "your-api-key" }
 ```
 
+## Account Quotas
+
+Open **Account Quotas** in the dashboard header. TokenTrail never fabricates remaining limits: it only shows official CLI/session data, official APIs, or a snapshot you typed in yourself.
+
+| Provider | How you sign in | What can be read automatically | What an API key is for |
+| --- | --- | --- | --- |
+| **Codex** | Visible Terminal: `codex login` (ChatGPT) | 5h / weekly windows from `~/.codex/sessions` `rate_limits` | A normal OpenAI API key is not a ChatGPT/Codex subscription quota |
+| **Gemini** | Visible Terminal: `gemini` → Sign in with Google | Official Code Assist quota buckets when the account has a readable GCP project | An AI Studio key cannot derive Google AI Pro/Ultra remaining quota |
+| **Grok** | Visible Terminal: `grok login --oauth` | Subscription credits / monthly usage via Grok CLI OAuth | Management Key + Team ID is xAI API prepaid/billing, not the Grok web subscription |
+| **GLM** | Coding Plan token / `ANTHROPIC_AUTH_TOKEN` | Coding Plan 5h window and official MCP usage | Only a token that can call the Coding Plan monitor API works |
+| **Kimi** | Visible Terminal: `kimi login`, or a **Kimi Code** console key | Kimi Code `/coding/v1/usages` windows and booster pack | Moonshot Open Platform keys only read the open-platform wallet — do not mix the two |
+
+If TokenTrail cannot open the login window, run the same official command yourself, then refresh:
+
+```bash
+codex login
+gemini          # then choose Sign in with Google
+grok login --oauth
+kimi login
+```
+
+Expired Kimi OAuth is shown as auth failure and asks you to sign in again. Logged-in Gemini without a GCP quota project is shown as signed-in, not as a fake 0%. Grok CLI billing structure changes surface as “update required”, not as invented percentages.
+
+API keys entered in the UI are stored in the **macOS Keychain**. SQLite keeps Team ID / Project ID / Base URL and normalized snapshots only. Snapshots never include tokens, emails, or account IDs.
+
+Full operator notes: [docs/QUOTA_MANUAL_GUIDE.md](./docs/QUOTA_MANUAL_GUIDE.md).
+
+## Privacy
+
+- No TokenTrail cloud account
+- Usage stays in local SQLite (`data/token-trail.db`)
+- Quota API keys live in the macOS Keychain only
+- Quota snapshots store remaining limits and status — not tokens, emails, or account IDs
+- CLI login is the provider’s own process in a visible Terminal; TokenTrail does not scrape cookies or invent numbers
+
 ## CLI Commands
 
 | Command | Description |
@@ -193,15 +267,20 @@ TokenTrail/
 ├── src/
 │   ├── app/
 │   │   ├── api/
+│   │   │   ├── quotas/        # Account quota read / refresh / auth
 │   │   │   ├── proxy/openai/  # Local OpenAI-compatible proxy
 │   │   │   ├── report/        # Usage report endpoint
 │   │   │   ├── sync/          # Data sync trigger
 │   │   │   └── ...            # health, status, stats, backup, pricing
 │   │   └── ...
-│   ├── components/dashboard/  # Dashboard UI
+│   ├── components/dashboard/  # Dashboard UI (including Quota Center)
 │   └── lib/
 │       ├── db.ts              # SQLite data layer
-│       ├── sync.ts            # Multi-source sync engine
+│       ├── sync.ts            # Multi-source usage sync
+│       ├── quotas/            # Quota adapters, status machine, CLI login, Keychain
+│       │   ├── providers/     # codex / gemini / grok / glm / kimi
+│       │   ├── cli-login.js   # Visible macOS Terminal for official login
+│       │   └── secret-store.ts
 │       └── pricing.ts         # Cost calculation
 └── data/token-trail.db        # Local SQLite database, gitignored
 ```

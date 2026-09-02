@@ -12,6 +12,7 @@ import { ComparisonChart } from '@/components/dashboard/ComparisonChart'
 import { ProportionChart } from '@/components/dashboard/ProportionChart'
 import { IntegrationGuide } from '@/components/dashboard/IntegrationGuide'
 import { ShareCard } from '@/components/dashboard/ShareCard'
+import { QuotaCenter } from '@/components/dashboard/QuotaCenter'
 import { APP_VERSION } from '@/lib/version'
 import { SystemStatus } from '@/components/dashboard/SystemStatus'
 import { ThemePicker } from '@/components/ThemePicker'
@@ -518,6 +519,9 @@ function DashboardInner() {
               >
                 {syncing ? t('sync.syncing') : syncResult || t('sync.button')}
               </button>
+
+              {/* Account Quota Center */}
+              <QuotaCenter />
 
               {/* Integration Guide */}
               <IntegrationGuide />

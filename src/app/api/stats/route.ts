@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     const availableModels = db.prepare(
       `SELECT DISTINCT u.model, COALESCE(mp.display_name, u.model) as display_name
        FROM usage_records u LEFT JOIN model_pricing mp ON u.model = mp.model_id
-       WHERE u.timestamp >= ? AND u.timestamp <= ?
+       WHERE u.timestamp >= ? AND u.timestamp <= ? AND u.is_internal = 0
        ORDER BY u.model`
     ).all(startDate, now) as { model: string; display_name: string }[]
 

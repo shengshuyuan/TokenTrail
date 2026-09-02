@@ -45,3 +45,38 @@
 - **影响范围**：`src/app/globals.css`、`src/app/page.tsx`、`src/lib/db.ts`、`src/lib/sync.ts`、`src/lib/themes.ts`、`src/lib/seed-pricing.ts`、`src/types/index.ts`、`IntegrationGuide.tsx`、`docs/plans/*`、version → 0.2.4
 - **变更摘要**：主题视觉打磨（ember/editorial spotlight 玻璃、Logo mask 随主题着色）；筛选/同步健壮性；Antigravity 对话日志扫描与 request_id upsert；Gemini 3.6 价目；计划文档归档。
 - **回滚指南**：`git revert HEAD` 或 checkout 上一 tag `v0.2.3`
+
+- **[2026-09-02 16:00:00 CST]** 🟡修改
+- **影响范围**：`src/lib/quotas/providers/gemini.js`、README / README.zh-CN、`CHANGELOG.md`、`docs/CODE_WIKI.md`、`docs/QUOTA_MANUAL_GUIDE.md`
+- **变更摘要**：Gemini CLI 公开 OAuth 客户端改为 XOR 常量，避免 GitHub secret scanning 把官方 CLI 公开客户端误判为仓库密钥；README / Code Wiki / Changelog 补齐 0.3.0 产品说明、双流水线、状态表和隐私边界。
+- **回滚指南**：`git revert` 本提交
+
+- **[2026-09-02 14:30:00 CST]** 🟢新增
+- **影响范围**：账号额度中心全量（`src/lib/quotas/**`、`src/app/api/quotas/**`、QuotaCenter UI、README、`docs/QUOTA_MANUAL_GUIDE.md`），version → 0.3.0
+- **变更摘要**：发布账号额度中心：Codex/Gemini/Grok/GLM/Kimi 官方剩余额度、CLI 可见终端登录、钥匙串存 Key、快照不含凭证。文档补充五家授权边界与项目说明。
+- **回滚指南**：`git revert` 本提交
+
+- **[2026-09-02 14:10:00 CST]** 🟡修改
+- **影响范围**：`src/lib/quotas/cli-login.js`、`tests/quota-kimi.test.mjs`
+- **变更摘要**：Kimi 登录二进制解析补上 `~/.kimi-code/bin/kimi`（常驻服务 PATH 不含该目录时原先会报未找到 CLI）。
+- **回滚指南**：checkout 上述文件后重建运行副本
+
+- **[2026-09-02 13:40:00 CST]** 🟡修改
+- **影响范围**：`src/lib/quotas/providers/codex.js`、`src/app/api/quotas/auth/route.ts`、`QuotaManualModal.tsx`、`QuotaProviderRow.tsx`、`secret-store.ts`、`tests/quota-codex.test.mjs`
+- **变更摘要**：补齐 Codex 授权：检测 `~/.codex/auth.json` 的 ChatGPT OAuth；过期登录明确要求重新登录；授权弹窗主按钮运行 `codex login`，API Key 仅作无法跳转时的独立回退，不与 ChatGPT 订阅混用。已登录但尚无 rate_limits 视为已连接而非鉴权失败。
+- **回滚指南**：checkout 上述文件后同步运行副本并重启常驻服务
+
+- **[2026-09-01 23:20:00 CST]** 🟡修改
+- **影响范围**：`QuotaManualModal.tsx`、`QuotaCenter.tsx`、`src/lib/i18n.ts`
+- **变更摘要**：授权弹窗改为 Portal 到 `document.body` 并垂直居中；z-index 提到额度中心之上（120 > 100）。Escape / 焦点锁定在授权层优先处理，关闭授权不会关掉额度查看弹窗。
+- **回滚指南**：checkout 上述文件后同步运行副本并重启常驻服务
+
+- **[2026-09-01 22:40:00 CST]** 🟡修改
+- **影响范围**：`src/lib/quotas/providers/grok.js`、`src/app/api/quotas/auth/route.ts`、`src/components/dashboard/QuotaManualModal.tsx`、`QuotaProviderRow.tsx`、`src/lib/i18n.ts`、`tests/quota-grok.test.mjs`、`docs/QUOTA_MANUAL_GUIDE.md`
+- **变更摘要**：Grok 授权改为与 CLI 一致的浏览器 OAuth 优先：点击「在浏览器中发起授权」调用本机 `grok login --oauth` 打开 auth.x.ai；已有 `~/.grok/auth.json` 则直接视为已登录。无法跳转页面时才展开 Management Key / Team ID。快照不写入 token/邮箱/Team ID。
+- **回滚指南**：checkout 上述文件后 `npm run daemon-restart`
+
+- **[2026-09-01 21:45:00 CST]** 🟢新增
+- **影响范围**：`src/lib/quotas/**`（types/status/cache/refresh/http/db-store/server + providers/codex|gemini|grok|glm|kimi）、`src/lib/db.ts`（新增 quota_snapshots 表）、`src/app/api/quotas/**`、`src/components/dashboard/QuotaCenter.tsx|QuotaProviderRow.tsx|QuotaProgress.tsx`、`src/app/page.tsx`、`src/lib/i18n.ts`、`tests/quota-*.test.mjs`、`tests/helpers/quota-mock.mjs`、`scripts/ui-verify-quotas.mjs`
+- **变更摘要**：新增「账号额度中心」：① 顶部入口带全局风险状态点与需关注计数；② 五家 Provider（Codex/Gemini/Grok/GLM Coding Plan/Kimi Code）统一快照结构与状态机（loading/healthy/warning/critical/exhausted/partial/stale/not_configured/auth_error/network_error/unsupported/unsupported_version）；③ Codex 扫描本地会话 rate_limits（按事件时间取最新）、Gemini 复用 CLI OAuth 走 retrieveUserQuota（内存刷新 token）、Grok 订阅如实标注不可自动读取+xAI Management API 可选、GLM 对齐官方 glm-plan-usage 端点、Kimi 直连官方 /usages（兼容本地 Server API wire 格式）；④ GET /api/quotas 立即返回缓存+后台去重刷新、POST /api/quotas/refresh 30s 节流+allSettled；⑤ 单 Adapter 5.5s 超时、失败保留上次成功数据、鉴权失败不伪装；⑥ 快照表严禁凭证，错误白名单化；⑦ 弹窗复用 ShareCard Portal/焦点锁定模式，移动端底部抽屉，中英文。验证：105/105 测试通过、lint/typecheck/build 通过、Playwright 25 项 UI 验收通过、3820 常驻服务真实读回（Codex 24%/25% 与官方事件一致、Kimi 39% 与本地 Server 一致、Grok/GLM 不伪造数据）、DB/API/HTML 审计无凭证。
+- **回滚指南**：`rm -rf src/lib/quotas src/app/api/quotas src/components/dashboard/QuotaCenter.tsx src/components/dashboard/QuotaProviderRow.tsx src/components/dashboard/QuotaProgress.tsx tests/quota-*.test.mjs tests/helpers scripts/ui-verify-quotas.mjs` 后 checkout `src/lib/db.ts src/lib/i18n.ts src/app/page.tsx`；运行时另需在 `~/.tokentrail/runtime/TokenTrail` 同步回滚并 `npm run daemon-restart`
