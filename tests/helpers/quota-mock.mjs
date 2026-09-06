@@ -20,6 +20,10 @@ export function createFakeFs(entries = {}) {
       if (!(p in entries)) throw new Error('ENOENT')
       return entries[p]
     },
+    writeFileSync: (p, data) => {
+      entries[String(p)] = String(data)
+    },
+    chmodSync: () => {},
     readdirSync: (p, opts = {}) => {
       const prefix = String(p).endsWith('/') ? String(p) : `${p}/`
       const seen = new Set()

@@ -22,9 +22,9 @@ TokenTrail is a local dashboard for AI coding work. It does two jobs on your mac
 Account Quotas is now a first-class panel next to usage tracking.
 
 - One dashboard for **tokens already spent** and **official remaining subscription limits**
-- Codex / Gemini / Grok / Kimi login opens a visible macOS Terminal running the official CLI (`codex login`, `gemini`, `grok login --oauth`, `kimi login`). GLM uses a Coding Plan token
+- Codex / Gemini / Grok / Kimi login opens a visible macOS Terminal running the official CLI (`codex login`, `agy`, `grok login --oauth`, `kimi login`). GLM uses a Coding Plan token
 - API keys are fallback only, stored in the macOS Keychain, never in SQLite snapshots
-- Product boundaries stay explicit: ChatGPT login ≠ OpenAI API key; Grok OAuth ≠ Management Key; Kimi Code ≠ Moonshot wallet; Gemini without a GCP quota project is shown as signed-in, not as a fake 0%
+- Product boundaries stay explicit: ChatGPT login ≠ OpenAI API key; Grok OAuth ≠ Management Key; Kimi Code ≠ Moonshot wallet; Gemini is Antigravity CLI (`agy`), not Gemini CLI / GCP project quota
 
 Full release notes: [CHANGELOG.md](./CHANGELOG.md).
 
@@ -32,7 +32,7 @@ Full release notes: [CHANGELOG.md](./CHANGELOG.md).
 
 - **Local-first by default** — usage data stays on your machine; no cloud account is required.
 - **Usage and quotas together** — see what you already spent, and how much official subscription quota is left, in one dashboard.
-- **Official login first** — Codex / Gemini / Grok / Kimi authorization opens the real CLI (`codex login`, `gemini`, `grok login --oauth`, `kimi login`). TokenTrail does not scrape cookies or invent numbers.
+- **Official login first** — Codex / Gemini / Grok / Kimi authorization opens the real CLI (`codex login`, `agy`, `grok login --oauth`, `kimi login`). TokenTrail does not scrape cookies or invent numbers.
 - **Keys stay off the snapshot** — API keys go to the macOS Keychain; SQLite only keeps Team ID, Project ID, Base URL, and normalized quota snapshots.
 - **Inspectable data** — review raw records, sync results, duplicate counts, and source health when numbers look suspicious.
 - **Background sync on macOS** — LaunchAgent keeps the dashboard and sync job running after login.
@@ -68,7 +68,7 @@ Statuses you may see:
 | `warning` / `critical` / `exhausted` | About 80% / 95% / 100% of a window |
 | `auth_error` | Login expired or rejected — sign in again |
 | `not_configured` | No CLI login and no usable key |
-| `unsupported` | Logged in, but this account has no readable quota (for example Gemini without a GCP project) |
+| `unsupported` | Logged in, but this account has no readable quota (for example Antigravity `/usage` returned no windows) |
 | `unsupported_version` | Official response shape changed — TokenTrail will not invent percentages |
 | `stale` / `network_error` | Last good snapshot kept; refresh failed or is old |
 | `manual` | You typed the numbers yourself |
@@ -214,7 +214,7 @@ Open **Account Quotas** in the dashboard header. TokenTrail never fabricates rem
 | Provider | How you sign in | What can be read automatically | What an API key is for |
 | --- | --- | --- | --- |
 | **Codex** | Visible Terminal: `codex login` (ChatGPT) | 5h / weekly windows from `~/.codex/sessions` `rate_limits` | A normal OpenAI API key is not a ChatGPT/Codex subscription quota |
-| **Gemini** | Visible Terminal: `gemini` → Sign in with Google | Official Code Assist quota buckets when the account has a readable GCP project | An AI Studio key cannot derive Google AI Pro/Ultra remaining quota |
+| **Gemini** | Visible Terminal: `agy` (Antigravity CLI) | Official `agy -p "/usage"` 5-hour / weekly model windows | An AI Studio key cannot derive Antigravity / Gemini subscription quota |
 | **Grok** | Visible Terminal: `grok login --oauth` | Subscription credits / monthly usage via Grok CLI OAuth | Management Key + Team ID is xAI API prepaid/billing, not the Grok web subscription |
 | **GLM** | Coding Plan token / `ANTHROPIC_AUTH_TOKEN` | Coding Plan 5h window and official MCP usage | Only a token that can call the Coding Plan monitor API works |
 | **Kimi** | Visible Terminal: `kimi login`, or a **Kimi Code** console key | Kimi Code `/coding/v1/usages` windows and booster pack | Moonshot Open Platform keys only read the open-platform wallet — do not mix the two |
@@ -223,12 +223,12 @@ If TokenTrail cannot open the login window, run the same official command yourse
 
 ```bash
 codex login
-gemini          # then choose Sign in with Google
+agy             # Antigravity CLI opens Google sign-in if needed
 grok login --oauth
 kimi login
 ```
 
-Expired Kimi OAuth is shown as auth failure and asks you to sign in again. Logged-in Gemini without a GCP quota project is shown as signed-in, not as a fake 0%. Grok CLI billing structure changes surface as “update required”, not as invented percentages.
+Expired Kimi OAuth is shown as auth failure and asks you to sign in again. Gemini quota is read from Antigravity CLI (`agy`); if you are signed in but `/usage` has no windows, TokenTrail shows signed-in rather than a fake 0%. Grok CLI billing structure changes surface as “update required”, not as invented percentages.
 
 API keys entered in the UI are stored in the **macOS Keychain**. SQLite keeps Team ID / Project ID / Base URL and normalized snapshots only. Snapshots never include tokens, emails, or account IDs.
 

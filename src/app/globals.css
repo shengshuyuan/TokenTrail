@@ -881,24 +881,26 @@
   }
 
   .theme-picker-popover {
-    @apply absolute right-0 top-[calc(100%+0.65rem)] z-50 w-[min(22rem,calc(100vw-2rem))] p-3 text-eva-text;
-    border: 1px solid rgba(var(--theme-border-strong-rgb), 0.65);
-    background:
-      linear-gradient(180deg, var(--theme-inset-highlight), transparent 55%),
-      rgba(var(--theme-panel-rgb), 0.82);
+    @apply absolute right-0 top-[calc(100%+0.65rem)] z-50 w-[min(26rem,calc(100vw-2rem))] p-3.5 text-eva-text;
+    border: 1px solid rgb(var(--theme-border-strong-rgb) / 0.75);
+    background-color: var(--theme-panel);
+    background-image:
+      linear-gradient(180deg, var(--theme-inset-highlight), transparent 50%),
+      linear-gradient(135deg, rgb(var(--theme-primary-rgb) / 0.04), transparent 45%);
     border-radius: var(--theme-radius);
     box-shadow:
       inset 0 1px 0 var(--theme-inset-highlight),
-      var(--theme-hover-shadow);
-    backdrop-filter: blur(20px) saturate(1.4);
-    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+      0 20px 48px -6px rgba(0, 0, 0, 0.7),
+      0 6px 18px rgba(0, 0, 0, 0.35);
     animation: picker-in var(--motion-duration) var(--motion-easing);
   }
 
   .theme-preview-card {
-    @apply border border-eva-border p-2 text-left;
-    background: var(--theme-control-bg);
-    border-radius: max(6px, calc(var(--theme-radius) - 3px));
+    @apply border border-eva-border/80 p-2.5 text-left relative overflow-hidden;
+    background-color: color-mix(in srgb, var(--theme-panel) 75%, var(--theme-bg) 25%);
+    background-image: none;
+    border-radius: max(8px, calc(var(--theme-radius) - 2px));
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
     transition:
       transform 180ms ease,
       border-color 180ms ease,
@@ -909,14 +911,23 @@
 
   .theme-preview-card:hover,
   .theme-preview-card:focus-visible {
-    border-color: rgba(var(--theme-primary-rgb), 0.48);
-    background: rgba(var(--theme-primary-rgb), 0.055);
+    border-color: rgb(var(--theme-primary-rgb) / 0.55);
+    background-color: color-mix(in srgb, var(--theme-panel) 88%, var(--theme-primary) 12%);
+    background-image: none;
     transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
   }
 
   .theme-preview-card-active {
-    border-color: rgba(var(--theme-primary-rgb), 0.62);
-    box-shadow: inset 0 0 0 1px rgba(var(--theme-primary-rgb), 0.12);
+    border-color: rgb(var(--theme-primary-rgb) / 0.85);
+    background-color: color-mix(in srgb, var(--theme-panel) 82%, var(--theme-primary) 18%);
+    background-image: none;
+    box-shadow: 0 0 0 1px rgb(var(--theme-primary-rgb) / 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
+  }
+
+  .theme-preview-card-active:hover {
+    border-color: rgb(var(--theme-primary-rgb) / 0.95);
+    background-color: color-mix(in srgb, var(--theme-panel) 78%, var(--theme-primary) 22%);
   }
 
   .theme-preview-canvas {

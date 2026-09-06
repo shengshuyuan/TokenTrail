@@ -437,9 +437,10 @@ export function upsertUsageRecordByRequestId(record: {
   }
 
   const existing = db.prepare(
-    'SELECT id, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens FROM usage_records WHERE request_id = ?'
+    'SELECT id, model, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens FROM usage_records WHERE request_id = ?'
   ).get(requestId) as {
     id: number
+    model: string
     input_tokens: number
     cached_input_tokens: number
     output_tokens: number
@@ -460,7 +461,8 @@ export function upsertUsageRecordByRequestId(record: {
     input_tokens > existing.input_tokens ||
     cached_input_tokens > existing.cached_input_tokens ||
     output_tokens > existing.output_tokens ||
-    reasoning_tokens > existing.reasoning_tokens
+    reasoning_tokens > existing.reasoning_tokens ||
+    existing.model !== record.model
 
   if (!grew) {
     return { success: true, cost_usd: 0, id: existing.id, duplicate: true, updated: false }

@@ -232,20 +232,25 @@ export async function POST(req: Request) {
       }
       testEnv.OPENAI_API_KEY = key.trim()
     } else if (provider === 'gemini') {
-      const project = creds.project || creds.GOOGLE_CLOUD_PROJECT
-      if (project) testEnv.GOOGLE_CLOUD_PROJECT = project.trim()
-      const { deps, adapters } = createAdapters({ env: testEnv, timeoutMs: 7000 })
-      if (!gemini.readGeminiCliSession(deps.fs, deps.home).loggedIn) {
-        const started = launchCliLogin('gemini', [], deps)
-        if (!started.ok) return NextResponse.json({ error: '未找到 Gemini CLI 或无法打开终端授权', manualCommand: 'gemini' }, { status: 409 })
-        return NextResponse.json({ pending: true, message: '已打开终端；请选择 Sign in with Google，浏览器将自动打开', manualCommand: 'gemini' })
+      const { deps, adapters } = createAdapters({ env: testEnv, timeoutMs: 12000 })
+      if (gemini.readGeminiCliSession(deps.fs, deps.home).loggedIn) {
+        const snapshot = await runAdapter(provider, adapters.gemini, deps)
+        if (snapshot.status !== 'auth_error' && snapshot.status !== 'not_configured') {
+          return NextResponse.json(await persistVerifiedSnapshot(provider, snapshot))
+        }
       }
-      const snapshot = await runAdapter(provider, adapters.gemini, deps)
-      if (snapshot.status === 'auth_error') {
-        return NextResponse.json({ error: 'Gemini 登录已失效，请重新登录' }, { status: 401 })
+      const started = launchCliLogin('agy', [], deps)
+      if (!started.ok) {
+        return NextResponse.json(
+          { error: '未找到 Antigravity CLI（agy）或无法打开终端授权', manualCommand: 'agy' },
+          { status: 409 },
+        )
       }
-      if (project) setConfig('GOOGLE_CLOUD_PROJECT', project.trim())
-      return NextResponse.json(await persistVerifiedSnapshot(provider, snapshot))
+      return NextResponse.json({
+        pending: true,
+        message: '已打开终端；Antigravity CLI 会打开 Google 登录页，请完成授权',
+        manualCommand: 'agy',
+      })
     }
 
     // 2. 运行对应的 Adapter 进行实时连接测试
@@ -273,8 +278,6 @@ export async function POST(req: Request) {
       if (testEnv.MOONSHOT_API_KEY) setQuotaSecret('MOONSHOT_API_KEY', testEnv.MOONSHOT_API_KEY)
     } else if (provider === 'codex' && testEnv.OPENAI_API_KEY) {
       setQuotaSecret('OPENAI_API_KEY', testEnv.OPENAI_API_KEY)
-    } else if (provider === 'gemini' && testEnv.GOOGLE_CLOUD_PROJECT) {
-      setConfig('GOOGLE_CLOUD_PROJECT', testEnv.GOOGLE_CLOUD_PROJECT)
     }
 
     return NextResponse.json(await persistVerifiedSnapshot(provider, snapshot))

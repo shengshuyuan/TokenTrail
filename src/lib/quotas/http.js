@@ -31,7 +31,7 @@ function queryString(params) {
  * 返回 { status, json }；2xx 且 JSON 合法才返回，否则抛 codedError。
  */
 async function requestJson(url, opts = {}) {
-  const { method = 'GET', headers = {}, body, timeoutMs = 5500, fetchImpl } = opts
+  const { method = 'GET', headers = {}, body, timeoutMs = 5500, fetchImpl, rawBody = false } = opts
   if (typeof fetchImpl !== 'function') throw codedError('network', 'no fetch impl')
 
   const controller = new AbortController()
@@ -42,7 +42,7 @@ async function requestJson(url, opts = {}) {
     res = await fetchImpl(url, {
       method,
       headers: { Accept: 'application/json', ...headers },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : rawBody ? body : JSON.stringify(body),
       signal: controller.signal,
     })
   } catch (err) {

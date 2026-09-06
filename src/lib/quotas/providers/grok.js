@@ -11,7 +11,7 @@
 
 const path = require('path')
 const { launchCliLogin, resolveCliBinary } = require('../cli-login.js')
-const { codedError, readJsonIfExists, requestJson, toEpochMs, toFiniteNumber } = require('../http.js')
+const { codedError, queryString, readJsonIfExists, requestJson, toEpochMs, toFiniteNumber } = require('../http.js')
 const { deriveProviderStatus } = require('../status.js')
 
 // 固定白名单外链，禁止用户输入任意 URL
@@ -22,6 +22,11 @@ const USAGE_URLS = {
 
 const MANAGEMENT_BASE = 'https://management-api.x.ai/v1/billing/teams'
 const CLI_BILLING_BASE = 'https://cli-chat-proxy.grok.com/v1/billing'
+const OIDC_ISSUER = 'https://auth.x.ai'
+const OIDC_TOKEN_URL = 'https://auth.x.ai/oauth2/token'
+/** 与 Grok CLI 默认 GROK_AUTH_EARLY_INVALIDATION_SECS=300 对齐：到期前 5 分钟静默续期。 */
+const TOKEN_SKEW_MS = 5 * 60 * 1000
+const DEFAULT_ACCESS_TTL_MS = 6 * 60 * 60 * 1000
 
 /** 订阅额度的固定“不支持自动读取”说明（始终存在，绝不伪造数据）。 */
 function subscriptionNotice() {
@@ -48,9 +53,27 @@ function parseSessionExpiry(value) {
   return null
 }
 
+function grokAuthPath(home) {
+  return path.join(home, '.grok', 'auth.json')
+}
+
+function normalizeIssuer(value) {
+  if (typeof value !== 'string' || !value.trim()) return ''
+  return value.trim().replace(/\/+$/, '')
+}
+
+function clientIdFromSession(sessionKey, session) {
+  if (typeof session?.oidc_client_id === 'string' && session.oidc_client_id.trim()) {
+    return session.oidc_client_id.trim()
+  }
+  if (typeof sessionKey !== 'string') return ''
+  const parts = sessionKey.split('::')
+  return parts.length >= 2 ? parts[parts.length - 1].trim() : ''
+}
+
 /**
  * 读取 Grok CLI 浏览器 OAuth 登录态。
- * 只返回是否已登录与过期时间，绝不带回 token / email / team_id。
+ * 只返回是否已登录、过期时间、是否可静默续期，绝不带回 token / email / team_id。
  */
 function readGrokCliSession(fsMod, home) {
   const creds = readGrokCliCredentials(fsMod, home)
@@ -58,24 +81,36 @@ function readGrokCliSession(fsMod, home) {
   return {
     loggedIn: true,
     expiresAt: creds.expiresAt,
+    hasRefreshToken: Boolean(creds.refreshToken),
   }
 }
 
 function readGrokCliCredentials(fsMod, home) {
   if (!fsMod || !home) return null
-  const auth = readJsonIfExists(fsMod, path.join(home, '.grok', 'auth.json'))
+  const authPath = grokAuthPath(home)
+  const auth = readJsonIfExists(fsMod, authPath)
   if (!auth || typeof auth !== 'object' || Array.isArray(auth)) return null
 
-  for (const session of Object.values(auth)) {
+  for (const [sessionKey, session] of Object.entries(auth)) {
     if (!session || typeof session !== 'object') continue
     const token = typeof session.key === 'string' ? session.key : session.access_token
-    if (typeof token !== 'string' || !token.trim()) continue
-    const userId = session.user_id ?? session.userId ?? session.userid ?? session.id ?? xaiUserIdFromAccessToken(token)
+    const refresh = typeof session.refresh_token === 'string' ? session.refresh_token.trim() : ''
+    if (typeof token !== 'string' || !token.trim()) {
+      if (!refresh) continue
+    }
+    const access = typeof token === 'string' ? token.trim() : ''
+    if (!access && !refresh) continue
+    const userId = session.user_id ?? session.userId ?? session.userid ?? session.id ?? xaiUserIdFromAccessToken(access)
     return {
       loggedIn: true,
-      token: token.trim(),
+      token: access,
+      refreshToken: refresh,
+      clientId: clientIdFromSession(sessionKey, session),
+      issuer: normalizeIssuer(session.oidc_issuer) || OIDC_ISSUER,
       userId: typeof userId === 'string' && userId.trim() ? userId.trim() : undefined,
       expiresAt: parseSessionExpiry(session.expires_at),
+      authPath,
+      sessionKey,
     }
   }
   return null
@@ -94,8 +129,86 @@ function xaiUserIdFromAccessToken(accessToken) {
 
 function grokCliSessionIsFresh(session, now) {
   if (!session || session.loggedIn !== true) return false
+  if (session.hasRefreshToken || session.refreshToken) return true
   if (typeof session.expiresAt !== 'number') return true
   return session.expiresAt > now
+}
+
+function accessTokenIsUsable(creds, now) {
+  if (!creds || typeof creds.token !== 'string' || !creds.token) return false
+  if (typeof creds.expiresAt !== 'number') return true
+  return creds.expiresAt > now + TOKEN_SKEW_MS
+}
+
+function persistGrokCliTokens(fsMod, creds, patch) {
+  if (!fsMod || typeof fsMod.writeFileSync !== 'function' || !creds?.authPath || !creds?.sessionKey) return false
+  const auth = readJsonIfExists(fsMod, creds.authPath)
+  if (!auth || typeof auth !== 'object' || Array.isArray(auth)) return false
+  const session = auth[creds.sessionKey]
+  if (!session || typeof session !== 'object') return false
+  Object.assign(session, patch)
+  try {
+    fsMod.writeFileSync(creds.authPath, `${JSON.stringify(auth, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+    if (typeof fsMod.chmodSync === 'function') fsMod.chmodSync(creds.authPath, 0o600)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function refreshGrokOAuthCredentials(creds, deps) {
+  if (!creds?.refreshToken || !creds.clientId) {
+    throw codedError('auth', 'Grok CLI login expired')
+  }
+  if ((creds.issuer || OIDC_ISSUER) !== OIDC_ISSUER) {
+    throw codedError('auth', 'Grok CLI login expired')
+  }
+
+  const { json } = await requestJson(OIDC_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: queryString({
+      grant_type: 'refresh_token',
+      refresh_token: creds.refreshToken,
+      client_id: creds.clientId,
+    }),
+    rawBody: true,
+    timeoutMs: deps.timeoutMs,
+    fetchImpl: deps.fetchImpl,
+  })
+
+  const access = typeof json?.access_token === 'string' ? json.access_token.trim() : ''
+  if (!access) throw codedError('unsupported_version', 'unexpected grok oauth refresh response')
+
+  const expiresInSec = toFiniteNumber(json.expires_in)
+  const ttlMs = expiresInSec && expiresInSec > 0 ? Math.round(expiresInSec * 1000) : DEFAULT_ACCESS_TTL_MS
+  const expiresAtMs = deps.now() + ttlMs
+  const nextRefresh =
+    typeof json.refresh_token === 'string' && json.refresh_token.trim()
+      ? json.refresh_token.trim()
+      : creds.refreshToken
+
+  persistGrokCliTokens(deps.fs, creds, {
+    key: access,
+    refresh_token: nextRefresh,
+    expires_at: new Date(expiresAtMs).toISOString(),
+  })
+
+  return {
+    ...creds,
+    token: access,
+    refreshToken: nextRefresh,
+    expiresAt: expiresAtMs,
+    userId: creds.userId || xaiUserIdFromAccessToken(access),
+  }
+}
+
+async function ensureFreshGrokCliCredentials(deps) {
+  const creds = readGrokCliCredentials(deps.fs, deps.home)
+  if (!creds) return null
+  if (accessTokenIsUsable(creds, deps.now())) return creds
+  if (!creds.refreshToken) return null
+  return refreshGrokOAuthCredentials(creds, deps)
 }
 
 function resolveGrokBinary(deps = {}) {
@@ -286,8 +399,15 @@ function subscriptionSnapshot(deps, extra) {
 
 async function fetchQuota(deps) {
   const config = resolveManagementConfig(deps.env)
-  const cliCreds = readGrokCliCredentials(deps.fs, deps.home)
-  const cliFresh = grokCliSessionIsFresh(cliCreds, deps.now())
+  let cliCreds = null
+  try {
+    cliCreds = await ensureFreshGrokCliCredentials(deps)
+  } catch (err) {
+    if (err && err.code === 'auth' && !config) throw err
+    if (err && err.code === 'auth') cliCreds = null
+    else throw err
+  }
+  const cliFresh = grokCliSessionIsFresh(cliCreds, deps.now()) && Boolean(cliCreds?.token)
 
   if (cliFresh) {
     return fetchCliSubscriptionQuota(cliCreds, deps)
@@ -340,6 +460,8 @@ module.exports = {
   USAGE_URLS,
   MANAGEMENT_BASE,
   CLI_BILLING_BASE,
+  OIDC_TOKEN_URL,
+  TOKEN_SKEW_MS,
   subscriptionNotice,
   resolveManagementConfig,
   parseCents,
@@ -349,6 +471,7 @@ module.exports = {
   readGrokCliSession,
   readGrokCliCredentials,
   grokCliSessionIsFresh,
+  accessTokenIsUsable,
   mapCliCreditsWindow,
   mapCliMonthlyWindow,
   resolveGrokBinary,

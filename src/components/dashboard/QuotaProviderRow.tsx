@@ -10,7 +10,7 @@ import { ProviderBrandIcon } from './QuotaBrandIcons'
 
 const PROVIDER_NAMES: Record<string, { zh: string; en: string }> = {
   codex: { zh: 'Codex', en: 'Codex' },
-  gemini: { zh: 'Gemini', en: 'Gemini' },
+  gemini: { zh: 'Antigravity', en: 'Antigravity' },
   grok: { zh: 'Grok', en: 'Grok' },
   glm: { zh: 'GLM', en: 'GLM' },
   kimi: { zh: 'Kimi', en: 'Kimi' },
@@ -18,7 +18,7 @@ const PROVIDER_NAMES: Record<string, { zh: string; en: string }> = {
 
 const DEFAULT_ACCOUNTS: Record<string, { zh: string; en: string }> = {
   codex: { zh: '个人账户', en: 'Personal Account' },
-  gemini: { zh: 'Pro', en: 'Pro' },
+  gemini: { zh: 'Google 账号', en: 'Google Account' },
   grok: { zh: 'X Premium+', en: 'X Premium+' },
   glm: { zh: 'GLM 订阅', en: 'GLM Subscription' },
   kimi: { zh: 'Kimi 账号', en: 'Kimi Account' },
@@ -60,6 +60,27 @@ function formatReset(resetsAt: number | undefined, now: number, lang: Lang): str
 function windowLabel(win: QuotaWindow, lang: Lang): string {
   const rawId = (win.id || '').toLowerCase()
   const rawLabel = (win.label || '').toLowerCase()
+
+  // Antigravity (Gemini Models & Claude/GPT Models)
+  if (rawId.startsWith('gemini-models-') || rawLabel.startsWith('gemini models')) {
+    if (win.windowMinutes === 300 || rawId.includes('5h') || rawLabel.includes('5h')) {
+      return lang === 'zh' ? 'Gemini · 5h' : 'Gemini · 5h'
+    }
+    if (win.windowMinutes === 10080 || rawId.includes('week') || rawLabel.includes('week')) {
+      return lang === 'zh' ? 'Gemini · 周' : 'Gemini · Week'
+    }
+    return `Gemini · ${win.label || 'Quota'}`
+  }
+
+  if (rawId.startsWith('claude-and-gpt-models-') || rawId.startsWith('claude-gpt-') || rawLabel.startsWith('claude and gpt')) {
+    if (win.windowMinutes === 300 || rawId.includes('5h') || rawLabel.includes('5h')) {
+      return lang === 'zh' ? 'Claude/GPT · 5h' : 'Claude/GPT · 5h'
+    }
+    if (win.windowMinutes === 10080 || rawId.includes('week') || rawLabel.includes('week')) {
+      return lang === 'zh' ? 'Claude/GPT · 周' : 'Claude/GPT · Week'
+    }
+    return `Claude/GPT · ${win.label || 'Quota'}`
+  }
 
   if (rawId.includes('pro') || rawLabel.includes('pro')) {
     return translate('quota.window.pro', lang)
@@ -296,7 +317,7 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
                 return (
                   <div key={win.id} className="flex items-center gap-3 text-xs">
                     {/* 窗口名称 */}
-                    <span className="w-16 sm:w-20 shrink-0 font-medium text-eva-text-dim truncate">
+                    <span className="w-20 sm:w-28 shrink-0 font-medium text-eva-text-dim truncate" title={windowLabel(win, lang)}>
                       {windowLabel(win, lang)}
                     </span>
 

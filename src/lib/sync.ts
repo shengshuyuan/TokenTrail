@@ -934,8 +934,16 @@ const MODEL_ALIASES: Record<string, string> = {
 }
 
 function normalizeModelName(raw: string): string {
-  const lower = raw.toLowerCase()
-  return MODEL_ALIASES[lower] || lower
+  const lower = raw.toLowerCase().trim()
+  if (MODEL_ALIASES[lower]) return MODEL_ALIASES[lower]
+
+  // Normalize Gemini model variations like "Gemini 3.8 Flash (High)" -> "gemini-3.8-flash"
+  const geminiMatch = lower.match(/^gemini[\s-]+([\d.]+)\s+(flash|pro)(?:\s*\([^)]*\))?$/)
+  if (geminiMatch) {
+    return `gemini-${geminiMatch[1]}-${geminiMatch[2]}`
+  }
+
+  return lower
 }
 
 async function syncVibeCafe(): Promise<SyncResult> {
@@ -1022,6 +1030,47 @@ async function syncVibeCafe(): Promise<SyncResult> {
 
 // ─── Antigravity (Antigravity CLI / AGY) 本地对话日志扫描 ────
 
+/** 从 Antigravity 对话日志中检测所使用的 Gemini 模型版本 */
+export function detectAntigravityModel(lines: string[]): string {
+  let detectedModel: string | null = null
+
+  for (const line of lines) {
+    try {
+      const entry = JSON.parse(line)
+      if (entry.source !== 'MODEL' || entry.type === 'USER_INPUT') {
+        const content = typeof entry.content === 'string' ? entry.content : ''
+        const settingMatch = content.match(/Model Selection[^\n]*?to\s+Gemini\s+([\d.]+)\s+(Flash|Pro)/i)
+        if (settingMatch) {
+          detectedModel = `gemini-${settingMatch[1]}-${settingMatch[2].toLowerCase()}`
+        }
+      }
+    } catch {
+      // Ignore invalid JSON lines
+    }
+  }
+
+  if (detectedModel) return detectedModel
+
+  // 2. 回退：在用户显式发言或系统提示词中查找显式的 Gemini X.Y Flash/Pro 声明
+  for (const line of lines) {
+    try {
+      const entry = JSON.parse(line)
+      if (entry.source !== 'MODEL' || entry.type === 'USER_INPUT') {
+        const content = typeof entry.content === 'string' ? entry.content : ''
+        const anyGeminiMatch = content.match(/Gemini\s+([\d.]+)\s+(Flash|Pro)/i)
+        if (anyGeminiMatch) {
+          return `gemini-${anyGeminiMatch[1]}-${anyGeminiMatch[2].toLowerCase()}`
+        }
+      }
+    } catch {
+      // Ignore invalid JSON lines
+    }
+  }
+
+  // 3. 默认回退到当前最新的 3.8 Flash
+  return 'gemini-3.8-flash'
+}
+
 function syncAntigravityTranscripts(): SyncResult {
   const start = Date.now()
   const result: SyncResult = {
@@ -1086,7 +1135,8 @@ function syncAntigravityTranscripts(): SyncResult {
         if (totalCharsInput > 0 || totalCharsOutput > 0) {
           const inputTokens = Math.max(1, Math.round(totalCharsInput / 3.5))
           const outputTokens = Math.max(1, Math.round(totalCharsOutput / 3.5))
-          const model = 'gemini-3.6-flash'
+          const model = detectAntigravityModel(lines)
+          ensureModelPricing(model)
           const cost_usd = calculateCost({
             model,
             input_tokens: inputTokens,

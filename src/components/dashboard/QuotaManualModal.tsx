@@ -91,16 +91,19 @@ const EXTRACTOR_SCRIPTS: Record<string, string> = {
   await navigator.clipboard.writeText(JSON.stringify(snapshot, null, 2));
   console.log('✅ Codex 额度已复制到剪贴板！');
 })();`,
-  gemini: `(async function extractGemini() {
+  gemini: `(async function extractAntigravity() {
   const now = Date.now();
   const snapshot = {
     provider: 'gemini',
     product: 'subscription',
-    accountLabel: 'Pro',
+    planLabel: 'Antigravity',
+    accountLabel: 'Google 账号',
     status: 'healthy',
     windows: [
-      { id: 'gemini-2.5-pro', label: 'pro', unit: 'request', usedPercent: 68, resetsAt: now + 2*3600000 + 18*60000 },
-      { id: 'gemini-2.5-flash', label: 'flash', unit: 'request', usedPercent: 31, resetsAt: now + 4*86400000 }
+      { id: 'gemini-models-5h', label: 'Gemini Models · 5h', unit: 'request', usedPercent: 1, windowMinutes: 300, resetsAt: now + 4*3600000 + 55*60000 },
+      { id: 'gemini-models-week', label: 'Gemini Models · week', unit: 'request', usedPercent: 3, windowMinutes: 10080, resetsAt: now + 5*86400000 },
+      { id: 'claude-and-gpt-models-5h', label: 'Claude and GPT models · 5h', unit: 'request', usedPercent: 0, windowMinutes: 300, resetsAt: now + 5*3600000 },
+      { id: 'claude-and-gpt-models-week', label: 'Claude and GPT models · week', unit: 'request', usedPercent: 0, windowMinutes: 10080, resetsAt: now + 7*86400000 }
     ],
     wallets: [],
     source: 'manual',
@@ -108,7 +111,7 @@ const EXTRACTOR_SCRIPTS: Record<string, string> = {
     lastSuccessAt: now
   };
   await navigator.clipboard.writeText(JSON.stringify(snapshot, null, 2));
-  console.log('✅ Gemini 额度已复制到剪贴板！');
+  console.log('✅ Antigravity 额度已复制到剪贴板！');
 })();`,
 }
 
@@ -126,10 +129,10 @@ const PROVIDER_INFO: Record<ProviderId, { name: string; desc: string; authUrl?: 
     authDoc: '点击「发起授权」会打开终端与官方浏览器登录页；若自动打开失败，可自行运行 grok login --oauth。',
   },
   gemini: {
-    name: 'Google Gemini',
-    desc: '复用本地 Gemini CLI OAuth 登录态，或输入 Google Cloud / AI Studio 项目 ID 读取 Pro / Flash 模型额度。',
-    authUrl: 'https://aistudio.google.com',
-    authDoc: '在终端运行 gemini 或登录 Google AI Studio 获取 Project ID。',
+    name: 'Antigravity (Google)',
+    desc: '复用本机 Antigravity CLI（agy）登录态，自动读取 Gemini Models 与 Claude/GPT 模型的 5 小时与每周额度窗口。',
+    authUrl: 'https://antigravity.google',
+    authDoc: 'TokenTrail 会自动调用本地 Antigravity CLI (agy) 读取额度。若尚未登录，点击下方按钮会打开终端并由官方 CLI 调起 Google 登录。',
   },
   kimi: {
     name: 'Moonshot Kimi Code',
@@ -171,7 +174,6 @@ export function QuotaManualModal({
   const [grokTeamId, setGrokTeamId] = useState('')
   const [kimiKey, setKimiKey] = useState('')
   const [codexKey, setCodexKey] = useState('')
-  const [geminiProject, setGeminiProject] = useState('')
 
   // 快捷手动录入
   const [accountLabel, setAccountLabel] = useState('')
@@ -263,8 +265,6 @@ export function QuotaManualModal({
         credentials.key = kimiKey
       } else if (selectedProvider === 'codex') {
         credentials.key = codexKey
-      } else if (selectedProvider === 'gemini') {
-        credentials.project = geminiProject
       }
 
       const res = await fetch('/api/quotas/auth', {
@@ -345,7 +345,7 @@ export function QuotaManualModal({
       grok: { success: t('quota.auth.grok.success'), failed: t('quota.auth.grok.failed'), missing: t('quota.auth.grok.cliMissing'), manual: 'grok login --oauth' },
       kimi: { success: 'Kimi Code 授权成功', failed: 'Kimi Code 授权失败', missing: '无法打开授权窗口；请在终端手动运行 kimi login', manual: 'kimi login' },
       codex: { success: 'Codex 授权成功', failed: 'Codex 授权失败', missing: '无法打开授权窗口；请在终端手动运行 codex login', manual: 'codex login' },
-      gemini: { success: 'Gemini 授权成功', failed: 'Gemini 授权失败', missing: '无法打开授权窗口；请在终端手动运行 gemini', manual: 'gemini' },
+      gemini: { success: 'Antigravity 授权成功', failed: 'Antigravity 授权失败', missing: '无法打开授权窗口；请在终端手动运行 agy', manual: 'agy' },
     } as const
     const copy = labels[provider]
     try {
@@ -534,7 +534,7 @@ export function QuotaManualModal({
               }`}
             >
               <ProviderBrandIcon provider={p} className="size-4" />
-              <span>{p.toUpperCase()}</span>
+              <span>{p === 'gemini' ? 'ANTIGRAVITY' : p.toUpperCase()}</span>
             </button>
           ))}
         </div>
@@ -709,21 +709,11 @@ export function QuotaManualModal({
                     disabled={loading || pendingProvider === 'gemini'}
                     className="pressable control-surface w-full py-2.5 text-xs font-mono font-semibold text-center disabled:opacity-50"
                   >
-                    {pendingProvider === 'gemini' ? '请在终端选择 Sign in with Google…' : loading ? '正在打开授权终端...' : '打开终端并登录 Gemini'}
+                    {pendingProvider === 'gemini' ? '请在终端 / 浏览器完成 Antigravity 登录…' : loading ? '正在打开授权终端...' : '打开终端并登录 Antigravity'}
                   </button>
                   <p className="text-[11px] text-eva-text-dim leading-relaxed">
-                    TokenTrail 会运行 <code className="font-mono">gemini</code>。请选择 <strong>Sign in with Google</strong>，CLI 会打开官方登录页。若窗口未打开，可自行在终端运行同一命令。
+                    TokenTrail 会运行 <code className="font-mono">agy</code>。未登录时 Antigravity CLI 会打开 Google 官方登录页。若窗口未打开，可自行在终端运行同一命令。
                   </p>
-                  <div>
-                    <label className="block mb-1 font-medium text-eva-text-dim">Google Cloud Project ID（可选）：</label>
-                    <input
-                      type="text"
-                      value={geminiProject}
-                      onChange={(e) => setGeminiProject(e.target.value)}
-                      placeholder="如：my-gcp-project-1234"
-                      className="w-full rounded-lg border border-eva-border bg-eva-panel p-2.5 font-mono text-xs text-eva-text focus:border-eva-purple focus:outline-none"
-                    />
-                  </div>
                 </div>
               )}
 
@@ -802,16 +792,7 @@ export function QuotaManualModal({
                   {loading ? '正在验证 Kimi Code Key...' : '验证 Kimi Code Key'}
                 </button>
               )}
-              {selectedProvider === 'gemini' && geminiProject.trim() && (
-                <button
-                  type="button"
-                  onClick={handleVerifyAuth}
-                  disabled={loading || pendingProvider === 'gemini'}
-                  className="pressable control-surface w-full py-2.5 text-xs font-mono font-semibold text-center disabled:opacity-50"
-                >
-                  {loading ? '正在验证项目...' : '使用该 Project ID 读取额度'}
-                </button>
-              )}
+
               {selectedProvider === 'codex' && codexShowApiKey && (
                 <button
                   type="button"

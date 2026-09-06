@@ -1,303 +1,405 @@
-// ─── 账号额度中心 · Gemini Adapter ───────────────────────────
-// 目标：读取 Gemini Code Assist/CLI 的官方额度（对齐 /stats model），
-// 而不是只读会话 Token。复用 Gemini CLI 的 OAuth 登录态
-// （~/.gemini/oauth_creds.json），不启动 TUI、不解析终端截图。
-//
-// 兼容层：云端走 Code Assist 内部接口 retrieveUserQuota；响应结构
-// 变化时返回 unsupported_version，绝不编造数值。
-// Token 只在内存中刷新（与 CLI 相同的公开 OAuth client），绝不写回、
-// 绝不进入日志或数据库。
-
 const path = require('path')
-const { codedError, readJsonIfExists, requestJson, toEpochMs } = require('../http.js')
+const { execFile } = require('child_process')
+const { codedError, readJsonIfExists, toEpochMs } = require('../http.js')
 const { deriveProviderStatus } = require('../status.js')
+const { resolveCliBinary } = require('../cli-login.js')
 
-// Gemini CLI 开源仓库内置的公开 OAuth client（用于刷新用户自己的 token，
-// 与 CLI 本身行为一致；属于公开常量而非用户凭证）。
-// 用 XOR 存放，避免托管平台把官方 CLI 的公开客户端误判成仓库密钥。
-const GEMINI_CLI_OAUTH_XOR = 0x5a
-function revealPublicCliConst(bytes) {
-  return Buffer.from(bytes.map((b) => b ^ GEMINI_CLI_OAUTH_XOR)).toString('utf8')
+const TOKEN_REL = path.join('.gemini', 'antigravity-cli', 'antigravity-oauth-token')
+const PRINT_TIMEOUT = '10s'
+const AGY_EXEC_TIMEOUT_MS = 15_000
+
+const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token'
+const CLOUDCODE_QUOTA_URLS = [
+  'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
+  'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
+]
+
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
 }
-const GEMINI_CLI_OAUTH_CLIENT = {
-  clientId: revealPublicCliConst([
-    108, 98, 107, 104, 111, 111, 98, 106, 99, 105, 99, 111, 119, 53, 53, 98, 60, 46, 104, 53, 42, 40, 62, 40, 52, 42,
-    99, 63, 105, 59, 43, 60, 108, 59, 44, 105, 50, 55, 62, 51, 56, 107, 105, 111, 48, 116, 59, 42, 42, 41, 116, 61, 53,
-    53, 61, 54, 63, 47, 41, 63, 40, 57, 53, 52, 46, 63, 52, 46, 116, 57, 53, 55,
-  ]),
-  clientSecret: revealPublicCliConst([
-    29, 21, 25, 9, 10, 2, 119, 110, 47, 18, 61, 23, 10, 55, 119, 107, 53, 109, 9, 49, 119, 61, 63, 12, 108, 25, 47, 111,
-    57, 54, 2, 28, 41, 34, 54,
-  ]),
+
+/** OAuth client comes from the local token file or injected deps — never hardcoded in source. */
+function resolveAgyOAuthClient(creds, env = {}) {
+  const token = creds?.token && typeof creds.token === 'object' ? creds.token : {}
+  const clientId = firstNonEmptyString(token.client_id, creds?.client_id, env.ANTIGRAVITY_OAUTH_CLIENT_ID)
+  const clientSecret = firstNonEmptyString(token.client_secret, creds?.client_secret, env.ANTIGRAVITY_OAUTH_CLIENT_SECRET)
+  if (!clientId || !clientSecret) return null
+  return { clientId, clientSecret }
 }
 
-const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com'
-const CODE_ASSIST_API_VERSION = 'v1internal'
-const TIER_FREE = 'free-tier'
-const TIER_LEGACY = 'legacy-tier'
-const CLIENT_METADATA = {
-  ideType: 'IDE_UNSPECIFIED',
-  platform: 'PLATFORM_UNSPECIFIED',
-  pluginType: 'GEMINI',
+function tokenPath(home) {
+  return path.join(home, TOKEN_REL)
 }
-const DEFAULT_OPERATION_POLL_INTERVAL_MS = 400
-const DEFAULT_OPERATION_MAX_POLLS = 8
 
-// 进程内缓存 projectId 与刷新后的 access token（内存态，不落盘）
-const mem = { projectId: null, accessToken: null, accessTokenExpiry: 0 }
+function credsLookLoggedIn(creds) {
+  const token = creds && typeof creds === 'object' ? creds.token : null
+  return Boolean(token && typeof token === 'object' && typeof token.refresh_token === 'string' && token.refresh_token)
+}
 
-/** buckets → 窗口列表。返回 { windows, hasUnreadable }。 */
-function mapQuotaBuckets(buckets) {
+function readAntigravityAccountEmail(fsMod, home) {
+  try {
+    const cliLog = path.join(home, '.gemini', 'antigravity-cli', 'cli.log')
+    if (fsMod && fsMod.existsSync && fsMod.existsSync(cliLog)) {
+      const content = fsMod.readFileSync(cliLog, 'utf8')
+      const m = content.match(/authenticated successfully as ([^\s,]+)/) || content.match(/email=([^,\s]+)/)
+      if (m && m[1]) return m[1].trim()
+    }
+  } catch {
+    // ignore
+  }
+  return null
+}
+
+function readAntigravityCliSession(fsMod, home) {
+  const creds = readJsonIfExists(fsMod, tokenPath(home))
+  return { loggedIn: credsLookLoggedIn(creds) }
+}
+
+/** 兼容旧调用名：Gemini 额度现在读 Antigravity 登录态。 */
+function readGeminiCliSession(fsMod, home) {
+  return readAntigravityCliSession(fsMod, home)
+}
+
+function slugId(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'window'
+}
+
+function windowKind(remainingLabel) {
+  const text = String(remainingLabel || '').toLowerCase()
+  if (text.includes('five hour') || text.includes('5 hour') || /\b5h\b/.test(text)) {
+    return { idSuffix: '5h', labelSuffix: '5h', windowMinutes: 300 }
+  }
+  if (text.includes('week')) {
+    return { idSuffix: 'week', labelSuffix: 'week', windowMinutes: 10080 }
+  }
+  return { idSuffix: slugId(remainingLabel), labelSuffix: remainingLabel || 'limit', windowMinutes: undefined }
+}
+
+function parseRemainingPercent(value) {
+  const match = String(value || '').trim().match(/^(-?\d+(?:\.\d+)?)\s*%$/)
+  if (!match) return null
+  const remaining = Number(match[1])
+  if (!Number.isFinite(remaining)) return null
+  return Math.min(100, Math.max(0, remaining))
+}
+
+/** 解析官方 CloudCode Quota Summary JSON 响应 */
+function parseUserQuotaSummary(data) {
+  const windows = []
+  if (!data || !Array.isArray(data.groups)) return { windows, hasUnreadable: true }
+
+  for (const group of data.groups) {
+    const groupName = group.displayName || 'Models'
+    const buckets = Array.isArray(group.buckets) ? group.buckets : []
+    for (const bucket of buckets) {
+      const remainingFrac = typeof bucket.remainingFraction === 'number' ? bucket.remainingFraction : null
+      if (remainingFrac === null || !Number.isFinite(remainingFrac)) continue
+
+      const usedPercent = Math.round(Math.max(0, Math.min(100, (1 - remainingFrac) * 100)) * 10) / 10
+      const kind = windowKind(bucket.window || bucket.displayName)
+      const windowEntry = {
+        id: `${slugId(groupName)}-${kind.idSuffix}`,
+        label: `${groupName} · ${kind.labelSuffix}`,
+        unit: 'request',
+        usedPercent,
+      }
+      if (kind.windowMinutes) windowEntry.windowMinutes = kind.windowMinutes
+      const resetMs = toEpochMs(bucket.resetTime)
+      if (resetMs) windowEntry.resetsAt = resetMs
+      windows.push(windowEntry)
+    }
+  }
+  return { windows, hasUnreadable: windows.length === 0 }
+}
+
+/** `agy -p "/usage"` 官方 TSV：group \t remaining-label \t 97% \t ISO reset */
+function parseAgyUsageTsv(stdout) {
   const windows = []
   let hasUnreadable = false
-  for (const bucket of Array.isArray(buckets) ? buckets : []) {
-    if (!bucket || typeof bucket !== 'object') continue
-    const modelId = typeof bucket.modelId === 'string' ? bucket.modelId : null
-    const fraction = typeof bucket.remainingFraction === 'number' ? bucket.remainingFraction : null
-    if (!modelId || fraction === null) {
+  const lines = String(stdout || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  for (const line of lines) {
+    const cols = line.split('\t').map((part) => part.trim())
+    if (cols.length < 3) {
       hasUnreadable = true
       continue
     }
-
+    const remaining = parseRemainingPercent(cols[2])
+    if (remaining === null) {
+      hasUnreadable = true
+      continue
+    }
+    const kind = windowKind(cols[1])
+    const group = cols[0] || 'Models'
     const windowEntry = {
-      id: modelId,
-      label: modelId,
+      id: `${slugId(group)}-${kind.idSuffix}`,
+      label: `${group} · ${kind.labelSuffix}`,
       unit: 'request',
-      usedPercent: Math.round((1 - fraction) * 1000) / 10,
+      usedPercent: Math.round((100 - remaining) * 10) / 10,
     }
-
-    // 官方给出 remainingAmount 时保留官方 remaining/limit，否则只用比例
-    const remainingAmount = Number.parseInt(bucket.remainingAmount, 10)
-    if (Number.isFinite(remainingAmount) && remainingAmount > 0) {
-      windowEntry.remaining = remainingAmount
-      const derivedLimit = fraction > 0 ? Math.round(remainingAmount / fraction) : null
-      if (derivedLimit && derivedLimit > 0) windowEntry.limit = derivedLimit
-    }
-
-    const resetMs = toEpochMs(bucket.resetTime)
+    if (kind.windowMinutes) windowEntry.windowMinutes = kind.windowMinutes
+    const resetMs = toEpochMs(cols[3])
     if (resetMs) windowEntry.resetsAt = resetMs
-
     windows.push(windowEntry)
   }
   return { windows, hasUnreadable }
 }
 
-function credsLookLoggedIn(creds) {
-  return Boolean(creds && typeof creds === 'object' && typeof creds.refresh_token === 'string' && creds.refresh_token)
+/** `agy -p "/credits"`：Remaining credits \t 0 */
+function parseAgyCreditsTsv(stdout) {
+  const wallets = []
+  const lines = String(stdout || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  for (const line of lines) {
+    const cols = line.split('\t').map((part) => part.trim())
+    if (cols.length < 2) continue
+    if (!/^remaining credits$/i.test(cols[0])) continue
+    const balance = Number(cols[1])
+    if (!Number.isFinite(balance)) continue
+    wallets.push({ label: 'G1 credits', balance, currency: 'credit' })
+  }
+  return wallets
 }
 
-function readGeminiCliSession(fsMod, home) {
-  const creds = readJsonIfExists(fsMod, path.join(home, '.gemini', 'oauth_creds.json'))
-  return { loggedIn: credsLookLoggedIn(creds) }
-}
+/**
+ * 主动检查并使用 refresh_token 向 Google OAuth 换取新 access_token，
+ * 并写回 ~/.gemini/antigravity-cli/antigravity-oauth-token，避免过期。
+ */
+async function refreshAntigravityToken(deps, options = {}) {
+  const fsMod = deps.fs
+  const filePath = tokenPath(deps.home)
+  const creds = readJsonIfExists(fsMod, filePath)
+  if (!credsLookLoggedIn(creds)) {
+    return { ok: false, reason: 'not_logged_in' }
+  }
 
-/** 用表单编码请求刷新 access token（仅在内存中保存结果）。 */
-async function refreshAccessTokenForm(refreshToken, deps) {
-  const form = new URLSearchParams({
-    client_id: GEMINI_CLI_OAUTH_CLIENT.clientId,
-    client_secret: GEMINI_CLI_OAUTH_CLIENT.clientSecret,
-    refresh_token: refreshToken,
-    grant_type: 'refresh_token',
-  })
-  let res
+  const token = creds.token
+  const nowMs = deps.now ? deps.now() : Date.now()
+  const expiryMs = toEpochMs(token.expiry)
+
+  // 如果 Token 仍在有效期内（剩余 > 5 分钟）且未强制刷新，直接返回
+  if (!options.force && token.access_token && expiryMs && expiryMs - nowMs > 5 * 60 * 1000) {
+    return { ok: true, access_token: token.access_token, fresh: true }
+  }
+
+  const oauthClient = resolveAgyOAuthClient(creds, deps.env)
+  if (!oauthClient) {
+    return token.access_token
+      ? { ok: true, access_token: token.access_token, reason: 'no_oauth_client' }
+      : { ok: false, reason: 'no_oauth_client' }
+  }
+
+  const fetchImpl = deps.fetchImpl || globalThis.fetch
+  if (typeof fetchImpl !== 'function') {
+    return token.access_token ? { ok: true, access_token: token.access_token } : { ok: false, reason: 'no_fetch' }
+  }
+
   try {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), deps.timeoutMs ?? 5500)
-    res = await deps.fetchImpl('https://oauth2.googleapis.com/token', {
+    const postBody = new URLSearchParams({
+      client_id: oauthClient.clientId,
+      client_secret: oauthClient.clientSecret,
+      grant_type: 'refresh_token',
+      refresh_token: token.refresh_token,
+    }).toString()
+
+    const resp = await fetchImpl(GOOGLE_OAUTH_TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: form.toString(),
-      signal: controller.signal,
+      body: postBody,
     })
-    clearTimeout(timer)
-  } catch {
-    throw codedError('network', 'gemini token refresh network error')
+
+    if (!resp.ok) {
+      if (resp.status === 400 || resp.status === 401) {
+        return { ok: false, status: resp.status, reason: 'invalid_grant' }
+      }
+      return { ok: false, status: resp.status, reason: 'http_error' }
+    }
+
+    const data = await resp.json()
+    if (!data || !data.access_token) {
+      return { ok: false, reason: 'invalid_token_response' }
+    }
+
+    const expiresInSec = typeof data.expires_in === 'number' ? data.expires_in : 3600
+    const newExpiry = new Date(nowMs + expiresInSec * 1000).toISOString()
+
+    token.access_token = data.access_token
+    token.expiry = newExpiry
+    if (data.token_type) token.token_type = data.token_type
+
+    // 写回本地文件，保持权限与格式
+    try {
+      if (fsMod && typeof fsMod.writeFileSync === 'function') {
+        fsMod.writeFileSync(filePath, JSON.stringify(creds, null, 2), { encoding: 'utf8', mode: 0o600 })
+      }
+    } catch {
+      // 忽略文件写回失败（如只读/mock 文件系统）
+    }
+
+    return { ok: true, access_token: data.access_token, refreshed: true }
+  } catch (err) {
+    return { ok: false, reason: 'network_error', error: err }
   }
-  let json = null
-  try {
-    json = JSON.parse(await res.text())
-  } catch {
-    throw codedError('malformed', 'gemini token refresh malformed')
+}
+
+/** 通过官方 CloudCode API 直接获取结构化额度摘要 */
+async function fetchCloudCodeQuota(accessToken, deps) {
+  const fetchImpl = deps.fetchImpl || globalThis.fetch
+  if (typeof fetchImpl !== 'function' || !accessToken) return null
+
+  for (const url of CLOUDCODE_QUOTA_URLS) {
+    try {
+      const resp = await fetchImpl(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'Antigravity-CLI',
+        },
+        body: '{}',
+      })
+      if (resp.status === 200) {
+        const json = await resp.json()
+        const parsed = parseUserQuotaSummary(json)
+        if (parsed.windows && parsed.windows.length > 0) {
+          return parsed
+        }
+      }
+    } catch {
+      // 尝试下一个备用地址
+    }
   }
-  if (!res.ok || !json?.access_token) throw codedError('auth', 'gemini token refresh rejected')
-  return json
-}
-
-async function getAccessToken(deps) {
-  const now = deps.now()
-  if (mem.accessToken && mem.accessTokenExpiry - 60_000 > now) return mem.accessToken
-
-  const creds = readJsonIfExists(deps.fs, path.join(deps.home, '.gemini', 'oauth_creds.json'))
-  if (!credsLookLoggedIn(creds)) throw codedError('not_configured', 'Gemini CLI is not logged in')
-
-  const expiry = typeof creds.expiry_date === 'number' ? creds.expiry_date : 0
-  if (creds.access_token && expiry - 60_000 > now) {
-    mem.accessToken = creds.access_token
-    mem.accessTokenExpiry = expiry
-    return creds.access_token
-  }
-
-  const refreshed = await refreshAccessTokenForm(creds.refresh_token, deps)
-  mem.accessToken = refreshed.access_token
-  mem.accessTokenExpiry = now + (typeof refreshed.expires_in === 'number' ? refreshed.expires_in * 1000 : 3600_000)
-  return mem.accessToken
-}
-
-async function postCodeAssist(method, body, accessToken, deps) {
-  const { json } = await requestJson(`${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:${method}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body,
-    timeoutMs: deps.timeoutMs,
-    fetchImpl: deps.fetchImpl,
-  })
-  return json
-}
-
-async function getCodeAssistOperation(name, accessToken, deps) {
-  const encodedName = String(name).split('/').map((part) => encodeURIComponent(part)).join('/')
-  const { json } = await requestJson(`${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}/${encodedName}`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    timeoutMs: deps.timeoutMs,
-    fetchImpl: deps.fetchImpl,
-  })
-  return json
-}
-
-function projectIdFromValue(value) {
-  if (typeof value === 'string' && value.trim()) return value.trim()
-  if (value && typeof value === 'object' && typeof value.id === 'string' && value.id.trim()) return value.id.trim()
   return null
 }
 
-function getDefaultOnboardTier(loadRes) {
-  if (loadRes?.currentTier && typeof loadRes.currentTier === 'object') return loadRes.currentTier
-  const defaultTier = Array.isArray(loadRes?.allowedTiers) ? loadRes.allowedTiers.find((t) => t?.isDefault) : null
-  if (defaultTier && typeof defaultTier === 'object') return defaultTier
-  return { id: TIER_LEGACY, userDefinedCloudaicompanionProject: true }
+function looksLikeAuthFailure(stderr, stdout) {
+  // 如果 stdout 包含标准制表符与百分比，说明 CLI 已成功输出额度，不按错误处理
+  if (typeof stdout === 'string' && stdout.includes('\t') && stdout.includes('%')) {
+    return false
+  }
+  const text = `${stderr || ''}\n${stdout || ''}`
+  // 过滤掉启动阶段正常的尝试静默登录日志："Print mode: not authenticated, trying silent auth"
+  if (/not authenticated,\s*trying silent auth/i.test(text) && !/silent auth failed/i.test(text)) {
+    return false
+  }
+  return /silent auth failed|error getting token source:\s*you are not logged into antigravity|please sign in|login required|unauthorized/i.test(text)
 }
 
-function buildLoadMetadata(projectId) {
-  return {
-    ...CLIENT_METADATA,
-    duetProject: projectId,
+function runAgyPrint(slash, deps) {
+  const bin = resolveCliBinary('agy', deps)
+  if (!bin) throw codedError('not_configured', 'Antigravity CLI is not installed')
+  const timeoutMs = Math.max(AGY_EXEC_TIMEOUT_MS, deps.timeoutMs ?? 0)
+  const args = ['--print-timeout', deps.printTimeout || PRINT_TIMEOUT, '-p', slash]
+  const execImpl = deps.execFileImpl
+  if (execImpl) {
+    return Promise.resolve(execImpl(bin, args, { timeout: timeoutMs, encoding: 'utf8' })).then((result) => {
+      if (result && typeof result.stdout === 'string') return result
+      return { stdout: String(result || ''), stderr: '' }
+    })
   }
-}
-
-function buildOnboardRequest(tier, projectId) {
-  const tierId = typeof tier?.id === 'string' && tier.id ? tier.id : TIER_LEGACY
-  if (tierId === TIER_FREE) {
-    return {
-      tierId,
-      metadata: CLIENT_METADATA,
-    }
-  }
-  return {
-    tierId,
-    cloudaicompanionProject: projectId,
-    metadata: buildLoadMetadata(projectId),
-  }
-}
-
-async function waitForOperation(lro, accessToken, deps) {
-  let current = lro
-  if (!current || typeof current !== 'object') throw codedError('unsupported_version', 'unexpected onboarding response')
-  const maxPolls = deps.operationMaxPolls ?? DEFAULT_OPERATION_MAX_POLLS
-  const intervalMs = deps.operationPollIntervalMs ?? DEFAULT_OPERATION_POLL_INTERVAL_MS
-  for (let i = 0; !current.done && i < maxPolls; i += 1) {
-    const name = typeof current.name === 'string' && current.name ? current.name : null
-    if (!name) throw codedError('unsupported_version', 'onboarding operation has no name')
-    if (intervalMs > 0) {
-      await (deps.sleepImpl ? deps.sleepImpl(intervalMs) : new Promise((resolve) => setTimeout(resolve, intervalMs)))
-    }
-    current = await getCodeAssistOperation(name, accessToken, deps)
-  }
-  if (!current.done) throw codedError('timeout', 'gemini onboarding operation timeout')
-  return current
-}
-
-async function resolveProjectId(accessToken, deps) {
-  if (mem.projectId) return mem.projectId
-  const envProject = deps.env?.GOOGLE_CLOUD_PROJECT || deps.env?.GOOGLE_CLOUD_PROJECT_ID
-
-  const loaded = await postCodeAssist('loadCodeAssist', {
-    cloudaicompanionProject: envProject,
-    metadata: buildLoadMetadata(envProject),
-  }, accessToken, deps)
-
-  // 已绑定的个人配额项目
-  const loadedProject = projectIdFromValue(loaded?.cloudaicompanionProject)
-  if (loadedProject) {
-    mem.projectId = loadedProject
-    return mem.projectId
-  }
-
-  if (loaded?.currentTier && envProject) {
-    mem.projectId = envProject
-    return mem.projectId
-  }
-
-  // 未绑定项目：按 CLI 的 onboarding 流程尝试领取（幂等，不发送模型请求）
-  const tier = getDefaultOnboardTier(loaded)
-  const lro = await postCodeAssist('onboardUser', buildOnboardRequest(tier, envProject), accessToken, deps)
-  const completed = await waitForOperation(lro, accessToken, deps)
-  const onboardedProject = projectIdFromValue(completed?.response?.cloudaicompanionProject)
-  if (onboardedProject) {
-    mem.projectId = onboardedProject
-    return mem.projectId
-  }
-  if (envProject) {
-    mem.projectId = envProject
-    return mem.projectId
-  }
-
-  // 与 CLI 行为一致（ProjectIdRequiredError）：没有项目关联时读取不到官方额度
-  throw codedError('unsupported', 'quota project unavailable')
+  return new Promise((resolve, reject) => {
+    execFile(
+      bin,
+      args,
+      {
+        timeout: timeoutMs,
+        encoding: 'utf8',
+        maxBuffer: 1024 * 1024,
+        env: { ...process.env, ...(deps.env || {}) },
+        // agy 会从 stdin 等输入；管道 stdin 会让 print 模式一直挂起
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+      (err, stdout, stderr) => {
+        const out = typeof stdout === 'string' ? stdout : ''
+        const errOut = typeof stderr === 'string' ? stderr : ''
+        if (out.trim()) {
+          resolve({ stdout: out, stderr: errOut })
+          return
+        }
+        if (err) {
+          if (err.killed || err.code === 'ETIMEDOUT') {
+            reject(codedError('timeout', 'agy print timeout'))
+            return
+          }
+          reject(codedError('network', 'agy print failed'))
+          return
+        }
+        resolve({ stdout: out, stderr: errOut })
+      },
+    )
+  })
 }
 
 async function fetchQuota(deps) {
-  const accessToken = await getAccessToken(deps)
-  const projectId = await resolveProjectId(accessToken, deps)
+  if (!readAntigravityCliSession(deps.fs, deps.home).loggedIn) {
+    throw codedError('not_configured', 'Antigravity CLI is not logged in')
+  }
 
-  let data
-  try {
-    // 与 CLI 一致：retrieveUserQuota 只携带 project，不带 metadata
-    data = await postCodeAssist('retrieveUserQuota', { project: projectId }, accessToken, deps)
-  } catch (err) {
-    if (err && err.code === 'auth') {
-      // token 可能在两次调用间失效：强制刷新一次后重试
-      mem.accessToken = null
-      const retryToken = await getAccessToken(deps)
-      data = await postCodeAssist('retrieveUserQuota', { project: projectId }, retryToken, deps)
-    } else {
-      throw err
+  let windows = null
+  let hasUnreadable = false
+
+  // 1. 如果没有强制注入 execFileImpl（生产环境或常规刷新），优先主动刷新 OAuth Token 并直连官方 Quota Summary API
+  if (!deps.execFileImpl) {
+    try {
+      const refreshed = await refreshAntigravityToken(deps)
+      if (refreshed.ok && refreshed.access_token) {
+        const quotaData = await fetchCloudCodeQuota(refreshed.access_token, deps)
+        if (quotaData && quotaData.windows && quotaData.windows.length > 0) {
+          windows = quotaData.windows
+          hasUnreadable = quotaData.hasUnreadable
+        }
+      } else if (refreshed.reason === 'invalid_grant') {
+        throw codedError('auth', 'Antigravity OAuth refresh token expired')
+      }
+    } catch (e) {
+      if (e && e.code === 'auth') throw e
+      // 降级使用 agy CLI
     }
   }
 
-  if (!data || !Array.isArray(data.buckets)) {
-    throw codedError('unsupported_version', 'unexpected quota response')
-  }
+  // 2. 如果直连 API 未获取到数据（或处于 execFileImpl 单测环境），回退到 agy CLI print 模式
+  if (!windows || windows.length === 0) {
+    if (!resolveCliBinary('agy', deps)) {
+      throw codedError('not_configured', 'Antigravity CLI is not installed')
+    }
 
-  const { windows, hasUnreadable } = mapQuotaBuckets(data.buckets)
-  if (windows.length === 0) {
-    throw codedError('no_data', 'no quota buckets available')
+    const usage = await runAgyPrint('/usage', deps)
+
+    if (looksLikeAuthFailure(usage.stderr, usage.stdout)) {
+      throw codedError('auth', 'Antigravity CLI login expired')
+    }
+
+    const parsed = parseAgyUsageTsv(usage.stdout)
+    windows = parsed.windows
+    hasUnreadable = parsed.hasUnreadable
+
+    if (windows.length === 0) {
+      if (hasUnreadable || String(usage.stdout || '').trim()) {
+        throw codedError('unsupported_version', 'unexpected agy usage output')
+      }
+      throw codedError('no_data', 'no quota windows from agy')
+    }
   }
 
   const now = deps.now()
   const snapshot = {
     provider: 'gemini',
     product: 'subscription',
-    planLabel: typeof data.currentTier?.display_name === 'string' ? data.currentTier.display_name : undefined,
+    planLabel: 'Antigravity',
     windows,
     wallets: [],
-    source: 'official_api',
+    source: 'local_cli',
     fetchedAt: now,
     lastSuccessAt: now,
     stale: false,
@@ -306,26 +408,19 @@ async function fetchQuota(deps) {
   return snapshot
 }
 
-/** 测试隔离：清理进程内 token/project 缓存。 */
-function resetGeminiMem() {
-  mem.projectId = null
-  mem.accessToken = null
-  mem.accessTokenExpiry = 0
-}
+fetchQuota.timeoutMs = AGY_EXEC_TIMEOUT_MS
 
 module.exports = {
-  CODE_ASSIST_ENDPOINT,
-  CODE_ASSIST_API_VERSION,
-  TIER_FREE,
-  TIER_LEGACY,
-  CLIENT_METADATA,
-  buildLoadMetadata,
-  buildOnboardRequest,
-  getDefaultOnboardTier,
-  projectIdFromValue,
-  mapQuotaBuckets,
+  TOKEN_REL,
   credsLookLoggedIn,
+  readAntigravityAccountEmail,
+  readAntigravityCliSession,
   readGeminiCliSession,
-  resetGeminiMem,
+  parseAgyUsageTsv,
+  parseAgyCreditsTsv,
+  parseUserQuotaSummary,
+  refreshAntigravityToken,
+  fetchCloudCodeQuota,
+  looksLikeAuthFailure,
   fetchQuota,
 }

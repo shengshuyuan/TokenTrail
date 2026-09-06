@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   CLI_BILLING_BASE,
+  OIDC_TOKEN_URL,
   subscriptionNotice,
   resolveManagementConfig,
   parseCents,
@@ -47,10 +48,21 @@ function grokAuthJson(overrides = {}) {
       team_id: CLI_TEAM,
       key: CLI_TOKEN,
       refresh_token: 'refresh-secret',
+      oidc_issuer: 'https://auth.x.ai',
+      oidc_client_id: 'client-id',
       expires_at: '2026-09-01T19:00:00.000Z',
       ...overrides,
     },
   })
+}
+
+function oauthRefreshRoute(overrides = {}) {
+  return {
+    match: '/oauth2/token',
+    status: 200,
+    json: { access_token: 'grok-refreshed-access-token', expires_in: 21600, refresh_token: 'rotated-refresh' },
+    ...overrides,
+  }
 }
 
 describe('Grok quota adapter', () => {
@@ -103,10 +115,12 @@ describe('Grok quota adapter', () => {
     assertNoSecrets(json, [CLI_TOKEN, CLI_EMAIL, CLI_TEAM, 'refresh-secret'], 'grok cli snapshot')
   })
 
-  it('treats an expired Grok CLI session as not logged in', async () => {
+  it('treats an expired Grok CLI session without refresh token as not logged in', async () => {
     const fsMod = createFakeFs({
-      [`${HOME}/.grok/auth.json`]: grokAuthJson({ expires_at: '2026-08-01T00:00:00.000Z' }),
+      [`${HOME}/.grok/auth.json`]: grokAuthJson({ expires_at: '2026-08-01T00:00:00.000Z', refresh_token: '' }),
     })
+    const session = readGrokCliSession(fsMod, HOME)
+    assert.equal(grokCliSessionIsFresh(session, NOW()), false)
     const snap = await runAdapter('grok', fetchQuota, {
       env: {},
       now: NOW,
@@ -116,6 +130,64 @@ describe('Grok quota adapter', () => {
     })
     assert.equal(snap.status, 'not_configured')
     assert.equal(snap.source, 'unavailable')
+  })
+
+  it('keeps Grok CLI logged in when the access token expired but a refresh token remains', () => {
+    const fsMod = createFakeFs({
+      [`${HOME}/.grok/auth.json`]: grokAuthJson({ expires_at: '2026-08-01T00:00:00.000Z' }),
+    })
+    const session = readGrokCliSession(fsMod, HOME)
+    assert.equal(session.loggedIn, true)
+    assert.equal(session.hasRefreshToken, true)
+    assert.equal(grokCliSessionIsFresh(session, NOW()), true)
+    assert.equal('refresh_token' in session, false)
+    assert.equal('refreshToken' in session, false)
+  })
+
+  it('silently refreshes an expired Grok CLI access token before reading quota', async () => {
+    const authPath = `${HOME}/.grok/auth.json`
+    const fsMod = createFakeFs({ [authPath]: grokAuthJson({ expires_at: '2026-08-01T00:00:00.000Z' }) })
+    const { fetchImpl, calls } = createFakeFetch([
+      oauthRefreshRoute(),
+      { match: '?format=credits', status: 200, json: { creditUsagePercent: 10, resetsAt: '2026-09-08T00:00:00Z' } },
+      { match: /\/v1\/billing$/, status: 200, json: { config: { monthlyLimit: 100, used: 20 } } },
+    ])
+    const snap = await runAdapter('grok', fetchQuota, {
+      env: {},
+      now: NOW,
+      home: HOME,
+      fs: fsMod,
+      fetchImpl,
+    })
+    assert.equal(snap.status, 'healthy')
+    assert.equal(snap.source, 'local_cli')
+    assert.equal(snap.windows[0].usedPercent, 10)
+    assert.equal(calls[0].url, OIDC_TOKEN_URL)
+    assert.equal(calls[0].opts.method, 'POST')
+    assert.equal(calls[0].opts.headers['Content-Type'], 'application/x-www-form-urlencoded')
+    assert.equal(calls[0].opts.body.includes('grant_type=refresh_token'), true)
+    assert.equal(calls[0].opts.body.includes('client_id=client-id'), true)
+    assert.ok(calls.slice(1).every((c) => c.opts.headers.Authorization === 'Bearer grok-refreshed-access-token'))
+    const stored = JSON.parse(fsMod.readFileSync(authPath))
+    assert.equal(stored['https://auth.x.ai::client-id'].key, 'grok-refreshed-access-token')
+    assert.equal(stored['https://auth.x.ai::client-id'].refresh_token, 'rotated-refresh')
+    assertNoSecrets(JSON.stringify(snap), [CLI_TOKEN, CLI_EMAIL, CLI_TEAM, 'refresh-secret', 'rotated-refresh', 'grok-refreshed-access-token'], 'grok refresh snapshot')
+  })
+
+  it('maps a rejected Grok refresh token to auth_error', async () => {
+    const fsMod = createFakeFs({
+      [`${HOME}/.grok/auth.json`]: grokAuthJson({ expires_at: '2026-08-01T00:00:00.000Z' }),
+    })
+    const { fetchImpl } = createFakeFetch([oauthRefreshRoute({ status: 401, json: { error: 'invalid_grant' } })])
+    const snap = await runAdapter('grok', fetchQuota, {
+      env: {},
+      now: NOW,
+      home: HOME,
+      fs: fsMod,
+      fetchImpl,
+    })
+    assert.equal(snap.status, 'auth_error')
+    assert.equal(snap.error.code, 'auth')
   })
 
   it('starts grok login --oauth and does not spawn twice', () => {

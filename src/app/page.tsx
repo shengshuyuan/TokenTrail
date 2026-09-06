@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Image from 'next/image'
 import type { StatsResponse, Currency, TimeRange, Theme, UsageRecord, ProjectStat } from '@/types'
 import { SOURCE_DISPLAY_NAMES } from '@/types'
 import { formatCost, formatNumber, formatTokens } from '@/lib/format'
@@ -406,15 +407,14 @@ function DashboardInner() {
           <div className="flex min-h-16 flex-col gap-3 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-3">
               <div className="brand-logo relative h-10 w-10 shrink-0 rounded-lg">
-                <span
-                  className="block h-full w-full rounded-lg"
-                  style={{
-                    WebkitMask: 'url(/logo-app.png) center/contain no-repeat',
-                    mask: 'url(/logo-app.png) center/contain no-repeat',
-                    background: 'linear-gradient(135deg, var(--theme-primary), var(--theme-secondary))',
-                  }}
-                  role="img"
-                  aria-label="TokenTrail logo"
+                <Image
+                  src="/logo-app.png"
+                  alt="TokenTrail logo"
+                  width={40}
+                  height={40}
+                  priority
+                  unoptimized
+                  className="h-full w-full rounded-lg object-cover"
                 />
                 <span
                   className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-eva-bg ${

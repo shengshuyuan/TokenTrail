@@ -39,7 +39,8 @@ async function runAdapter(providerId, fetchQuota, deps) {
   let snapshot
   // 外层是兜底超时：adapter 内部请求超时（deps.timeoutMs）之外再留余量，
   // 用于卡死在文件扫描等无超时环节的极端情况
-  const backstopMs = (deps.timeoutMs ?? ADAPTER_TIMEOUT_MS) + 1000
+  const adapterTimeoutMs = typeof fetchQuota.timeoutMs === 'number' ? fetchQuota.timeoutMs : deps.timeoutMs
+  const backstopMs = (adapterTimeoutMs ?? ADAPTER_TIMEOUT_MS) + 1000
   try {
     const timeout = new Promise((_, reject) => {
       const timer = setTimeout(() => {

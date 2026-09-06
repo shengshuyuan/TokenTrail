@@ -22,9 +22,9 @@ TokenTrail 是跑在你电脑上的 AI 编程用量面板，不需要云账号�
 账号额度中心现在和用量统计并列，是 Dashboard 的一等功能。
 
 - 同一块面板既能看 **已经花了多少 token**，也能看 **官方订阅还剩多少**
-- Codex / Gemini / Grok / Kimi 登录会打开可见的 macOS 终端，跑官方 CLI（`codex login`、`gemini`、`grok login --oauth`、`kimi login`）；GLM 使用 Coding Plan Token
+- Codex / Gemini / Grok / Kimi 登录会打开可见的 macOS 终端，跑官方 CLI（`codex login`、`agy`、`grok login --oauth`、`kimi login`）；GLM 使用 Coding Plan Token
 - API Key 只作兜底，存在 macOS 钥匙串，不会写入 SQLite 快照
-- 产品边界写死：ChatGPT 登录 ≠ OpenAI API Key；Grok OAuth ≠ Management Key；Kimi Code ≠ Moonshot 钱包；Gemini 已登录但没有 GCP 配额项目时显示已登录，而不是假的 0%
+- 产品边界写死：ChatGPT 登录 ≠ OpenAI API Key；Grok OAuth ≠ Management Key；Kimi Code ≠ Moonshot 钱包；Gemini 走 Antigravity CLI（`agy`），不是 Gemini CLI / GCP 项目额度
 
 完整更新说明见 [CHANGELOG.md](./CHANGELOG.md)。
 
@@ -32,7 +32,7 @@ TokenTrail 是跑在你电脑上的 AI 编程用量面板，不需要云账号�
 
 - **默认本地优先**：用量数据留在你的电脑上，不需要云账号。
 - **用量和额度放在一起**：既能看已经花了多少，也能看官方订阅还剩多少。
-- **官方登录优先**：Codex / Gemini / Grok / Kimi 授权会打开真正的 CLI（`codex login`、`gemini`、`grok login --oauth`、`kimi login`）。不抓 Cookie，不编造数字。
+- **官方登录优先**：Codex / Gemini / Grok / Kimi 授权会打开真正的 CLI（`codex login`、`agy`、`grok login --oauth`、`kimi login`）。不抓 Cookie，不编造数字。
 - **密钥不进快照**：界面里填的 API Key 进 macOS 钥匙串；SQLite 只保存 Team ID、Project ID、Base URL 和规范化额度快照。
 - **数据可检查**：可以查看原始记录、同步结果、重复数、错误数和来源健康状态。
 - **macOS 后台常驻**：通过 LaunchAgent 登录后自动启动服务和定时同步。
@@ -68,7 +68,7 @@ TokenTrail 在同一台电脑上跑两条流水线。它们共用 Dashboard，�
 | `warning` / `critical` / `exhausted` | 窗口大约用到 80% / 95% / 100% |
 | `auth_error` | 登录过期或被拒绝，需要重新登录 |
 | `not_configured` | 没有 CLI 登录，也没有可用 Key |
-| `unsupported` | 已登录，但这个账号没有可读额度（例如 Gemini 没有 GCP 配额项目） |
+| `unsupported` | 已登录，但这个账号没有可读额度（例如 Antigravity `/usage` 没有返回窗口） |
 | `unsupported_version` | 官方返回结构变了——TokenTrail 不会编造百分比 |
 | `stale` / `network_error` | 保留上次成功快照；刷新失败或数据过旧 |
 | `manual` | 你自己录入的数字 |
@@ -214,7 +214,7 @@ Dashboard 顶部打开 **「账号额度」**。TokenTrail 不编造剩余额度
 | Provider | 怎么登录 | 能自动读什么 | API Key 是干什么的 |
 | --- | --- | --- | --- |
 | **Codex** | 可见终端运行 `codex login`（ChatGPT） | `~/.codex/sessions` 里的 5 小时 / 每周窗口 | 普通 OpenAI API Key ≠ ChatGPT/Codex 订阅额度 |
-| **Gemini** | 可见终端运行 `gemini`，选 Sign in with Google | 账号有可读 GCP 项目时的官方模型额度桶 | AI Studio Key 推不出 Google AI Pro/Ultra 剩余额度 |
+| **Gemini** | 可见终端运行 `agy`（Antigravity CLI） | 官方 `agy -p "/usage"` 的 5 小时 / 每周窗口 | AI Studio Key 推不出 Antigravity / Gemini 订阅额度 |
 | **Grok** | 可见终端运行 `grok login --oauth` | 复用 Grok CLI OAuth 读订阅 Credits / 月度用量 | Management Key + Team ID 是 xAI API 预付/账单，不是 Grok 网页订阅 |
 | **GLM** | Coding Plan Token / `ANTHROPIC_AUTH_TOKEN` | Coding Plan 5 小时窗口和官方 MCP 用量 | 只有能调 Coding Plan monitor 接口的 Token 才行 |
 | **Kimi** | 可见终端运行 `kimi login`，或填 **Kimi Code** 控制台 Key | Kimi Code `/coding/v1/usages` 窗口和加油包 | Moonshot 开放平台 Key 只读开放平台钱包，不能和 Kimi Code Key 混用 |
@@ -223,12 +223,12 @@ Dashboard 顶部打开 **「账号额度」**。TokenTrail 不编造剩余额度
 
 ```bash
 codex login
-gemini          # 选择 Sign in with Google
+agy             # Antigravity CLI，未登录时会打开 Google 登录页
 grok login --oauth
 kimi login
 ```
 
-Kimi OAuth 过期会显示鉴权失效并要求重新登录。Gemini 已登录但没有 GCP 配额项目时，会显示已登录，而不是假的 0%。Grok CLI 账单结构变化会显示「版本待升级」，不会把登录成功说成额度读取成功。
+Kimi OAuth 过期会显示鉴权失效并要求重新登录。Gemini 额度来自 Antigravity CLI（`agy`）；已登录但 `/usage` 没有窗口时显示已登录，而不是假的 0%。Grok CLI 账单结构变化会显示「版本待升级」，不会把登录成功说成额度读取成功。
 
 界面里填的 API Key 保存在 **macOS 钥匙串**。SQLite 只保存 Team ID / Project ID / Base URL 和规范化快照。快照里不会出现 token、邮箱或账号 ID。
 

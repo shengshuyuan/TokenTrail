@@ -7,7 +7,7 @@ TokenTrail 只展示官方接口、本地官方 CLI 或用户明确手动录入�
 | Provider | 推荐授权 | 可自动读取 | API Key 的作用 |
 | --- | --- | --- | --- |
 | Codex | 本地 Codex CLI 登录 | `~/.codex/sessions` 中的 5 小时/每周窗口 | 普通 OpenAI API Key 不等于 ChatGPT/Codex 订阅额度 |
-| Gemini | 点击按钮后在可见终端运行 Gemini CLI，并由 CLI 打开 Google 登录页 | 仅在官方 CLI/账号仍提供可读模型额度时 | AI Studio Key 用于调用 Gemini API，不能推导 Google AI Pro/Ultra 剩余额度 |
+| Gemini | 点击按钮后在可见终端运行 Antigravity CLI（`agy`），并由 CLI 打开 Google 登录页 | `agy -p "/usage"` 的 5 小时 / 每周窗口 | AI Studio Key 用于调用 Gemini API，不能推导 Antigravity 订阅额度 |
 | Grok | 点击按钮后在可见终端运行 `grok login --oauth` | 复用 Grok CLI OAuth，读取 `cli-chat-proxy.grok.com/v1/billing` 返回的订阅 Credits / 月度用量 | xAI Management Key + Team ID 可查 API 预付余额和月度账单，不是 Grok 网页订阅额度 |
 | GLM | Coding Plan Token / `ANTHROPIC_AUTH_TOKEN` | Coding Plan 5 小时额度及官方返回的 MCP 用量 | 只有可访问 Coding Plan monitor 接口的 Token 才能读套餐额度 |
 | Kimi | 点击按钮后在可见终端运行 `kimi login`，或填写 Kimi Code 控制台 Key | Kimi Code `/coding/v1/usages` 订阅窗口、加油包 | Kimi Code Key 可读 Coding Plan；Moonshot Open Platform Key 只查开放平台钱包，二者不能混用 |
@@ -22,7 +22,7 @@ TokenTrail 只展示官方接口、本地官方 CLI 或用户明确手动录入�
 | `warning` / `critical` / `exhausted` | 窗口大约用到 80% / 95% / 100% |
 | `auth_error` | 登录过期或被拒绝，需要重新登录 |
 | `not_configured` | 没有 CLI 登录，也没有可用 Key |
-| `unsupported` | 已登录，但这个账号没有可读额度（例如 Gemini 没有 GCP 配额项目） |
+| `unsupported` | 已登录，但这个账号没有可读额度（例如 Antigravity `/usage` 没有返回窗口） |
 | `unsupported_version` | 官方返回结构变了，不会编造百分比 |
 | `stale` / `network_error` | 保留上次成功快照；刷新失败或数据过旧 |
 | `manual` | 用户自己录入的数字 |
@@ -34,7 +34,7 @@ TokenTrail 只展示官方接口、本地官方 CLI 或用户明确手动录入�
 3. Codex、Grok、Gemini、Kimi 在未登录时会打开一个可见的 macOS 终端窗口：
    - Codex CLI 会打开 ChatGPT 官方登录页（`codex login`）；
    - Grok CLI 会打开 `auth.x.ai` 浏览器登录页；
-   - Gemini CLI 会要求选择 `Sign in with Google`，再打开浏览器；
+   - Antigravity CLI（`agy`）未登录时会打开 Google 官方登录页；
    - Kimi CLI 会打开或提示官方登录页。
 4. TokenTrail 每两秒检查本地官方 CLI 登录态，成功后自动刷新额度；三分钟超时后可重试。
 
@@ -43,18 +43,18 @@ TokenTrail 只展示官方接口、本地官方 CLI 或用户明确手动录入�
 ```bash
 codex login
 grok login --oauth
-gemini
+agy
 kimi login
 ```
 
-Gemini 启动后选择 `Sign in with Google`。这些命令只负责登录；TokenTrail 不会接管密码、验证码或浏览器 Cookie。
+`agy` 未登录时会打开 Google 登录页。这些命令只负责登录；TokenTrail 不会接管密码、验证码或浏览器 Cookie。
 
 授权窗口必须保持可见，避免把设备码、浏览器链接或失败原因静默吞掉。TokenTrail 不读取浏览器 Cookie，也不提供伪造数值的“提取脚本”。
 
 ## 已知限制
 
-- Grok 订阅读取依赖 Grok CLI 当前使用的 billing 服务；如果服务端改变结构，TokenTrail 会显示“版本待升级”，不会把登录成功误报为额度读取成功。
-- Gemini CLI 的 Google 登录和可用套餐由 Google 当前客户端及账号策略决定。账号要求 Cloud Project 时，需填写 Project ID；旧客户端被停用时需先更新官方 CLI。
+- Grok 订阅读取依赖 Grok CLI 当前使用的 billing 服务；如果服务端改变结构，TokenTrail 会显示“版本待升级”，不会把登录成功误报为额度读取成功。Grok 的 access token 大约 6 小时过期，但 `~/.grok/auth.json` 里的 refresh token 可静默续期；TokenTrail 会在到期前调用官方 `auth.x.ai` token 接口刷新，不必每 6 小时重新浏览器授权。refresh token 被服务端拒绝后才会要求重新 `grok login --oauth`。
+- Gemini 额度走 Antigravity CLI（`agy`），不走 Gemini CLI。`agy -p "/usage"` 返回的是剩余百分比；TokenTrail 换算成已用百分比。CLI 输出结构变化时显示“版本待升级”，不会编造数字。
 - Kimi CLI OAuth 过期会明确显示“鉴权失效”；重新执行 `kimi login` 即可。Kimi Code Key 与 Moonshot 开放平台 Key 属于不同产品。
 - 普通推理 API Key 通常只能证明 API 可调用。只有 Provider 另行开放余额/账单/套餐接口时，TokenTrail 才能显示“剩余额度”。
 - 手动录入始终标记为 `manual`，不会冒充实时官方数据。

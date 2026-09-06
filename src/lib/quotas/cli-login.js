@@ -1,7 +1,7 @@
 const { execFileSync, spawn } = require('child_process')
 const path = require('path')
 
-const ALLOWED_CLIS = new Set(['grok', 'gemini', 'kimi', 'codex'])
+const ALLOWED_CLIS = new Set(['grok', 'gemini', 'kimi', 'codex', 'agy'])
 
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'"'"'`)}'`
@@ -17,6 +17,7 @@ function resolveCliBinary(name, deps = {}) {
     deps.home && path.join(deps.home, '.local', 'bin', name),
     deps.home && path.join(deps.home, `.${name}`, 'bin', name),
     name === 'kimi' && deps.home && path.join(deps.home, '.kimi-code', 'bin', name),
+    name === 'agy' && deps.home && path.join(deps.home, '.gemini', 'antigravity-cli', 'bin', name),
   ].filter(Boolean)
   for (const candidate of candidates) {
     try {
