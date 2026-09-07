@@ -8,7 +8,7 @@
 import fs from 'fs'
 import path from 'path'
 import { backfillProjectByRequestPrefix, correctProjectByRequestId, getDb, insertUsageRecord, normalizeSource, replaceUsageRecordByRequestId, normalizeStoredProjectNames, synthesizeRequestId, upsertModelPricing, getConfig, removeUnknownCodexUsageRecords, removeOverlappingAggregateUsageRecords, deleteAntigravityConversationRow } from './db'
-import { parseAntigravityTranscript } from './antigravity'
+import { parseAntigravityTranscript, detectAntigravityProject } from './antigravity'
 import { calculateCost } from './pricing'
 import { ensureInit } from './init'
 const { findTraeHistoryFiles, parseTraeHistoryFile } = require('./traework.js') as {
@@ -1109,6 +1109,7 @@ function syncAntigravityTranscripts(): SyncResult {
 
       try {
         const lines = fs.readFileSync(transcriptPath, 'utf-8').split('\n').filter(Boolean)
+        const project = detectAntigravityProject(lines)
         // 逐事件入库：每个 entry 带自己的时间戳与当时的模型，会话跨天或
         // 中途切换模型时历史用量不再迁移。token 是字符÷3.5 的估算值。
         const events = parseAntigravityTranscript(lines)
@@ -1128,7 +1129,7 @@ function syncAntigravityTranscripts(): SyncResult {
             const insertResult = replaceUsageRecordByRequestId({
               source: 'antigravity',
               provider: 'google',
-              project: 'Antigravity',
+              project,
               model: event.model,
               input_tokens: event.input_tokens,
               cached_input_tokens: 0,

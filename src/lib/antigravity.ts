@@ -75,6 +75,45 @@ export function detectAntigravityModel(lines: string[]): string {
   return DEFAULT_ANTIGRAVITY_MODEL
 }
 
+/** 从 Antigravity 对话日志中提取项目名称 */
+export function detectAntigravityProject(lines: string[]): string {
+  for (let i = 0; i < Math.min(lines.length, 50); i++) {
+    const line = lines[i]
+    if (!line) continue
+
+    // 1. 工作区路径映射: ".../path -> user/project"
+    const wsMatch = line.match(/\/[^\r\n"'\\]+\s*->\s*[^\/\s\r\n"'\\]+\/([a-zA-Z0-9_.-]+)/)
+    if (wsMatch) {
+      const p = wsMatch[1].trim()
+      if (p && p !== 'unknown' && p !== 'CorpusName') return p
+    }
+
+    // 2. 项目目录路径: "VIbe coding/Project" 或 "成长记录/Project"
+    const vibeMatch = line.match(/(?:VIbe coding\/|成长记录\/VIbe coding\/|成长记录\/)([a-zA-Z0-9_.-]+)/)
+    if (vibeMatch) {
+      try {
+        const decoded = decodeURIComponent(vibeMatch[1]).trim()
+        if (decoded && decoded !== 'unknown' && decoded !== 'VIbe coding') return decoded
+      } catch {
+        // ignore decode failure
+      }
+    }
+
+    // 3. 工具调用工作目录: "Cwd": ".../Project"
+    const cwdMatch = line.match(/"Cwd":\s*"\/[^\r\n"'\\]+\/([a-zA-Z0-9_.-]+)"/)
+    if (cwdMatch) {
+      try {
+        const decoded = decodeURIComponent(cwdMatch[1]).trim()
+        if (decoded && decoded !== 'unknown' && decoded !== 'VIbe coding') return decoded
+      } catch {
+        // ignore decode failure
+      }
+    }
+  }
+
+  return 'Antigravity'
+}
+
 /**
  * Parse a transcript into per-event usage estimates.
  *

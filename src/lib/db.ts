@@ -556,13 +556,13 @@ export function getAggregatedStats(filters: FilterParams) {
   const base = buildWhere('', filters)
   const joined = buildWhere('u', filters)
 
-  // 总体统计（主口径剔除估算行；估算量单独返回，见下方 estimateOnly）
+  // 总体统计（涵盖所有用量记录；估算量单独统计供标识）
   const overall = db.prepare(`
     SELECT
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
       COALESCE(SUM(cost_usd), 0) as total_cost_usd,
       COUNT(*) as total_requests
-    FROM usage_records ${base.sql} AND estimated = 0
+    FROM usage_records ${base.sql}
   `).get(...base.params) as { total_tokens: number; total_cost_usd: number; total_requests: number }
 
   // 按来源分组
@@ -572,7 +572,7 @@ export function getAggregatedStats(filters: FilterParams) {
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
       COALESCE(SUM(cost_usd), 0) as cost_usd,
       COUNT(*) as count
-    FROM usage_records ${base.sql} AND estimated = 0
+    FROM usage_records ${base.sql}
     GROUP BY source
     ORDER BY total_tokens DESC
   `).all(...base.params) as { source: string; total_tokens: number; cost_usd: number; count: number }[]
@@ -587,7 +587,7 @@ export function getAggregatedStats(filters: FilterParams) {
       COUNT(*) as count
     FROM usage_records u
     LEFT JOIN model_pricing mp ON u.model = mp.model_id
-    ${joined.sql} AND u.is_internal = 0 AND u.estimated = 0
+    ${joined.sql} AND u.is_internal = 0
     GROUP BY u.model
     ORDER BY total_tokens DESC
   `).all(...joined.params) as { model: string; display_name: string; total_tokens: number; cost_usd: number; count: number }[]
@@ -598,7 +598,7 @@ export function getAggregatedStats(filters: FilterParams) {
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
       COALESCE(SUM(cost_usd), 0) as cost_usd,
       COUNT(*) as count
-    FROM usage_records ${base.sql} AND estimated = 0
+    FROM usage_records ${base.sql}
     GROUP BY project
     ORDER BY total_tokens DESC
   `).all(...base.params) as { project: string; total_tokens: number; cost_usd: number; count: number }[]
@@ -612,12 +612,12 @@ export function getAggregatedStats(filters: FilterParams) {
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
       COALESCE(SUM(cost_usd), 0) as cost_usd,
       COUNT(*) as count
-    FROM usage_records ${base.sql} AND estimated = 0
+    FROM usage_records ${base.sql}
     GROUP BY date
     ORDER BY date ASC
   `).all(...base.params) as { date: string; total_tokens: number; cost_usd: number; count: number }[]
 
-  // 估算汇总（主口径之外单独展示，不与上面数字相加）
+  // 估算汇总（单独统计估算部分）
   const estimateOnly = db.prepare(`
     SELECT
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as estimated_tokens,

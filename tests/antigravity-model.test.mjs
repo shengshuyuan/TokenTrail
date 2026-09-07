@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
  * Imports the real src/lib/antigravity.ts (zero-dependency, Node 22 strips
  * types natively) instead of mirroring its logic.
  */
-import { detectAntigravityModel, parseAntigravityTranscript } from '../src/lib/antigravity.ts'
+import { detectAntigravityModel, parseAntigravityTranscript, detectAntigravityProject } from '../src/lib/antigravity.ts'
 
 function userExplicit(content, createdAt) {
   return JSON.stringify({ source: 'USER_EXPLICIT', type: 'USER_INPUT', content, created_at: createdAt })
@@ -146,5 +146,37 @@ describe('parseAntigravityTranscript (per-event attribution)', () => {
   it('returns an empty list for a transcript without usage-bearing entries', () => {
     const lines = [JSON.stringify({ source: 'TOOL', content: 'tool output' })]
     assert.deepEqual(parseAntigravityTranscript(lines), [])
+  })
+})
+
+describe('Antigravity project detection', () => {
+  it('detects project from workspace URI mapping', () => {
+    const lines = [
+      JSON.stringify({
+        source: 'USER_EXPLICIT',
+        content: '<user_information>\nThe user has 1 active workspaces, each defined by a URI and a CorpusName. Multiple URIs potentially map to the same CorpusName. The mapping is shown as follows in the format [URI] -> [CorpusName]:\n/Users/foo/VIbe coding/TokenTrail -> shengshuyuan/TokenTrail\n</user_information>',
+      }),
+    ]
+    assert.equal(detectAntigravityProject(lines), 'TokenTrail')
+  })
+
+  it('detects project from VIbe coding folder path', () => {
+    const lines = [
+      JSON.stringify({
+        source: 'USER_EXPLICIT',
+        content: '项目路径是 `/Users/shengshuyuan/Desktop/桌面 - 盛树园的MacBook Pro/成长记录/VIbe coding/FolioShelf`',
+      }),
+    ]
+    assert.equal(detectAntigravityProject(lines), 'FolioShelf')
+  })
+
+  it('falls back to Antigravity when no project pattern matches', () => {
+    const lines = [
+      JSON.stringify({
+        source: 'USER_EXPLICIT',
+        content: 'Hello, what models are available?',
+      }),
+    ]
+    assert.equal(detectAntigravityProject(lines), 'Antigravity')
   })
 })
