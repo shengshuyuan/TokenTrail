@@ -49,7 +49,7 @@ export function SegmentedControl<T extends string | number>({
             className={`font-medium rounded-md transition-all duration-150 select-none ${itemSizeClasses} ${
               isSelected
                 ? 'bg-workbench-accent text-white shadow-xs'
-                : 'text-workbench-text-muted hover:text-workbench-text hover:bg-white/60'
+                : 'text-workbench-text-muted hover:text-workbench-text hover:bg-workbench-surface/80'
             }`}
           >
             {opt.label}

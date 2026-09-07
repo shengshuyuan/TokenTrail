@@ -103,7 +103,7 @@ export function SingleMetricTrendChart({
                   if (!active || !payload || !payload.length) return null
                   const item = payload[0].payload as DailyStat & { shortDate: string }
                   return (
-                    <div className="bg-white border border-workbench-border shadow-md rounded-lg p-3 text-xs min-w-[140px]">
+                    <div className="bg-workbench-surface text-workbench-text border border-workbench-border shadow-lg rounded-lg p-3 text-xs min-w-[140px]">
                       <div className="font-semibold text-workbench-text mb-1.5">{item.date}</div>
                       <div className="space-y-1">
                         <div className="flex items-center justify-between gap-4">

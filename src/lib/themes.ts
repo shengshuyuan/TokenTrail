@@ -39,7 +39,7 @@ export const THEME_DEFINITIONS: readonly ThemeDefinition[] = [
   {
     id: 'quiet-workbench',
     name: { zh: '静谧工作台', en: 'Quiet Workbench' },
-    description: { zh: '清晰、克制与高效的个人 AI 工作台', en: 'Clean and focused personal AI workbench' },
+    description: { zh: '清晰克制、专注高效的现代浅色工作台', en: 'Clean and focused modern light workbench' },
     preview: {
       canvas: '#FCFCFD',
       surface: '#FFFFFF',
@@ -59,86 +59,44 @@ export const THEME_DEFINITIONS: readonly ThemeDefinition[] = [
   },
   {
     id: 'neon-mecha',
-    name: { zh: '玄枢流萤', en: 'Neon Mecha' },
-    description: { zh: '玄夜机巧与冷萤光流', en: 'Phosphor terminal grid' },
+    name: { zh: '玄枢深色', en: 'Dark Mecha' },
+    description: { zh: '深邃暗夜、极夜流萤的沉浸极客深色', en: 'Deep dark obsidian and vivid emerald terminal' },
     preview: {
-      canvas: '#0a0d13',
-      surface: '#141923',
-      primary: '#6dff4b',
-      secondary: '#a66cff',
-      tertiary: '#ff7a45',
-      text: '#eef4ef',
-      muted: '#9ba9bb',
-      border: '#29374a',
-      chart: ['#6dff4b', '#a66cff', '#ff7a45'],
-      radius: 10,
-      chamfer: 11,
-      chamferCorners: 'tr-bl',
-      decoration: '#6dff4b',
-      font: '"Oxanium", "Noto Sans SC", sans-serif',
-    },
-  },
-  {
-    id: 'ember-scroll',
-    name: { zh: '丹砂长卷', en: 'Ember Scroll' },
-    description: { zh: '赤金、绢纸与沉静层次', en: 'Charcoal, ember and ink' },
-    preview: {
-      canvas: '#130f0e',
-      surface: '#211915',
-      primary: '#d79a5b',
-      secondary: '#b5534d',
-      tertiary: '#d8b46a',
-      text: '#f6eadf',
-      muted: '#c4a691',
-      border: '#604738',
-      chart: ['#d79a5b', '#b5534d', '#d8b46a'],
-      radius: 3,
-      chamfer: 8,
-      chamferCorners: 'tl-br',
-      decoration: '#d79a5b',
-      font: '"ZCOOL XiaoWei", "Noto Sans SC", serif',
+      canvas: '#0B0F15',
+      surface: '#151C26',
+      primary: '#10B981',
+      secondary: '#38BDF8',
+      tertiary: '#A78BFA',
+      text: '#F1F5F9',
+      muted: '#94A3B8',
+      border: '#222D3D',
+      chart: ['#10B981', '#38BDF8', '#A78BFA'],
+      radius: 8,
+      chamfer: 0,
+      chamferCorners: 'none',
+      decoration: '#10B981',
+      font: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, sans-serif',
     },
   },
   {
     id: 'editorial-paper',
     name: { zh: '松烟素笺', en: 'Editorial Paper' },
-    description: { zh: '松烟墨意、暖纸留白', en: 'Warm paper editorial' },
+    description: { zh: '温润素笺、松烟琥珀的护眼暖纸质感', en: 'Warm paper and amber ink for relaxed reading' },
     preview: {
-      canvas: '#f4efe6',
-      surface: '#fffaf1',
-      primary: '#a84424',
-      secondary: '#2f6254',
-      tertiary: '#47617b',
-      text: '#241f1a',
-      muted: '#6b5f55',
-      border: '#d4c5b3',
-      chart: ['#a84424', '#2f6254', '#47617b'],
-      radius: 7,
+      canvas: '#F5EFE6',
+      surface: '#FAF6EE',
+      primary: '#B45309',
+      secondary: '#2F6254',
+      tertiary: '#A84424',
+      text: '#2B2520',
+      muted: '#73685E',
+      border: '#DBD1C0',
+      chart: ['#B45309', '#2F6254', '#A84424'],
+      radius: 8,
       chamfer: 0,
       chamferCorners: 'none',
-      decoration: '#a84424',
-      font: '"Cormorant Garamond", "Noto Serif SC", serif',
-    },
-  },
-  {
-    id: 'luminous-glass',
-    name: { zh: '晴岚琉光', en: 'Luminous Glass' },
-    description: { zh: '晴岚清透与柔亮层次', en: 'Cool, clear and layered' },
-    preview: {
-      canvas: '#eef3f8',
-      surface: '#ffffff',
-      primary: '#0067c5',
-      secondary: '#5757c9',
-      tertiary: '#007b65',
-      text: '#17202a',
-      muted: '#586575',
-      border: '#c9d6e2',
-      chart: ['#0067c5', '#5757c9', '#007b65'],
-      radius: 16,
-      chamfer: 0,
-      chamferCorners: 'none',
-      decoration: '#5757c9',
-      font: '"Manrope", "Noto Sans SC", sans-serif',
+      decoration: '#B45309',
+      font: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Serif SC", Georgia, serif',
     },
   },
 ] as const
@@ -150,9 +108,10 @@ export function isTheme(value: unknown): value is Theme {
 }
 
 export function normalizeTheme(value: unknown): Theme {
-  if (value === 'dark') return 'neon-mecha'
-  if (value === 'light') return 'editorial-paper'
-  return isTheme(value) ? value : DEFAULT_THEME
+  if (value === 'neon-mecha' || value === 'dark' || value === 'ember-scroll') return 'neon-mecha'
+  if (value === 'editorial-paper') return 'editorial-paper'
+  if (value === 'quiet-workbench' || value === 'light' || value === 'luminous-glass') return 'quiet-workbench'
+  return DEFAULT_THEME
 }
 
 export function getThemeDefinition(theme: Theme): ThemeDefinition {

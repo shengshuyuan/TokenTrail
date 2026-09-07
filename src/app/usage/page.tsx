@@ -272,7 +272,7 @@ function UsagePageInner() {
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                       isSelected
                         ? 'bg-workbench-accent text-white shadow-2xs'
-                        : 'bg-workbench-sidebar text-workbench-text hover:bg-gray-200/70 border border-workbench-border/60'
+                        : 'bg-workbench-sidebar text-workbench-text hover:bg-workbench-surface border border-workbench-border/60'
                     }`}
                   >
                     <span>{name}</span>
@@ -301,7 +301,7 @@ function UsagePageInner() {
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono transition-all ${
                       isSelected
                         ? 'bg-workbench-accent text-white shadow-2xs font-bold'
-                        : 'bg-workbench-sidebar text-workbench-text hover:bg-gray-200/70 border border-workbench-border/60'
+                        : 'bg-workbench-sidebar text-workbench-text hover:bg-workbench-surface border border-workbench-border/60'
                     }`}
                   >
                     <span>{model.name}</span>

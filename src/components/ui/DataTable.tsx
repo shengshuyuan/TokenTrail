@@ -12,7 +12,7 @@ export function DataTable({ children, className = '', loading = false }: DataTab
   return (
     <div className={`relative w-full border border-workbench-border rounded-lg bg-workbench-surface overflow-hidden ${className}`}>
       {loading && (
-        <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] flex items-center justify-center z-10">
+        <div className="absolute inset-0 bg-workbench-surface/80 backdrop-blur-[1px] flex items-center justify-center z-10">
           <div className="flex items-center gap-2 text-sm text-workbench-text-muted">
             <svg className="animate-spin h-4 w-4 text-workbench-accent" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />

@@ -109,8 +109,8 @@ export interface DailyStat {
 /** 货币类型 */
 export type Currency = 'USD' | 'RMB'
 
-/** 主题类型 */
-export type Theme = 'quiet-workbench' | 'neon-mecha' | 'ember-scroll' | 'editorial-paper' | 'luminous-glass'
+/** 主题类型：保留三种视觉特征明确的风格 */
+export type Theme = 'quiet-workbench' | 'neon-mecha' | 'editorial-paper'
 
 /** 时间范围选项 */
 export type TimeRange = 1 | 7 | 30 | 90

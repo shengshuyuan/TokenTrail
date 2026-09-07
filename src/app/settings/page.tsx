@@ -223,7 +223,7 @@ export default function SettingsPage() {
                 aria-checked={!showProjectNames}
                 onClick={() => setShowProjectNames(!showProjectNames)}
                 className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  !showProjectNames ? 'bg-workbench-accent' : 'bg-gray-200'
+                  !showProjectNames ? 'bg-workbench-accent' : 'bg-workbench-border'
                 }`}
               >
                 <span
@@ -236,18 +236,18 @@ export default function SettingsPage() {
             </div>
 
             {/* Theme Picker */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-4 border-t border-workbench-border/60">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-workbench-border/60">
               <div>
                 <div className="text-sm font-semibold text-workbench-text">
                   {lang === 'zh' ? '外观风格' : 'Theme'}
                 </div>
                 <div className="text-xs text-workbench-text-muted mt-0.5">
                   {lang === 'zh'
-                    ? '默认推荐使用专为用量分析定制的静谧工作台'
-                    : 'Quiet Workbench is the recommended layout for usage analytics'}
+                    ? '提供三种视觉特征分明的风格：经典浅色、极客深色与护眼暖纸'
+                    : 'Three distinct styles: Classic Light, Dark Mecha, and Warm Paper'}
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2.5">
                 {THEME_DEFINITIONS.map((def) => {
                   const isSelected = def.id === theme
                   return (
@@ -255,12 +255,21 @@ export default function SettingsPage() {
                       key={def.id}
                       type="button"
                       onClick={() => setTheme(def.id)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-2 ${
                         isSelected
                           ? 'bg-workbench-accent text-white border-transparent shadow-xs font-semibold'
-                          : 'bg-workbench-sidebar text-workbench-text border-workbench-border hover:bg-gray-200/60'
+                          : 'bg-workbench-sidebar text-workbench-text border-workbench-border hover:bg-workbench-surface'
                       }`}
                     >
+                      <span
+                        className="w-3 h-3 rounded-full border border-black/10 shrink-0 shadow-xs flex items-center justify-center"
+                        style={{ backgroundColor: def.preview.canvas }}
+                      >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full"
+                          style={{ backgroundColor: def.preview.primary }}
+                        />
+                      </span>
                       {def.name[lang]}
                     </button>
                   )
@@ -398,12 +407,12 @@ export default function SettingsPage() {
 
       {/* Pricing Edit Modal */}
       {editingModel && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <form
             onSubmit={handleSavePricing}
-            className="w-full max-w-md bg-white rounded-xl border border-workbench-border p-6 shadow-xl space-y-4"
+            className="w-full max-w-md bg-workbench-surface text-workbench-text rounded-xl border border-workbench-border p-6 shadow-xl space-y-4"
           >
-            <div className="flex items-center justify-between pb-3 border-b border-workbench-border">
+            <div className="flex items-center justify-between pb-3 border-b border-workbench-border/60">
               <h3 className="font-bold text-base text-workbench-text">
                 编辑模型价格: {editingModel.display_name || editingModel.model_id}
               </h3>
@@ -425,7 +434,7 @@ export default function SettingsPage() {
                   min="0"
                   value={editForm.input}
                   onChange={(e) => setEditForm({ ...editForm, input: e.target.value })}
-                  className="w-full h-9 px-3 rounded-lg border border-workbench-border font-mono text-sm focus:outline-none focus:border-workbench-accent"
+                  className="w-full h-9 px-3 rounded-lg border border-workbench-border bg-workbench-sidebar text-workbench-text font-mono text-sm focus:outline-none focus:border-workbench-accent"
                 />
               </div>
 
@@ -437,7 +446,7 @@ export default function SettingsPage() {
                   min="0"
                   value={editForm.cached}
                   onChange={(e) => setEditForm({ ...editForm, cached: e.target.value })}
-                  className="w-full h-9 px-3 rounded-lg border border-workbench-border font-mono text-sm focus:outline-none focus:border-workbench-accent"
+                  className="w-full h-9 px-3 rounded-lg border border-workbench-border bg-workbench-sidebar text-workbench-text font-mono text-sm focus:outline-none focus:border-workbench-accent"
                 />
               </div>
 
@@ -449,7 +458,7 @@ export default function SettingsPage() {
                   min="0"
                   value={editForm.output}
                   onChange={(e) => setEditForm({ ...editForm, output: e.target.value })}
-                  className="w-full h-9 px-3 rounded-lg border border-workbench-border font-mono text-sm focus:outline-none focus:border-workbench-accent"
+                  className="w-full h-9 px-3 rounded-lg border border-workbench-border bg-workbench-sidebar text-workbench-text font-mono text-sm focus:outline-none focus:border-workbench-accent"
                 />
               </div>
 
@@ -461,7 +470,7 @@ export default function SettingsPage() {
                   min="0"
                   value={editForm.reasoning}
                   onChange={(e) => setEditForm({ ...editForm, reasoning: e.target.value })}
-                  className="w-full h-9 px-3 rounded-lg border border-workbench-border font-mono text-sm focus:outline-none focus:border-workbench-accent"
+                  className="w-full h-9 px-3 rounded-lg border border-workbench-border bg-workbench-sidebar text-workbench-text font-mono text-sm focus:outline-none focus:border-workbench-accent"
                 />
               </div>
             </div>

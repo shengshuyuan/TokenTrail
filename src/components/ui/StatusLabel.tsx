@@ -31,11 +31,11 @@ export function StatusLabel({
       : 'neutral'
 
   const toneClasses = {
-    healthy: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-    warning: 'bg-amber-50 text-amber-800 border-amber-200',
-    danger: 'bg-red-50 text-red-800 border-red-200',
-    info: 'bg-blue-50 text-blue-800 border-blue-200',
-    neutral: 'bg-gray-100 text-gray-700 border-gray-200',
+    healthy: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
+    warning: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
+    danger: 'bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30',
+    info: 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30',
+    neutral: 'bg-workbench-sidebar text-workbench-text-muted border-workbench-border',
   }[normalizedTone]
 
   const dotClasses = {
@@ -43,7 +43,7 @@ export function StatusLabel({
     warning: 'bg-amber-500',
     danger: 'bg-red-500',
     info: 'bg-blue-500',
-    neutral: 'bg-gray-400',
+    neutral: 'bg-workbench-text-muted',
   }[normalizedTone]
 
   const sizeClasses = {

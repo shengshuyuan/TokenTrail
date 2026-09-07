@@ -67,7 +67,7 @@ export function TimeRangeDropdown({ value, onChange, className = '' }: TimeRange
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-1.5 w-56 rounded-lg bg-white border border-workbench-border shadow-lg py-1.5 z-50 text-sm animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute right-0 mt-1.5 w-56 rounded-lg bg-workbench-surface text-workbench-text border border-workbench-border shadow-lg py-1.5 z-50 text-sm animate-in fade-in zoom-in-95 duration-100">
           {RANGES.map((days) => {
             const isSelected = days === value
             return (
@@ -81,7 +81,7 @@ export function TimeRangeDropdown({ value, onChange, className = '' }: TimeRange
                 className={`w-full text-left px-3.5 py-2 flex items-center justify-between transition-colors ${
                   isSelected
                     ? 'bg-workbench-accent-light text-workbench-accent font-semibold'
-                    : 'text-workbench-text hover:bg-black/[0.04]'
+                    : 'text-workbench-text hover:bg-workbench-sidebar'
                 }`}
               >
                 <span>{getRangeLabel(days)}</span>
