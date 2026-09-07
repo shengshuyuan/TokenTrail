@@ -2,16 +2,17 @@
 // 授权与额度分开：
 // 1) ChatGPT 订阅登录：~/.codex/auth.json（codex login 浏览器 OAuth）
 // 2) API Key：OPENAI_API_KEY / auth.json 中的 OPENAI_API_KEY，不得与 ChatGPT 登录混用
-// 额度仍只扫描本地 ~/.codex/sessions 的 rate_limits，绝不主动发模型请求。
+// ChatGPT 订阅额度优先请求官方 usage 端点；本地会话仅为未登录/旧版兼容读取。
 
 const fs = require('fs')
 const path = require('path')
-const { codedError, readJsonIfExists, toEpochMs } = require('../http.js')
+const { codedError, readJsonIfExists, requestJson, toEpochMs, toFiniteNumber } = require('../http.js')
 const { deriveProviderStatus } = require('../status.js')
 
 // 只扫最近修改的前 N 个会话文件，并只读文件尾部，避免整库扫描
 const MAX_SESSION_FILES = 20
 const TAIL_BYTES = 256 * 1024
+const CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage'
 
 /** 由 window_minutes 生成窗口元数据（label 由 UI 按 kind 本地化）。 */
 function windowMetaFromMinutes(minutes) {
@@ -85,6 +86,41 @@ function planLabelFromRateLimits(rateLimits) {
   return typeof plan === 'string' && plan.trim() ? plan : undefined
 }
 
+/**
+ * 将 ChatGPT usage 响应中的窗口统一成 Codex CLI 的 rate_limits 形状。
+ * 当前官方响应为 rate_limit.primary_window/secondary_window；保留旧形状
+ * 兼容，以避免客户端更新期间把可读额度误判为不可用。
+ */
+function normalizeOfficialWindow(window) {
+  if (!window || typeof window !== 'object') return null
+  const usedPercent = toFiniteNumber(window.used_percent ?? window.usedPercent)
+  const seconds = toFiniteNumber(window.limit_window_seconds ?? window.window_seconds)
+  const minutes = toFiniteNumber(window.window_minutes ?? window.windowDurationMins)
+  const resetAt = toEpochMs(window.reset_at ?? window.resets_at ?? window.resetsAt)
+  if (usedPercent === null && minutes === null && seconds === null && resetAt === null) return null
+  return {
+    used_percent: usedPercent === null ? undefined : usedPercent,
+    window_minutes: minutes === null ? (seconds === null ? undefined : Math.round(seconds / 60)) : minutes,
+    resets_at: resetAt === null ? undefined : resetAt,
+  }
+}
+
+function normalizeOfficialRateLimits(payload) {
+  const root = payload?.rate_limit ?? payload?.rate_limits ?? payload?.rateLimits
+  if (!root || typeof root !== 'object') return null
+
+  const primary = normalizeOfficialWindow(root.primary_window ?? root.primary)
+  const secondary = normalizeOfficialWindow(root.secondary_window ?? root.secondary)
+  if (!primary && !secondary) return null
+
+  return {
+    primary,
+    secondary,
+    credits: payload?.credits ?? root.credits,
+    plan_type: payload?.plan_type ?? root.plan_type ?? payload?.planType ?? root.planType,
+  }
+}
+
 function jwtExpMs(token) {
   if (typeof token !== 'string') return null
   const parts = token.split('.')
@@ -138,6 +174,46 @@ function readCodexCliSession(fsMod, home, now = Date.now(), env = {}) {
     return { loggedIn: false, hasCredentials: true, expired: true, authMode: mode }
   }
   return { loggedIn: false, hasCredentials: false, expired: false, authMode: mode }
+}
+
+/** 只在 adapter 内部使用原始 access token；不得放进快照、错误或日志。 */
+function readCodexAccessToken(fsMod, home) {
+  const auth = readJsonIfExists(fsMod, path.join(home, '.codex', 'auth.json'))
+  const token = typeof auth?.tokens?.access_token === 'string' ? auth.tokens.access_token.trim() : ''
+  return token || null
+}
+
+async function fetchOfficialQuota(deps, session) {
+  const fsMod = deps.fs ?? fs
+  const accessToken = readCodexAccessToken(fsMod, deps.home)
+  if (!accessToken) throw codedError('auth', 'Codex access token unavailable')
+
+  const { json } = await requestJson(CODEX_USAGE_URL, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    timeoutMs: deps.timeoutMs,
+    fetchImpl: deps.fetchImpl,
+  })
+  const rateLimits = normalizeOfficialRateLimits(json)
+  if (!rateLimits) throw codedError('unsupported_version', 'unrecognized Codex usage response')
+
+  const windows = mapRateLimitsToWindows(rateLimits)
+  if (windows.length === 0) throw codedError('unsupported_version', 'Codex usage response has no windows')
+  const wallet = mapCreditsToWallet(rateLimits.credits)
+  const now = deps.now()
+  const snapshot = {
+    provider: 'codex',
+    product: 'subscription',
+    planLabel: planLabelFromRateLimits(rateLimits),
+    accountLabel: session.authMode === 'api_key' ? 'API Key' : 'ChatGPT',
+    windows,
+    wallets: wallet ? [wallet] : [],
+    source: 'official_api',
+    fetchedAt: now,
+    lastSuccessAt: now,
+    stale: false,
+  }
+  snapshot.status = deriveProviderStatus({ windows, fallback: 'healthy' })
+  return snapshot
 }
 
 function loggedInEmptySnapshot(deps, session) {
@@ -216,6 +292,13 @@ function findLatestRateLimitEvent(deps) {
 async function fetchQuota(deps) {
   const session = readCodexCliSession(deps.fs, deps.home, deps.now(), deps.env)
 
+  // ChatGPT 订阅有可用 OAuth access token 时，手动刷新必须向官方请求。
+  // 不能将旧 session 的 rate_limits 伪装成一次成功刷新。
+  if (session.authMode !== 'api_key' && session.loggedIn) {
+    return fetchOfficialQuota(deps, session)
+  }
+  if (session.expired) throw codedError('auth', 'Codex login expired')
+
   let latest = null
   try {
     latest = findLatestRateLimitEvent(deps)
@@ -249,12 +332,17 @@ async function fetchQuota(deps) {
 module.exports = {
   MAX_SESSION_FILES,
   TAIL_BYTES,
+  CODEX_USAGE_URL,
   extractLatestRateLimits,
   mapRateLimitsToWindows,
   mapCreditsToWallet,
   planLabelFromRateLimits,
+  normalizeOfficialWindow,
+  normalizeOfficialRateLimits,
   windowMetaFromMinutes,
   jwtExpMs,
   readCodexCliSession,
+  readCodexAccessToken,
+  fetchOfficialQuota,
   fetchQuota,
 }

@@ -110,7 +110,7 @@ export interface DailyStat {
 export type Currency = 'USD' | 'RMB'
 
 /** 主题类型 */
-export type Theme = 'neon-mecha' | 'ember-scroll' | 'editorial-paper' | 'luminous-glass'
+export type Theme = 'quiet-workbench' | 'neon-mecha' | 'ember-scroll' | 'editorial-paper' | 'luminous-glass'
 
 /** 时间范围选项 */
 export type TimeRange = 1 | 7 | 30 | 90

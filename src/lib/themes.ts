@@ -33,9 +33,30 @@ export interface ThemeDefinition {
   }
 }
 
-export const DEFAULT_THEME: Theme = 'neon-mecha'
+export const DEFAULT_THEME: Theme = 'quiet-workbench'
 
 export const THEME_DEFINITIONS: readonly ThemeDefinition[] = [
+  {
+    id: 'quiet-workbench',
+    name: { zh: '静谧工作台', en: 'Quiet Workbench' },
+    description: { zh: '清晰、克制与高效的个人 AI 工作台', en: 'Clean and focused personal AI workbench' },
+    preview: {
+      canvas: '#FCFCFD',
+      surface: '#FFFFFF',
+      primary: '#157F68',
+      secondary: '#202427',
+      tertiary: '#626B73',
+      text: '#202427',
+      muted: '#626B73',
+      border: '#E5E8EB',
+      chart: ['#157F68', '#202427', '#626B73'],
+      radius: 8,
+      chamfer: 0,
+      chamferCorners: 'none',
+      decoration: '#157F68',
+      font: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, sans-serif',
+    },
+  },
   {
     id: 'neon-mecha',
     name: { zh: '玄枢流萤', en: 'Neon Mecha' },

@@ -9,6 +9,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        workbench: {
+          bg: 'var(--color-bg)',
+          sidebar: 'var(--color-sidebar)',
+          surface: 'var(--color-surface)',
+          border: 'var(--color-border)',
+          'border-subtle': 'var(--color-border-subtle)',
+          text: 'var(--color-text)',
+          'text-muted': 'var(--color-text-muted)',
+          accent: 'var(--color-accent)',
+          'accent-light': 'var(--color-accent-light)',
+          'accent-hover': 'var(--color-accent-hover)',
+        },
         eva: {
           bg: 'rgb(var(--eva-bg-rgb) / <alpha-value>)',
           panel: 'rgb(var(--eva-panel-rgb) / <alpha-value>)',

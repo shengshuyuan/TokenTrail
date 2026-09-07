@@ -129,10 +129,58 @@ export function KimiBrandIcon({ className = 'size-6' }: { className?: string }) 
   )
 }
 
+export function ClaudeBrandIcon({ className = 'size-6' }: { className?: string }) {
+  return (
+    <div className={`flex shrink-0 items-center justify-center rounded-lg bg-[#D97757] border border-black/10 p-1 ${className}`}>
+      <svg viewBox="0 0 24 24" fill="currentColor" className="size-full text-white">
+        <path d="M12 2L13.8 8.2L20 10L13.8 11.8L12 18L10.2 11.8L4 10L10.2 8.2L12 2Z" />
+        <path d="M18 16L18.9 19.1L22 20L18.9 20.9L18 24L17.1 20.9L14 20L17.1 19.1L18 16Z" opacity="0.8" />
+        <path d="M6 16L6.9 19.1L10 20L6.9 20.9L6 24L5.1 20.9L2 20L5.1 19.1L6 16Z" opacity="0.8" />
+      </svg>
+    </div>
+  )
+}
+
+export function OpenClawBrandIcon({ className = 'size-6' }: { className?: string }) {
+  return (
+    <div className={`flex shrink-0 items-center justify-center rounded-lg bg-[#E11D48] border border-black/10 p-1 ${className}`}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="size-full text-white">
+        <path d="M18 11a6 6 0 0 0-12 0c0 7 6 10 6 10s6-3 6-10z" />
+        <path d="M9 10a3 3 0 0 0 6 0" />
+      </svg>
+    </div>
+  )
+}
+
+export function HermesBrandIcon({ className = 'size-6' }: { className?: string }) {
+  return (
+    <div className={`flex shrink-0 items-center justify-center rounded-lg bg-[#6366F1] border border-black/10 p-1 ${className}`}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-full text-white">
+        <path d="M12 2L2 7l10 5 10-5-10-5z" />
+        <path d="M2 17l10 5 10-5" />
+        <path d="M2 12l10 5 10-5" />
+      </svg>
+    </div>
+  )
+}
+
+export function TraeBrandIcon({ className = 'size-6' }: { className?: string }) {
+  return (
+    <div className={`flex shrink-0 items-center justify-center rounded-lg bg-[#059669] border border-black/10 p-1 ${className}`}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="size-full text-white">
+        <polyline points="16 18 22 12 16 6" />
+        <polyline points="8 6 2 12 8 18" />
+      </svg>
+    </div>
+  )
+}
+
 /** 根据 Provider ID 渲染对应的品牌图标 */
 export function ProviderBrandIcon({ provider, className = 'size-7' }: { provider: string; className?: string }) {
-  switch (provider) {
+  const normalized = provider.toLowerCase()
+  switch (normalized) {
     case 'codex':
+    case 'codex-review':
       return <CodexBrandIcon className={className} />
     case 'gemini':
     case 'antigravity':
@@ -142,10 +190,21 @@ export function ProviderBrandIcon({ provider, className = 'size-7' }: { provider
     case 'glm':
       return <GlmBrandIcon className={className} />
     case 'kimi':
+    case 'kimi-code':
       return <KimiBrandIcon className={className} />
+    case 'claude':
+    case 'claude-code':
+      return <ClaudeBrandIcon className={className} />
+    case 'openclaw':
+      return <OpenClawBrandIcon className={className} />
+    case 'hermes':
+      return <HermesBrandIcon className={className} />
+    case 'traework':
+    case 'trae':
+      return <TraeBrandIcon className={className} />
     default:
       return (
-        <div className={`flex shrink-0 items-center justify-center rounded-lg bg-eva-panel border border-eva-border text-xs font-mono font-bold uppercase text-eva-text ${className}`}>
+        <div className={`flex shrink-0 items-center justify-center rounded-lg bg-workbench-sidebar border border-workbench-border text-xs font-mono font-bold uppercase text-workbench-text-muted ${className}`}>
           {provider.slice(0, 2)}
         </div>
       )

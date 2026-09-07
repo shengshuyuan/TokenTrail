@@ -7,11 +7,12 @@ import {
   mapRateLimitsToWindows,
   mapCreditsToWallet,
   planLabelFromRateLimits,
+  normalizeOfficialRateLimits,
   readCodexCliSession,
   fetchQuota,
 } from '../src/lib/quotas/providers/codex.js'
 import { runAdapter } from '../src/lib/quotas/refresh.js'
-import { createFakeFs } from './helpers/quota-mock.mjs'
+import { createFakeFetch, createFakeFs } from './helpers/quota-mock.mjs'
 
 const HOME = '/home/test'
 
@@ -62,6 +63,18 @@ function authJson(overrides = {}) {
   })
 }
 
+function officialUsageResponse(overrides = {}) {
+  return {
+    plan_type: 'plus',
+    credits: { has_credits: false, unlimited: false, balance: '0' },
+    rate_limit: {
+      primary_window: { used_percent: 74, limit_window_seconds: 18_000, reset_at: 1_788_775_725 },
+      secondary_window: { used_percent: 17, limit_window_seconds: 604_800, reset_at: 1_789_357_610 },
+    },
+    ...overrides,
+  }
+}
+
 describe('Codex quota adapter', () => {
   it('picks the latest rate_limits event by real event time, not line order of mtime', () => {
     const older = rateLimitLine({}, '2026-09-01T08:00:00.000Z')
@@ -102,6 +115,13 @@ describe('Codex quota adapter', () => {
     assert.equal(mapCreditsToWallet({ has_credits: false, unlimited: false, balance: null }), null)
     assert.equal(planLabelFromRateLimits({ plan_type: 'pro' }), 'pro')
     assert.equal(planLabelFromRateLimits({}), undefined)
+  })
+
+  it('normalizes the current official wham usage shape', () => {
+    const limits = normalizeOfficialRateLimits(officialUsageResponse())
+    assert.deepEqual(limits.primary, { used_percent: 74, window_minutes: 300, resets_at: 1_788_775_725_000 })
+    assert.deepEqual(limits.secondary, { used_percent: 17, window_minutes: 10080, resets_at: 1_789_357_610_000 })
+    assert.equal(limits.plan_type, 'plus')
   })
 
   it('reports not_configured when Codex CLI has no sessions directory', async () => {
@@ -148,16 +168,22 @@ describe('Codex quota adapter', () => {
   })
 
   it('never includes credentials or raw account identifiers in the snapshot', async () => {
+    const { fetchImpl, calls } = createFakeFetch([{ match: '/backend-api/wham/usage', status: 200, json: officialUsageResponse() }])
     const snap = await runAdapter('codex', fetchQuota, {
       fs: sessionsFs([rateLimitLine({})], { [`${HOME}/.codex/auth.json`]: authJson() }),
       home: HOME,
       now: () => Date.now(),
+      fetchImpl,
     })
     const json = JSON.stringify(snap)
     assert.ok(!json.includes('codex-refresh-secret'))
     assert.ok(!json.includes('acct_hidden_123'))
     assert.ok(!json.includes(path.join(HOME, '.codex')))
     assert.equal(snap.accountLabel, 'ChatGPT')
+    assert.equal(snap.source, 'official_api')
+    assert.equal(snap.windows[0].usedPercent, 74)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].opts.headers.Authorization.includes('codex-refresh-secret'), false)
   })
 
   it('distinguishes missing login from an expired ChatGPT session', () => {
@@ -181,15 +207,17 @@ describe('Codex quota adapter', () => {
   })
 
   it('treats a ChatGPT login without rate_limits as connected, not unauthorized', async () => {
+    const { fetchImpl } = createFakeFetch([{ match: '/backend-api/wham/usage', status: 200, json: officialUsageResponse() }])
     const snap = await runAdapter('codex', fetchQuota, {
       fs: createFakeFs({ [`${HOME}/.codex/auth.json`]: authJson() }),
       home: HOME,
       now: () => Date.parse('2026-09-01T12:00:00.000Z'),
+      fetchImpl,
     })
     assert.equal(snap.status, 'healthy')
-    assert.equal(snap.source, 'local_cli')
-    assert.equal(snap.error?.code, 'no_data')
-    assert.equal(snap.windows.length, 0)
+    assert.equal(snap.source, 'official_api')
+    assert.equal(snap.error, undefined)
+    assert.equal(snap.windows.length, 2)
     assert.equal(snap.accountLabel, 'ChatGPT')
   })
 

@@ -32,6 +32,14 @@ Usage-accounting credibility and local-access hardening.
 
 ### Changed
 
+- **Workbench UI redesign**: reimplemented the frontend presentation layer according
+  to the personal AI usage workbench specification (`docs/design/2026-09-07-redesign/方案.md`):
+  - Five dedicated routes: Overview (`/`), Usage Analysis (`/usage`), Account Quotas (`/quotas`), Data Connections (`/connections`), and Settings (`/settings`).
+  - Fixed sidebar with clean Quiet Workbench design (`#FCFCFD` surface, `#157F68` brand green).
+  - Unbordered MetricStrip for Total Tokens, Estimated Cost, and Total Calls.
+  - Single-metric area trend chart with Tokens/Cost switcher.
+  - Interactive source distribution list and account quota preview with remaining percentage indicators.
+  - Full backward compatibility for existing retro themes, privacy mode, and custom model pricing.
 - **Estimated vs measured usage separated**: new `estimated` column marks
   Antigravity session rows and TraeWork scan rows (char-based estimates).
   Dashboard totals, charts, and source/model/project breakdowns exclude

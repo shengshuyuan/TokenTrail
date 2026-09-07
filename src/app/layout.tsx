@@ -38,7 +38,7 @@ try {
   var param = new URLSearchParams(window.location.search).get('theme');
   var candidate = param !== null ? param : prefs.theme;
   if (candidate === 'dark') candidate = 'neon-mecha';
-  if (candidate === 'light') candidate = 'editorial-paper';
+  if (candidate === 'light') candidate = 'quiet-workbench';
   document.documentElement.dataset.theme = themes.indexOf(candidate) >= 0 ? candidate : '${DEFAULT_THEME}';
   var savedLang = localStorage.getItem('tokentrail-lang');
   document.documentElement.lang = (savedLang === 'en') ? 'en' : 'zh-CN';
@@ -49,7 +49,7 @@ try {
           }}
         />
       </head>
-      <body className="min-h-screen bg-eva-bg antialiased">
+      <body className="min-h-screen bg-workbench-bg text-workbench-text antialiased">
         <div className="header-energy-rail" aria-hidden="true" />
         <div className="scan-overlay fixed inset-0 pointer-events-none z-50">
           <div className="scan-overlay-pattern absolute inset-0" />

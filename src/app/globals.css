@@ -5,8 +5,148 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
+  :root,
+  :root[data-theme='quiet-workbench'] {
+    color-scheme: light;
+    --color-bg: #FCFCFD;
+    --color-bg-rgb: 252 252 253;
+    --color-sidebar: #F5F6F7;
+    --color-sidebar-rgb: 245 246 247;
+    --color-surface: #FFFFFF;
+    --color-surface-rgb: 255 255 255;
+    --color-text: #202427;
+    --color-text-rgb: 32 36 39;
+    --color-text-muted: #626B73;
+    --color-text-muted-rgb: 98 107 115;
+    --color-accent: #157F68;
+    --color-accent-rgb: 21 127 104;
+    --color-accent-light: #EAF5F2;
+    --color-accent-light-rgb: 234 245 242;
+    --color-accent-hover: #116955;
+    --color-border: #E5E8EB;
+    --color-border-rgb: 229 232 235;
+    --color-border-subtle: #F0F2F4;
+    --color-border-subtle-rgb: 240 242 244;
+
+    --status-success: #157F68;
+    --status-success-rgb: 21 127 104;
+    --status-warning: #D97706;
+    --status-warning-rgb: 217 119 6;
+    --status-danger: #DC2626;
+    --status-danger-rgb: 220 38 38;
+
+    --theme-bg: var(--color-bg);
+    --theme-bg-rgb: var(--color-bg-rgb);
+    --theme-panel: var(--color-surface);
+    --theme-panel-rgb: var(--color-surface-rgb);
+    --theme-border: var(--color-border);
+    --theme-border-rgb: var(--color-border-rgb);
+    --theme-border-strong: #D1D5DB;
+    --theme-border-strong-rgb: 209 213 219;
+    --theme-primary: var(--color-accent);
+    --theme-primary-rgb: var(--color-accent-rgb);
+    --theme-primary-dim: var(--color-accent-hover);
+    --theme-primary-dim-rgb: 17 105 85;
+    --theme-secondary: #202427;
+    --theme-secondary-rgb: 32 36 39;
+    --theme-secondary-dark: #111827;
+    --theme-secondary-dark-rgb: 17 24 39;
+    --theme-tertiary: #626B73;
+    --theme-tertiary-rgb: 98 107 115;
+    --theme-text: var(--color-text);
+    --theme-text-rgb: var(--color-text-rgb);
+    --theme-text-muted: var(--color-text-muted);
+    --theme-text-muted-rgb: var(--color-text-muted-rgb);
+
+    --theme-chart-1: #157F68;
+    --theme-chart-2: #202427;
+    --theme-chart-3: #626B73;
+    --theme-chart-4: #2563EB;
+    --theme-chart-5: #D97706;
+    --theme-chart-6: #9333EA;
+    --theme-chart-7: #64748B;
+    --theme-grid: rgba(229, 232, 235, 0.8);
+    --theme-grid-strong: rgba(209, 213, 219, 0.9);
+    --theme-header-bg: rgba(252, 252, 253, 0.95);
+    --theme-panel-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+    --theme-hover-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    --theme-row-hover: #F8F9FA;
+    --theme-control-bg: #FFFFFF;
+    --theme-control-bg-hover: #F5F6F7;
+    --theme-control-bg-active: #EAF5F2;
+    --theme-control-fg: var(--color-text-muted);
+    --theme-control-fg-hover: var(--color-text);
+    --theme-radius: 8px;
+    --theme-control-radius: 8px;
+    --theme-font-body: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, sans-serif;
+    --theme-font-display: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, sans-serif;
+    --theme-font-numeric: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "JetBrains Mono", monospace;
+    --theme-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "JetBrains Mono", monospace;
+
+    /* Compatibility aliases keep existing component API stable */
+    --eva-bg: var(--color-bg);
+    --eva-bg-rgb: var(--color-bg-rgb);
+    --eva-page-0: var(--color-surface);
+    --eva-page-1: var(--color-bg);
+    --eva-page-2: var(--color-sidebar);
+    --eva-panel: var(--color-surface);
+    --eva-panel-rgb: var(--color-surface-rgb);
+    --eva-border: var(--color-border);
+    --eva-border-rgb: var(--color-border-rgb);
+    --eva-border-light: var(--color-border-subtle);
+    --eva-border-light-rgb: var(--color-border-subtle-rgb);
+    --eva-green: var(--color-accent);
+    --eva-green-rgb: var(--color-accent-rgb);
+    --eva-green-dim: var(--color-accent-hover);
+    --eva-green-dim-rgb: 17 105 85;
+    --eva-purple: var(--color-accent);
+    --eva-purple-rgb: var(--color-accent-rgb);
+    --eva-purple-dark: #0F5C4B;
+    --eva-purple-dark-rgb: 15 92 75;
+    --eva-orange: #D97706;
+    --eva-orange-rgb: 217 119 6;
+    --eva-text: var(--color-text);
+    --eva-text-rgb: var(--color-text-rgb);
+    --eva-text-dim: var(--color-text-muted);
+    --eva-text-dim-rgb: var(--color-text-muted-rgb);
+    --eva-grid-green: var(--theme-grid);
+    --eva-grid-green-strong: var(--theme-grid-strong);
+    --eva-header-bg: var(--theme-header-bg);
+    --eva-panel-shadow: var(--theme-panel-shadow);
+    --eva-hover-shadow: var(--theme-hover-shadow);
+    --eva-row-hover: var(--theme-row-hover);
+  }
+
+  :root[data-theme='quiet-workbench'] .header-energy-rail,
+  :root[data-theme='quiet-workbench'] .scan-overlay,
+  :root[data-theme='quiet-workbench'] .grain-overlay,
+  :root:not([data-theme]) .header-energy-rail,
+  :root:not([data-theme]) .scan-overlay,
+  :root:not([data-theme]) .grain-overlay {
+    display: none !important;
+  }
+
+  :root[data-theme='neon-mecha'] {
     color-scheme: dark;
+    --color-bg: #0c0f14;
+    --color-bg-rgb: 12 15 20;
+    --color-sidebar: #10141b;
+    --color-sidebar-rgb: 16 20 27;
+    --color-surface: #141923;
+    --color-surface-rgb: 20 25 35;
+    --color-text: #f1f6f2;
+    --color-text-rgb: 241 246 242;
+    --color-text-muted: #9ba9bb;
+    --color-text-muted-rgb: 155 169 187;
+    --color-accent: #6dff4b;
+    --color-accent-rgb: 109 255 75;
+    --color-accent-light: rgba(109, 255, 75, 0.15);
+    --color-accent-hover: #3ecf25;
+    --color-border: #29374a;
+    --color-border-rgb: 41 55 74;
+    --color-border-subtle: #1c2633;
+    --color-border-subtle-rgb: 28 38 51;
+
     --theme-bg: #0c0f14;
     --theme-bg-rgb: 12 15 20;
     --theme-page-0: #111722;
@@ -83,9 +223,6 @@
     --theme-heading-color: #d9ffd1;
     --theme-number-color: #6dff4b;
     --theme-label-color: #bb8dff;
-    /* neon-mecha: chamfer disabled. clip-path + CSS border don't close together, so the
-       cut corners read as broken strokes. border-radius (--theme-radius: 10px) still
-       shapes the panels. To restore: polygon(0 0, calc(100% - 11px) 0, 100% 11px, 100% 100%, 11px 100%, 0 calc(100% - 11px)) */
     --theme-panel-clip: none;
     --theme-panel-decoration: linear-gradient(90deg, transparent, rgba(109, 255, 75, 0.72), transparent);
     --theme-panel-decoration-opacity: 0.42;
