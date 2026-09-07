@@ -19,9 +19,9 @@ const TONE_CLASS: Record<QuotaProgressProps['tone'], string> = {
 export function QuotaProgress({ percent, label, tone }: QuotaProgressProps) {
   if (typeof percent !== 'number' || !Number.isFinite(percent)) return null
 
-  // 进度条宽度夹在 [2, 100]，0% 也保留可见的最小刻度
+  // 进度条宽度夹在 [0, 100]，0% 真实显示空轨道（遵循设计规范）
   const clamped = Math.max(0, Math.min(100, percent))
-  const width = Math.max(2, clamped)
+  const width = clamped
 
   return (
     <div
