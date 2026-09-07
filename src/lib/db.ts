@@ -468,6 +468,17 @@ export function deleteAntigravityConversationRow(convId: string): boolean {
   return result.changes > 0
 }
 
+/** 清理指定会话的旧有整段行与逐事件行，以便重新同步入库 */
+export function cleanAntigravityConversationRecords(convId: string): number {
+  const db = getDb()
+  const result = db.prepare(`
+    DELETE FROM usage_records
+    WHERE (request_id = ? OR request_id = ? OR request_id LIKE ?)
+      AND source = 'antigravity'
+  `).run(`antigravity-${convId}`, `antigravity:${convId}`, `antigravity:${convId}:%`)
+  return result.changes
+}
+
 function normalizeProjectName(project?: string): string {
   const value = project?.trim()
   return value || 'unknown'

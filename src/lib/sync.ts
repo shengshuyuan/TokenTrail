@@ -7,7 +7,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { backfillProjectByRequestPrefix, correctProjectByRequestId, getDb, insertUsageRecord, normalizeSource, replaceUsageRecordByRequestId, normalizeStoredProjectNames, synthesizeRequestId, upsertModelPricing, getConfig, removeUnknownCodexUsageRecords, removeOverlappingAggregateUsageRecords, deleteAntigravityConversationRow } from './db'
+import { backfillProjectByRequestPrefix, correctProjectByRequestId, getDb, insertUsageRecord, normalizeSource, replaceUsageRecordByRequestId, normalizeStoredProjectNames, synthesizeRequestId, upsertModelPricing, getConfig, removeUnknownCodexUsageRecords, removeOverlappingAggregateUsageRecords, deleteAntigravityConversationRow, cleanAntigravityConversationRecords } from './db'
 import { parseAntigravityTranscript, detectAntigravityProject } from './antigravity'
 import { calculateCost } from './pricing'
 import { ensureInit } from './init'
@@ -1104,7 +1104,11 @@ function syncAntigravityTranscripts(): SyncResult {
 
     for (const convId of convDirs) {
       const logDir = path.join(brainDir, convId, '.system_generated', 'logs')
-      const transcriptPath = path.join(logDir, 'transcript.jsonl')
+      const fullTranscriptPath = path.join(logDir, 'transcript_full.jsonl')
+      const compactTranscriptPath = path.join(logDir, 'transcript.jsonl')
+      const transcriptPath = fs.existsSync(fullTranscriptPath)
+        ? fullTranscriptPath
+        : compactTranscriptPath
       if (!fs.existsSync(transcriptPath)) continue
 
       try {
@@ -1115,6 +1119,9 @@ function syncAntigravityTranscripts(): SyncResult {
         const events = parseAntigravityTranscript(lines)
 
         let failed = false
+        // 先清理该会话已有记录（包括旧版整段行和逐事件行），确保重新同步时使用最新的上下文累积 token
+        cleanAntigravityConversationRecords(convId)
+
         for (const event of events) {
           try {
             ensureModelPricing(event.model)
@@ -1123,7 +1130,7 @@ function syncAntigravityTranscripts(): SyncResult {
               input_tokens: event.input_tokens,
               cached_input_tokens: 0,
               output_tokens: event.output_tokens,
-              reasoning_tokens: 0,
+              reasoning_tokens: event.reasoning_tokens || 0,
             })
 
             const insertResult = replaceUsageRecordByRequestId({
@@ -1134,7 +1141,7 @@ function syncAntigravityTranscripts(): SyncResult {
               input_tokens: event.input_tokens,
               cached_input_tokens: 0,
               output_tokens: event.output_tokens,
-              reasoning_tokens: 0,
+              reasoning_tokens: event.reasoning_tokens || 0,
               cost_usd,
               request_id: `antigravity:${convId}:${event.entryIndex}`,
               timestamp: event.timestamp,
@@ -1150,8 +1157,7 @@ function syncAntigravityTranscripts(): SyncResult {
           }
         }
 
-        // 该会话事件全部写成功后才删除旧的整段行，避免双计；出错则保留冻结。
-        // 脑目录已删除的会话不会进入循环，其旧整段行原样保留。
+        // 该会话事件全部写成功后删除可能存在的残留行
         if (events.length > 0 && !failed) {
           deleteAntigravityConversationRow(convId)
         }

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useLang } from '@/lib/LanguageContext'
@@ -127,13 +128,17 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
           onClick={onCloseMobile}
           className="flex items-center gap-2.5 px-3 py-2 mb-6 group transition-opacity hover:opacity-90"
         >
-          {/* Green T Icon */}
-          <div className="w-8 h-8 rounded-lg bg-workbench-accent flex items-center justify-center shadow-xs">
-            <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 7h16" />
-              <path d="M12 7v13" />
-              <circle cx="12" cy="20" r="1.5" fill="currentColor" />
-            </svg>
+          {/* Logo */}
+          <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 shadow-xs">
+            <Image
+              src="/logo-app.png"
+              alt="TokenTrail"
+              width={32}
+              height={32}
+              priority
+              unoptimized
+              className="w-full h-full object-cover"
+            />
           </div>
           <span className="text-[17px] font-bold tracking-tight text-workbench-text">TokenTrail</span>
         </Link>

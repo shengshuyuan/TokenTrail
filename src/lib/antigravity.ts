@@ -13,6 +13,7 @@ export interface AntigravityEvent {
   model: string
   input_tokens: number
   output_tokens: number
+  reasoning_tokens?: number
   timestamp: number
 }
 
@@ -126,10 +127,21 @@ export function detectAntigravityProject(lines: string[]): string {
  * When no explicit switch message exists, the conversation-level
  * detectAntigravityModel heuristic applies to every event (legacy behavior).
  */
+const TOOL_RESULT_TYPES = new Set([
+  'GENERIC',
+  'VIEW_FILE',
+  'RUN_COMMAND',
+  'LIST_DIRECTORY',
+  'GREP_SEARCH',
+  'CODE_ACTION',
+  'SEARCH_WEB',
+])
+
 export function parseAntigravityTranscript(lines: string[]): AntigravityEvent[] {
   let currentModel = DEFAULT_ANTIGRAVITY_MODEL
   let sawExplicitSwitch = false
   let lastTimestamp = Date.now()
+  let runningContextChars = 0
   const events: AntigravityEvent[] = []
 
   for (let entryIndex = 0; entryIndex < lines.length; entryIndex++) {
@@ -153,22 +165,58 @@ export function parseAntigravityTranscript(lines: string[]): AntigravityEvent[] 
         }
       }
 
-      let inputChars = 0
-      let outputChars = 0
-      if (entry.source === 'USER_EXPLICIT') {
-        inputChars = contentChars(entry)
-      } else if (entry.source === 'MODEL') {
-        outputChars = contentChars(entry)
-      }
-      if (inputChars === 0 && outputChars === 0) continue
+      // 1. 工具执行结果：作为后续模型调用的 Prompt 上下文累加，自身不作为模型调用事件
+      const isToolResult =
+        entry.source === 'TOOL' ||
+        (entry.source === 'MODEL' && entry.type && TOOL_RESULT_TYPES.has(entry.type))
 
-      events.push({
-        entryIndex,
-        model: currentModel,
-        input_tokens: Math.max(1, Math.round(inputChars / 3.5)),
-        output_tokens: Math.max(1, Math.round(outputChars / 3.5)),
-        timestamp: lastTimestamp,
-      })
+      if (isToolResult) {
+        runningContextChars += contentChars(entry)
+        continue
+      }
+
+      // 2. 用户显式输入
+      if (entry.source === 'USER_EXPLICIT' || entry.type === 'USER_INPUT') {
+        const chars = contentChars(entry)
+        runningContextChars += chars
+        events.push({
+          entryIndex,
+          model: currentModel,
+          input_tokens: Math.max(1, Math.round(chars / 3.5)),
+          output_tokens: 1,
+          timestamp: lastTimestamp,
+        })
+        continue
+      }
+
+      // 3. 模型调用与生成（PLANNER_RESPONSE 或直接回复文本/工具调用）
+      if (entry.source === 'MODEL') {
+        const textChars = contentChars(entry)
+        const toolCallsChars = entry.tool_calls
+          ? JSON.stringify(entry.tool_calls).length
+          : 0
+        const thinkingChars =
+          typeof entry.thinking === 'string' ? entry.thinking.length : 0
+        const totalOutputChars = textChars + toolCallsChars + thinkingChars
+
+        if (totalOutputChars === 0) continue
+
+        // 模型在这一步接收的 Prompt 是此前累积的全部上下文
+        const inputTokens = Math.max(1, Math.round(runningContextChars / 3.5))
+        const outputTokens = Math.max(1, Math.round(totalOutputChars / 3.5))
+        const reasoningTokens = Math.round(thinkingChars / 3.5)
+
+        events.push({
+          entryIndex,
+          model: currentModel,
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+          reasoning_tokens: reasoningTokens,
+          timestamp: lastTimestamp,
+        })
+
+        runningContextChars += totalOutputChars
+      }
     } catch {
       // Ignore invalid JSON lines
     }
