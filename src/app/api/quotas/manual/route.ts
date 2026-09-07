@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { ensureInit } from '@/lib/init'
 import { saveQuotaSnapshotRows, type QuotaSnapshotRow } from '@/lib/db'
 import { getQuotasForServer } from '@/lib/quotas/server'
+import { rejectUnsafeLocalMutation } from '@/lib/local-request'
 import type { ProviderQuotaSnapshot, ProviderId } from '@/lib/quotas/types'
 
 export const dynamic = 'force-dynamic'
@@ -10,6 +11,9 @@ const VALID_PROVIDERS: Set<string> = new Set(['codex', 'gemini', 'grok', 'glm', 
 
 /** POST /api/quotas/manual — 用户手动录入或通过提取脚本导入额度快照 */
 export async function POST(req: Request) {
+  const rejected = rejectUnsafeLocalMutation(req)
+  if (rejected) return rejected
+
   try {
     ensureInit()
     const body = await req.json()

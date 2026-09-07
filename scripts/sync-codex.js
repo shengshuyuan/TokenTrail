@@ -14,6 +14,10 @@
 const fs = require('fs')
 const path = require('path')
 
+// Codex reports cached input within input_tokens and reasoning output within
+// output_tokens; reuse the server-side normalizer so records match syncCodex.
+const { normalizeCodexTokenUsage } = require(path.join(__dirname, '..', 'src', 'lib', 'codex.js'))
+
 const CODEX_DIR = path.join(process.env.HOME, '.codex')
 const SESSIONS_DIR = path.join(CODEX_DIR, 'sessions')
 
@@ -87,14 +91,13 @@ async function main() {
           const timestamp = entry.timestamp ? new Date(entry.timestamp).getTime() : Date.now()
 
           const model = detectModel(entry, sessionModel)
+          const normalized = normalizeCodexTokenUsage(usage)
+          if (!normalized) continue
 
           allRecords.push({
             source: 'codex',
             model,
-            input_tokens: usage.input_tokens || 0,
-            cached_input_tokens: usage.cached_input_tokens || 0,
-            output_tokens: usage.output_tokens || 0,
-            reasoning_tokens: usage.reasoning_output_tokens || 0,
+            ...normalized,
             request_id: requestId,
             timestamp,
           })

@@ -3,6 +3,7 @@ import { ensureInit } from '@/lib/init'
 import { setConfig, saveQuotaSnapshotRows, type QuotaSnapshotRow } from '@/lib/db'
 import { getQuotasForServer } from '@/lib/quotas/server'
 import { setQuotaSecret } from '@/lib/quotas/secret-store'
+import { rejectUnsafeLocalMutation } from '@/lib/local-request'
 
 const { createAdapters } = require('@/lib/quotas/providers/index.js') as {
   createAdapters: (overrides?: Record<string, unknown>) => {
@@ -124,6 +125,9 @@ export async function GET(req: Request) {
  * non-secret IDs and normalized quota snapshots.
  */
 export async function POST(req: Request) {
+  const rejected = rejectUnsafeLocalMutation(req)
+  if (rejected) return rejected
+
   try {
     ensureInit()
     const body = await req.json()

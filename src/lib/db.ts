@@ -76,6 +76,7 @@ export function getDb(): Database.Database {
   ensureUsageRecordsTimestampValues(_db)
   ensureUsageRecordsInternalColumn(_db)
   ensureUsageRecordsAggregateColumn(_db)
+  ensureUsageRecordsEstimatedColumn(_db)
   markLegacyInternalCodexUsageRecords(_db)
   _db.exec('CREATE INDEX IF NOT EXISTS idx_usage_project ON usage_records(project);')
 
@@ -109,6 +110,28 @@ function ensureUsageRecordsAggregateColumn(db: Database.Database) {
     db.exec('ALTER TABLE usage_records ADD COLUMN is_aggregate INTEGER NOT NULL DEFAULT 0;')
   }
   db.prepare("UPDATE usage_records SET is_aggregate = 1 WHERE request_id LIKE 'vc:%' AND is_aggregate = 0").run()
+}
+
+function ensureUsageRecordsEstimatedColumn(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(usage_records)').all() as { name: string }[]
+  if (!columns.some(column => column.name === 'estimated')) {
+    db.exec('ALTER TABLE usage_records ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0;')
+  }
+  // Backfill scanner-derived estimates (idempotent: runs every boot, the
+  // estimated = 0 predicate self-limits). Antigravity session rows are
+  // char-based estimates; VibeCafé aggregates (is_aggregate = 1) are the
+  // platform's own usage numbers and stay unmarked. TraeWork scan rows are
+  // char-weighted estimates (provider = 'trae'); TraeWork proxy rows carry
+  // real usage and no provider.
+  db.prepare(`
+    UPDATE usage_records
+    SET estimated = 1
+    WHERE estimated = 0
+      AND (
+        (source = 'antigravity' AND is_aggregate = 0)
+        OR (source = 'traework' AND provider = 'trae')
+      )
+  `).run()
 }
 
 function markLegacyInternalCodexUsageRecords(db: Database.Database) {
@@ -213,7 +236,8 @@ const SOURCE_ALIASES: Record<string, string> = {
   'codex-review': 'codex',
 }
 
-function normalizeSource(source: string): string {
+/** Lowercase + alias mapping; request_id synthesis must use the same form. */
+export function normalizeSource(source: string): string {
   return SOURCE_ALIASES[source.toLowerCase()] || source
 }
 
@@ -224,6 +248,10 @@ function normalizeSource(source: string): string {
  * 用于 OpenClaw / Hermes 等 JSONL 不带 request_id 的来源：
  * 同一事件（同 source/timestamp/model/token 数）每次导入/上报都得到同一个 key，
  * 从而能命中 request_id 唯一索引做去重，避免每次 sync 都把历史记录再插一遍。
+ *
+ * Token counts are sanitized before hashing so callers may pass raw values;
+ * note that changing stored values does NOT change this key for a given raw
+ * event — compute it from the raw values before normalizing buckets.
  */
 export function synthesizeRequestId(source: string, rec: {
   timestamp: number
@@ -233,7 +261,15 @@ export function synthesizeRequestId(source: string, rec: {
   output_tokens: number
   reasoning_tokens: number
 }): string {
-  const raw = [source, rec.timestamp, rec.model, rec.input_tokens, rec.cached_input_tokens, rec.output_tokens, rec.reasoning_tokens].join('|')
+  const raw = [
+    source,
+    rec.timestamp,
+    rec.model,
+    sanitizeTokenCount(rec.input_tokens),
+    sanitizeTokenCount(rec.cached_input_tokens),
+    sanitizeTokenCount(rec.output_tokens),
+    sanitizeTokenCount(rec.reasoning_tokens),
+  ].join('|')
   return `${source}:${crypto.createHash('sha1').update(raw).digest('hex').slice(0, 16)}`
 }
 
@@ -248,6 +284,7 @@ export function insertUsageRecord(record: {
   reasoning_tokens: number
   is_internal?: boolean
   is_aggregate?: boolean
+  estimated?: boolean
   cost_usd: number
   request_id?: string
   timestamp: number
@@ -287,8 +324,8 @@ export function insertUsageRecord(record: {
   }
 
   const stmt = db.prepare(`
-    INSERT INTO usage_records (source, provider, project, model, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens, is_internal, is_aggregate, cost_usd, request_id, timestamp)
-    VALUES (@source, @provider, @project, @model, @input_tokens, @cached_input_tokens, @output_tokens, @reasoning_tokens, @is_internal, @is_aggregate, @cost_usd, @request_id, @timestamp)
+    INSERT INTO usage_records (source, provider, project, model, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens, is_internal, is_aggregate, estimated, cost_usd, request_id, timestamp)
+    VALUES (@source, @provider, @project, @model, @input_tokens, @cached_input_tokens, @output_tokens, @reasoning_tokens, @is_internal, @is_aggregate, @estimated, @cost_usd, @request_id, @timestamp)
     ON CONFLICT(request_id) WHERE request_id IS NOT NULL DO NOTHING
   `)
 
@@ -303,6 +340,7 @@ export function insertUsageRecord(record: {
     reasoning_tokens,
     is_internal: record.is_internal ? 1 : 0,
     is_aggregate: record.is_aggregate ? 1 : 0,
+    estimated: record.estimated ? 1 : 0,
     cost_usd: record.cost_usd,
     request_id: requestId,
     timestamp,
@@ -331,6 +369,7 @@ export function replaceUsageRecordByRequestId(record: {
   reasoning_tokens: number
   is_internal?: boolean
   is_aggregate?: boolean
+  estimated?: boolean
   cost_usd: number
   request_id: string
   timestamp: number
@@ -360,6 +399,7 @@ export function replaceUsageRecordByRequestId(record: {
         reasoning_tokens = @reasoning_tokens,
         is_internal = @is_internal,
         is_aggregate = @is_aggregate,
+        estimated = @estimated,
         cost_usd = @cost_usd,
         timestamp = @timestamp
     WHERE id = @id
@@ -375,6 +415,7 @@ export function replaceUsageRecordByRequestId(record: {
     reasoning_tokens,
     is_internal: record.is_internal ? 1 : 0,
     is_aggregate: record.is_aggregate ? 1 : 0,
+    estimated: record.estimated ? 1 : 0,
     cost_usd: record.cost_usd,
     timestamp,
   })
@@ -412,88 +453,19 @@ export function removeOverlappingAggregateUsageRecords(): number {
 }
 
 /**
- * Insert or refresh a usage row keyed by request_id.
- * Used by conversation-level scanners (e.g. Antigravity) where token totals grow over time.
- * Returns `updated: true` when an existing row's token totals are raised.
+ * Remove the legacy whole-conversation Antigravity row once its per-event rows
+ * have been written, so the same tokens are not counted twice. Conversations
+ * whose brain directory no longer exists never reach the scanner and keep
+ * their frozen legacy row.
  */
-export function upsertUsageRecordByRequestId(record: {
-  source: string
-  provider?: string
-  project?: string
-  model: string
-  input_tokens: number
-  cached_input_tokens: number
-  output_tokens: number
-  reasoning_tokens: number
-  cost_usd: number
-  request_id: string
-  timestamp: number
-}): { success: boolean; cost_usd: number; id: number; duplicate: boolean; updated: boolean } {
+export function deleteAntigravityConversationRow(convId: string): boolean {
   const db = getDb()
-  const requestId = String(record.request_id).trim()
-  if (!requestId) {
-    const inserted = insertUsageRecord(record)
-    return { ...inserted, updated: false }
-  }
-
-  const existing = db.prepare(
-    'SELECT id, model, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens FROM usage_records WHERE request_id = ?'
-  ).get(requestId) as {
-    id: number
-    model: string
-    input_tokens: number
-    cached_input_tokens: number
-    output_tokens: number
-    reasoning_tokens: number
-  } | undefined
-
-  if (!existing) {
-    const inserted = insertUsageRecord(record)
-    return { success: inserted.success, cost_usd: inserted.cost_usd, id: inserted.id, duplicate: false, updated: false }
-  }
-
-  const input_tokens = sanitizeTokenCount(record.input_tokens)
-  const cached_input_tokens = sanitizeTokenCount(record.cached_input_tokens)
-  const output_tokens = sanitizeTokenCount(record.output_tokens)
-  const reasoning_tokens = sanitizeTokenCount(record.reasoning_tokens)
-  const timestamp = Number.isFinite(record.timestamp) ? Math.trunc(record.timestamp) : Date.now()
-  const grew =
-    input_tokens > existing.input_tokens ||
-    cached_input_tokens > existing.cached_input_tokens ||
-    output_tokens > existing.output_tokens ||
-    reasoning_tokens > existing.reasoning_tokens ||
-    existing.model !== record.model
-
-  if (!grew) {
-    return { success: true, cost_usd: 0, id: existing.id, duplicate: true, updated: false }
-  }
-
-  db.prepare(`
-    UPDATE usage_records
-    SET model = @model,
-        provider = COALESCE(@provider, provider),
-        project = @project,
-        input_tokens = @input_tokens,
-        cached_input_tokens = @cached_input_tokens,
-        output_tokens = @output_tokens,
-        reasoning_tokens = @reasoning_tokens,
-        cost_usd = @cost_usd,
-        timestamp = @timestamp
-    WHERE id = @id
-  `).run({
-    id: existing.id,
-    model: record.model,
-    provider: record.provider || null,
-    project: normalizeProjectName(record.project),
-    input_tokens,
-    cached_input_tokens,
-    output_tokens,
-    reasoning_tokens,
-    cost_usd: record.cost_usd,
-    timestamp,
-  })
-
-  return { success: true, cost_usd: record.cost_usd, id: existing.id, duplicate: false, updated: true }
+  const result = db.prepare(`
+    DELETE FROM usage_records
+    WHERE request_id = ?
+      AND source = 'antigravity'
+  `).run(`antigravity-${convId}`)
+  return result.changes > 0
 }
 
 function normalizeProjectName(project?: string): string {
@@ -584,13 +556,13 @@ export function getAggregatedStats(filters: FilterParams) {
   const base = buildWhere('', filters)
   const joined = buildWhere('u', filters)
 
-  // 总体统计
+  // 总体统计（主口径剔除估算行；估算量单独返回，见下方 estimateOnly）
   const overall = db.prepare(`
     SELECT
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
       COALESCE(SUM(cost_usd), 0) as total_cost_usd,
       COUNT(*) as total_requests
-    FROM usage_records ${base.sql}
+    FROM usage_records ${base.sql} AND estimated = 0
   `).get(...base.params) as { total_tokens: number; total_cost_usd: number; total_requests: number }
 
   // 按来源分组
@@ -600,7 +572,7 @@ export function getAggregatedStats(filters: FilterParams) {
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
       COALESCE(SUM(cost_usd), 0) as cost_usd,
       COUNT(*) as count
-    FROM usage_records ${base.sql}
+    FROM usage_records ${base.sql} AND estimated = 0
     GROUP BY source
     ORDER BY total_tokens DESC
   `).all(...base.params) as { source: string; total_tokens: number; cost_usd: number; count: number }[]
@@ -615,7 +587,7 @@ export function getAggregatedStats(filters: FilterParams) {
       COUNT(*) as count
     FROM usage_records u
     LEFT JOIN model_pricing mp ON u.model = mp.model_id
-    ${joined.sql} AND u.is_internal = 0
+    ${joined.sql} AND u.is_internal = 0 AND u.estimated = 0
     GROUP BY u.model
     ORDER BY total_tokens DESC
   `).all(...joined.params) as { model: string; display_name: string; total_tokens: number; cost_usd: number; count: number }[]
@@ -626,7 +598,7 @@ export function getAggregatedStats(filters: FilterParams) {
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
       COALESCE(SUM(cost_usd), 0) as cost_usd,
       COUNT(*) as count
-    FROM usage_records ${base.sql}
+    FROM usage_records ${base.sql} AND estimated = 0
     GROUP BY project
     ORDER BY total_tokens DESC
   `).all(...base.params) as { project: string; total_tokens: number; cost_usd: number; count: number }[]
@@ -640,10 +612,19 @@ export function getAggregatedStats(filters: FilterParams) {
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
       COALESCE(SUM(cost_usd), 0) as cost_usd,
       COUNT(*) as count
-    FROM usage_records ${base.sql}
+    FROM usage_records ${base.sql} AND estimated = 0
     GROUP BY date
     ORDER BY date ASC
   `).all(...base.params) as { date: string; total_tokens: number; cost_usd: number; count: number }[]
+
+  // 估算汇总（主口径之外单独展示，不与上面数字相加）
+  const estimateOnly = db.prepare(`
+    SELECT
+      COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as estimated_tokens,
+      COALESCE(SUM(cost_usd), 0) as estimated_cost_usd,
+      COUNT(*) as estimated_requests
+    FROM usage_records ${base.sql} AND estimated = 1
+  `).get(...base.params) as { estimated_tokens: number; estimated_cost_usd: number; estimated_requests: number }
 
   // 日均计算：用实际有数据的天数，避免新用户第一天看到被稀释的值
   const activeDays = daily.length || 1
@@ -652,6 +633,9 @@ export function getAggregatedStats(filters: FilterParams) {
     total_tokens: overall.total_tokens,
     total_cost_usd: overall.total_cost_usd,
     total_requests: overall.total_requests,
+    estimated_tokens: estimateOnly.estimated_tokens,
+    estimated_cost_usd: estimateOnly.estimated_cost_usd,
+    estimated_requests: estimateOnly.estimated_requests,
     avg_daily_tokens: Math.round(overall.total_tokens / activeDays),
     avg_daily_cost_usd: Math.round((overall.total_cost_usd / activeDays) * 100) / 100,
     by_source: bySource,

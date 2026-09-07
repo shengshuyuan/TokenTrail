@@ -46,6 +46,7 @@ const translations: Record<string, Record<Lang, string>> = {
 
   // StatsCards
   'stats.totalTokens': { zh: '总消耗', en: 'TOTAL TOKENS' },
+  'stats.estimated': { zh: '另有估算 {n}', en: '+{n} est.' },
   'stats.totalCost': { zh: '总费用', en: 'TOTAL COST' },
   'stats.dailyAvg': { zh: '日均消耗', en: 'DAILY AVG' },
   'stats.dailyCost': { zh: '日均费用', en: 'DAILY COST' },

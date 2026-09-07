@@ -7,7 +7,8 @@
 
 import fs from 'fs'
 import path from 'path'
-import { backfillProjectByRequestPrefix, correctProjectByRequestId, getDb, insertUsageRecord, replaceUsageRecordByRequestId, upsertUsageRecordByRequestId, normalizeStoredProjectNames, upsertModelPricing, getConfig, removeUnknownCodexUsageRecords, removeOverlappingAggregateUsageRecords } from './db'
+import { backfillProjectByRequestPrefix, correctProjectByRequestId, getDb, insertUsageRecord, normalizeSource, replaceUsageRecordByRequestId, normalizeStoredProjectNames, synthesizeRequestId, upsertModelPricing, getConfig, removeUnknownCodexUsageRecords, removeOverlappingAggregateUsageRecords, deleteAntigravityConversationRow } from './db'
+import { parseAntigravityTranscript } from './antigravity'
 import { calculateCost } from './pricing'
 import { ensureInit } from './init'
 const { findTraeHistoryFiles, parseTraeHistoryFile } = require('./traework.js') as {
@@ -377,6 +378,11 @@ const LOCAL_USAGE_SOURCES: LocalUsageSource[] = [
   { name: 'antigravity', dir: path.join(process.env.HOME || '/root', '.antigravity', 'usage') },
 ]
 
+// Writers of these sources report OpenAI-style inclusive buckets (cached ⊆
+// input, reasoning ⊆ output); normalize on ingest. Other writers (e.g.
+// openclaw) already report mutually exclusive buckets — never touch them.
+const INCLUSIVE_USAGE_SOURCES = new Set(['hermes', 'grok'])
+
 /**
  * 扫描工具写入的本地 JSONL 用量文件。
  * 文件格式：每行一个 JSON 对象，包含 model、input_tokens、output_tokens 等字段。
@@ -412,10 +418,16 @@ function syncLocalUsageFiles(): SyncResult {
             const reasoning = entry.reasoning_tokens || 0
             if (input === 0 && output === 0 && cached === 0 && reasoning === 0) continue
 
+            const effSource = entry.source || name
             const model = entry.model
             ensureModelPricing(model)
 
-            const cost_usd = calculateCost({
+            // 去重哈希必须稳定：用与 insertUsageRecord 相同的归一化 source
+            // 和截断 timestamp，基于原始值合成 request_id（与历史行一致），
+            // 再对包含式来源做互斥化，否则每次重扫都会插入重复行。
+            const timestamp = normalizeTimestamp(entry.timestamp)
+            const requestId = entry.request_id || synthesizeRequestId(normalizeSource(effSource), {
+              timestamp: Math.trunc(timestamp),
               model,
               input_tokens: input,
               cached_input_tokens: cached,
@@ -423,18 +435,37 @@ function syncLocalUsageFiles(): SyncResult {
               reasoning_tokens: reasoning,
             })
 
+            let input_tokens = input
+            let cached_input_tokens = cached
+            let output_tokens = output
+            let reasoning_tokens = reasoning
+            if (INCLUSIVE_USAGE_SOURCES.has(effSource)) {
+              cached_input_tokens = Math.min(cached, input)
+              reasoning_tokens = Math.min(reasoning, output)
+              input_tokens = input - cached_input_tokens
+              output_tokens = output - reasoning_tokens
+            }
+
+            const cost_usd = calculateCost({
+              model,
+              input_tokens,
+              cached_input_tokens,
+              output_tokens,
+              reasoning_tokens,
+            })
+
             const insertResult = insertUsageRecord({
-              source: entry.source || name,
+              source: effSource,
               provider: entry.provider,
               project: entry.project,
               model,
-              input_tokens: input,
-              cached_input_tokens: cached,
-              output_tokens: output,
-              reasoning_tokens: reasoning,
+              input_tokens,
+              cached_input_tokens,
+              output_tokens,
+              reasoning_tokens,
               cost_usd,
-              request_id: entry.request_id,
-              timestamp: normalizeTimestamp(entry.timestamp),
+              request_id: requestId,
+              timestamp,
             })
 
             result.scanned++
@@ -705,13 +736,21 @@ function syncGrok(): SyncResult {
       const ctx = entry.ctx
       if (!ctx) continue
 
-      const input_tokens = Number(ctx.prompt_tokens) || 0
-      const cached_input_tokens = Number(ctx.cached_prompt_tokens) || 0
-      const output_tokens = Number(ctx.completion_tokens) || 0
-      const reasoning_tokens = Number(ctx.reasoning_tokens) || 0
-      if (input_tokens === 0 && output_tokens === 0 && cached_input_tokens === 0 && reasoning_tokens === 0) {
+      const prompt = Number(ctx.prompt_tokens) || 0
+      const cachedPrompt = Number(ctx.cached_prompt_tokens) || 0
+      const completion = Number(ctx.completion_tokens) || 0
+      const reasoningRaw = Number(ctx.reasoning_tokens) || 0
+      if (prompt === 0 && completion === 0 && cachedPrompt === 0 && reasoningRaw === 0) {
         continue
       }
+
+      // xAI reports cached within prompt_tokens and reasoning within
+      // completion_tokens — store mutually exclusive buckets so totals and
+      // pricing do not count either category twice.
+      const cached_input_tokens = Math.min(cachedPrompt, prompt)
+      const input_tokens = prompt - cached_input_tokens
+      const reasoning_tokens = Math.min(reasoningRaw, completion)
+      const output_tokens = completion - reasoning_tokens
 
       const sid = entry.sid || 'unknown'
       const loopIndex = ctx.loop_index ?? 0
@@ -884,6 +923,7 @@ function syncTraeWork(): SyncResult {
             cost_usd,
             request_id: record.request_id,
             timestamp: normalizeTimestamp(record.timestamp),
+            estimated: true,
           })
 
           result.scanned++
@@ -1030,47 +1070,6 @@ async function syncVibeCafe(): Promise<SyncResult> {
 
 // ─── Antigravity (Antigravity CLI / AGY) 本地对话日志扫描 ────
 
-/** 从 Antigravity 对话日志中检测所使用的 Gemini 模型版本 */
-export function detectAntigravityModel(lines: string[]): string {
-  let detectedModel: string | null = null
-
-  for (const line of lines) {
-    try {
-      const entry = JSON.parse(line)
-      if (entry.source !== 'MODEL' || entry.type === 'USER_INPUT') {
-        const content = typeof entry.content === 'string' ? entry.content : ''
-        const settingMatch = content.match(/Model Selection[^\n]*?to\s+Gemini\s+([\d.]+)\s+(Flash|Pro)/i)
-        if (settingMatch) {
-          detectedModel = `gemini-${settingMatch[1]}-${settingMatch[2].toLowerCase()}`
-        }
-      }
-    } catch {
-      // Ignore invalid JSON lines
-    }
-  }
-
-  if (detectedModel) return detectedModel
-
-  // 2. 回退：在用户显式发言或系统提示词中查找显式的 Gemini X.Y Flash/Pro 声明
-  for (const line of lines) {
-    try {
-      const entry = JSON.parse(line)
-      if (entry.source !== 'MODEL' || entry.type === 'USER_INPUT') {
-        const content = typeof entry.content === 'string' ? entry.content : ''
-        const anyGeminiMatch = content.match(/Gemini\s+([\d.]+)\s+(Flash|Pro)/i)
-        if (anyGeminiMatch) {
-          return `gemini-${anyGeminiMatch[1]}-${anyGeminiMatch[2].toLowerCase()}`
-        }
-      }
-    } catch {
-      // Ignore invalid JSON lines
-    }
-  }
-
-  // 3. 默认回退到当前最新的 3.8 Flash
-  return 'gemini-3.8-flash'
-}
-
 function syncAntigravityTranscripts(): SyncResult {
   const start = Date.now()
   const result: SyncResult = {
@@ -1110,62 +1109,50 @@ function syncAntigravityTranscripts(): SyncResult {
 
       try {
         const lines = fs.readFileSync(transcriptPath, 'utf-8').split('\n').filter(Boolean)
-        let totalCharsInput = 0
-        let totalCharsOutput = 0
-        let lastTimestamp = Date.now()
+        // 逐事件入库：每个 entry 带自己的时间戳与当时的模型，会话跨天或
+        // 中途切换模型时历史用量不再迁移。token 是字符÷3.5 的估算值。
+        const events = parseAntigravityTranscript(lines)
 
-        for (const line of lines) {
+        let failed = false
+        for (const event of events) {
           try {
-            const entry = JSON.parse(line)
-            if (entry.created_at) {
-              const ts = new Date(entry.created_at).getTime()
-              if (!isNaN(ts)) lastTimestamp = ts
-            }
+            ensureModelPricing(event.model)
+            const cost_usd = calculateCost({
+              model: event.model,
+              input_tokens: event.input_tokens,
+              cached_input_tokens: 0,
+              output_tokens: event.output_tokens,
+              reasoning_tokens: 0,
+            })
 
-            if (entry.source === 'USER_EXPLICIT' && entry.content) {
-              totalCharsInput += typeof entry.content === 'string' ? entry.content.length : 100
-            } else if (entry.source === 'MODEL' && entry.content) {
-              totalCharsOutput += typeof entry.content === 'string' ? entry.content.length : 100
-            }
+            const insertResult = replaceUsageRecordByRequestId({
+              source: 'antigravity',
+              provider: 'google',
+              project: 'Antigravity',
+              model: event.model,
+              input_tokens: event.input_tokens,
+              cached_input_tokens: 0,
+              output_tokens: event.output_tokens,
+              reasoning_tokens: 0,
+              cost_usd,
+              request_id: `antigravity:${convId}:${event.entryIndex}`,
+              timestamp: event.timestamp,
+              estimated: true,
+            })
+
+            result.scanned++
+            if (insertResult.duplicate) result.duplicates++
+            else result.inserted++
           } catch {
-            // Ignore invalid json
+            failed = true
+            result.errors++
           }
         }
 
-        if (totalCharsInput > 0 || totalCharsOutput > 0) {
-          const inputTokens = Math.max(1, Math.round(totalCharsInput / 3.5))
-          const outputTokens = Math.max(1, Math.round(totalCharsOutput / 3.5))
-          const model = detectAntigravityModel(lines)
-          ensureModelPricing(model)
-          const cost_usd = calculateCost({
-            model,
-            input_tokens: inputTokens,
-            cached_input_tokens: 0,
-            output_tokens: outputTokens,
-            reasoning_tokens: 0,
-          })
-
-          // Conversation-level totals grow over time — upsert so re-sync refreshes counts.
-          const upsertResult = upsertUsageRecordByRequestId({
-            source: 'antigravity',
-            provider: 'google',
-            project: 'Antigravity',
-            model,
-            input_tokens: inputTokens,
-            cached_input_tokens: 0,
-            output_tokens: outputTokens,
-            reasoning_tokens: 0,
-            cost_usd,
-            request_id: `antigravity-${convId}`,
-            timestamp: lastTimestamp,
-          })
-
-          result.scanned++
-          if (upsertResult.updated || !upsertResult.duplicate) {
-            result.inserted++
-          } else {
-            result.duplicates++
-          }
+        // 该会话事件全部写成功后才删除旧的整段行，避免双计；出错则保留冻结。
+        // 脑目录已删除的会话不会进入循环，其旧整段行原样保留。
+        if (events.length > 0 && !failed) {
+          deleteAntigravityConversationRow(convId)
         }
       } catch {
         result.errors++

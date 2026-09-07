@@ -3,6 +3,7 @@ import { ensureInit } from '@/lib/init'
 import { getConfig, setConfig } from '@/lib/db'
 import { refreshQuotasForServer } from '@/lib/quotas/server'
 import { getQuotaSecret, QUOTA_SECRET_KEYS, setQuotaSecret } from '@/lib/quotas/secret-store'
+import { rejectUnsafeLocalMutation } from '@/lib/local-request'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +34,9 @@ export async function GET() {
 
 /** POST /api/quotas/config — 安全保存本地 Provider API 凭证到 SQLite app_config 表 */
 export async function POST(req: Request) {
+  const rejected = rejectUnsafeLocalMutation(req)
+  if (rejected) return rejected
+
   try {
     ensureInit()
     const body = await req.json()

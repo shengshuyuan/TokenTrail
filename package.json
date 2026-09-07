@@ -8,11 +8,11 @@
   "scripts": {
     "dev": "node scripts/serve.js --dev",
     "build": "node -r ./preload.js node_modules/next/dist/bin/next build",
-    "start": "node -r ./preload.js node_modules/next/dist/bin/next start -p 3820",
+    "start": "node -r ./preload.js node_modules/next/dist/bin/next start -p 3820 -H ${HOST:-127.0.0.1}",
     "serve": "node scripts/serve.js --dev",
     "lint": "next lint --max-warnings=0",
     "typecheck": "tsc --noEmit --incremental false",
-    "check": "npm run lint && npm run typecheck && node --test tests/*.test.mjs",
+    "check": "npm run lint && npm run typecheck && node --experimental-strip-types --import ./tests/register-ts-resolve.mjs --test tests/*.test.mjs",
     "setup": "node bin/tokentrail.js setup",
     "sync": "node bin/tokentrail.js sync",
     "status": "node bin/tokentrail.js status",

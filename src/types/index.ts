@@ -65,6 +65,10 @@ export interface StatsResponse {
   total_tokens: number
   total_cost_usd: number
   total_requests: number
+  /** 估算用量单独统计（Antigravity / TraeWork 扫描等），不含在主口径内 */
+  estimated_tokens: number
+  estimated_cost_usd: number
+  estimated_requests: number
   avg_daily_tokens: number
   avg_daily_cost_usd: number
   by_source: SourceStat[]

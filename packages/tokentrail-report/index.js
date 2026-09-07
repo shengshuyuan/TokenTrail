@@ -89,17 +89,46 @@ async function report(record) {
 // ─── OpenAI-compatible client wrapper ───────────────────────
 
 /**
+ * OpenAI reports cached input within prompt_tokens and reasoning output within
+ * completion_tokens. Convert to mutually exclusive buckets so TokenTrail totals
+ * and pricing do not count either category twice. Mirrors the server-side
+ * normalize in src/lib/proxy-usage.ts; this package stays dependency-free, so
+ * the logic is intentionally inlined here.
+ */
+function normalizeOpenAIUsage(usage) {
+  function toCount(value) {
+    const n = Number(value)
+    if (!Number.isFinite(n) || n <= 0) return 0
+    return Math.floor(n)
+  }
+  const prompt = toCount(usage?.prompt_tokens)
+  const completion = toCount(usage?.completion_tokens)
+  const cached = Math.min(toCount(usage?.prompt_tokens_details?.cached_tokens), prompt)
+  const reasoning = Math.min(toCount(usage?.completion_tokens_details?.reasoning_tokens), completion)
+  return {
+    input_tokens: prompt - cached,
+    cached_input_tokens: cached,
+    output_tokens: completion - reasoning,
+    reasoning_tokens: reasoning,
+  }
+}
+
+/**
  * Wrap an OpenAI-compatible client so every chat.completions.create() call
  * automatically reports token usage to TokenTrail.
  *
  * Works with: openai, @anthropic-ai/sdk (with compat layer), or any
  * client that returns { usage: { prompt_tokens, completion_tokens } }.
+ * Reported buckets are mutually exclusive (input excludes cached, output
+ * excludes reasoning), matching OpenAI's inclusive wire semantics.
  *
  * @param {Object} client       - An OpenAI SDK client instance
  * @param {Object} defaults     - Default fields for every report
  * @param {string} defaults.source - Tool name (required)
  * @param {string} [defaults.provider] - Model provider
  * @param {string} [defaults.project] - Project name
+ * @param {(err: Error) => void} [defaults.onError] - Invoked when a report
+ *   fails; reports are fire-and-forget and never block the caller.
  * @returns {Object} The wrapped client (same interface)
  */
 function wrapOpenAI(client, defaults) {
@@ -116,19 +145,31 @@ function wrapOpenAI(client, defaults) {
     const response = await originalCreate(...args)
     const usage = response?.usage
     if (usage) {
+      // report() resolves (never rejects) with { success: false, error } on
+      // failure, so both paths must surface to onError.
       report({
         source: defaults.source,
         provider: defaults.provider,
         project: defaults.project,
         model: response.model || args[0]?.model || 'unknown',
-        input_tokens: usage.prompt_tokens || 0,
-        output_tokens: usage.completion_tokens || 0,
-        cached_input_tokens: usage.prompt_tokens_details?.cached_tokens || 0,
-        reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens || 0,
+        ...normalizeOpenAIUsage(usage),
         request_id: response.id || undefined,
-      }).catch(() => {}) // fire-and-forget, never block the caller
+      }).then(result => {
+        if (!result?.success) {
+          notifyError(new Error(result?.error || 'tokentrail-report: unknown failure'))
+        }
+      }).catch(notifyError)
     }
     return response
+  }
+
+  function notifyError(err) {
+    if (typeof defaults.onError !== 'function') return
+    try {
+      defaults.onError(err)
+    } catch {
+      // a throwing callback must not break the caller either
+    }
   }
 
   return client

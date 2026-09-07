@@ -147,7 +147,11 @@ export function StatsCards({ stats, loading, currency, exchangeRate }: StatsCard
       label: t('stats.totalTokens'),
       rawValue: stats?.total_tokens ?? 0,
       format: (v: number) => formatTokens(v),
-      sub: stats ? `${formatNumber(stats.total_requests)} requests` : '—',
+      sub: stats
+        ? stats.estimated_tokens > 0
+          ? `${formatNumber(stats.total_requests)} requests · ${t('stats.estimated', { n: formatTokens(stats.estimated_tokens) })}`
+          : `${formatNumber(stats.total_requests)} requests`
+        : '—',
       icon: '⬡',
       tone: 'stat-tone-primary',
       accent: 'bg-eva-green',

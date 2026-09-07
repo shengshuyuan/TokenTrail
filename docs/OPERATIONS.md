@@ -63,7 +63,7 @@ npm run verify-local
 
 ## 本地访问边界
 
-TokenTrail 默认监听 `127.0.0.1`，修改价格、同步、备份、上报和代理调用等写操作会拒绝跨站浏览器请求。CLI、curl 和本机 SDK 不携带 `Origin` 时仍可正常调用。
+TokenTrail 默认监听 `127.0.0.1`（`npm start`、`npm run dev` 和 LaunchAgent 均如此，可用 `HOST` 环境变量覆盖），修改价格、同步、备份、上报、额度配置和代理调用等写操作会拒绝跨站浏览器请求。CLI、curl 和本机 SDK 不携带 `Origin` 时仍可正常调用。
 
 只有在受信任网络中明确需要远程访问时，才设置 `TOKENTRAIL_ALLOW_REMOTE=1`。该开关会放宽本地来源检查，但不会增加账户认证；对外暴露前应另行配置访问控制。
 

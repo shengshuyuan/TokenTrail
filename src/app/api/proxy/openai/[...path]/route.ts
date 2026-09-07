@@ -18,7 +18,7 @@ import { NextRequest } from 'next/server'
 import { insertUsageRecord, getConfig } from '@/lib/db'
 import { calculateCost } from '@/lib/pricing'
 import { ensureInit } from '@/lib/init'
-import { appendSseTail, extractUsageFromSSE } from '@/lib/proxy-usage'
+import { SseUsageTracker, normalizeOpenAIUsage } from '@/lib/proxy-usage'
 import { rejectUnsafeLocalMutation } from '@/lib/local-request'
 
 const DEFAULT_UPSTREAM = 'https://api.openai.com/v1'
@@ -169,10 +169,7 @@ async function handleRequest(
           source: source_final,
           project: project_final,
           model: json.model,
-          input_tokens: json.usage.prompt_tokens || 0,
-          output_tokens: json.usage.completion_tokens || 0,
-          cached_input_tokens: json.usage.prompt_tokens_details?.cached_tokens || 0,
-          reasoning_tokens: json.usage.completion_tokens_details?.reasoning_tokens || 0,
+          ...normalizeOpenAIUsage(json.usage),
           request_id: json.id || undefined,
         })
       }
@@ -189,29 +186,34 @@ async function handleRequest(
   // ─── Streaming: forward in real-time, record usage at end ───
   const reader = upstreamRes.body.getReader()
   const decoder = new TextDecoder()
-  let allData = ''
+  // Incremental usage extraction: state is O(1), so long streams never lose
+  // the model announced in the first chunk (the tail-buffer failure mode).
+  const tracker = new SseUsageTracker()
 
   const stream = new ReadableStream({
     async pull(controller) {
       try {
         const { done, value } = await reader.read()
         if (done) {
-          // Stream ended — try to extract usage from accumulated tail
+          // Stream ended — flush the decoder tail and extract accumulated usage
           try {
             ensureInit()
-            const usageData = extractUsageFromSSE(allData)
+            tracker.push(decoder.decode())
+            const usageData = tracker.finalize()
             if (usageData) {
               const u = usageData.usage
               recordUsage({
                 source: source_final,
                 project: project_final,
                 model: usageData.model,
-                input_tokens: u.prompt_tokens || 0,
-                output_tokens: u.completion_tokens || 0,
-                cached_input_tokens: u.prompt_tokens_details?.cached_tokens || 0,
-                reasoning_tokens: u.completion_tokens_details?.reasoning_tokens || 0,
+                ...normalizeOpenAIUsage(u),
                 request_id: usageData.id,
               })
+            } else {
+              console.warn(
+                '[TokenTrail] SSE stream ended without usage; request not recorded',
+                { source: source_final, path: targetPath }
+              )
             }
           } catch (usageErr) {
             console.error('[TokenTrail] proxy usage record failed:', usageErr)
@@ -219,8 +221,7 @@ async function handleRequest(
           controller.close()
           return
         }
-        // Keep only a tail buffer for usage extraction (avoids unbounded memory)
-        allData = appendSseTail(allData, decoder.decode(value, { stream: true }))
+        tracker.push(decoder.decode(value, { stream: true }))
         controller.enqueue(value)
       } catch (err) {
         try { reader.cancel() } catch {}
