@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import type { ModelPricing, Theme, Currency } from '@/types'
 import { AppShell } from '@/components/layout/AppShell'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -12,6 +12,20 @@ import { THEME_DEFINITIONS } from '@/lib/themes'
 import { APP_VERSION } from '@/lib/version'
 import { usePreferences } from '@/lib/PreferencesContext'
 import { useLang } from '@/lib/LanguageContext'
+
+const PRICING_PAGE_SIZE = 20
+
+function pricingPageItems(current: number, total: number): Array<number | 'ellipsis'> {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const items: Array<number | 'ellipsis'> = [1]
+  const start = Math.max(2, current - 1)
+  const end = Math.min(total - 1, current + 1)
+  if (start > 2) items.push('ellipsis')
+  for (let page = start; page <= end; page += 1) items.push(page)
+  if (end < total - 1) items.push('ellipsis')
+  items.push(total)
+  return items
+}
 
 export default function SettingsPage() {
   const { lang, setLang, t } = useLang()
@@ -37,6 +51,9 @@ export default function SettingsPage() {
     reasoning: '',
   })
   const [savingPrice, setSavingPrice] = useState(false)
+  const [pricingPage, setPricingPage] = useState(1)
+  const [pricingQuery, setPricingQuery] = useState('')
+  const [pricingProvider, setPricingProvider] = useState('all')
 
   // Backup state
   const [backingUp, setBackingUp] = useState(false)
@@ -61,6 +78,37 @@ export default function SettingsPage() {
       setPricingLoading(false)
     }
   }, [])
+
+  const pricingProviders = useMemo(() => {
+    const names = new Set(pricingModels.map((model) => model.provider).filter(Boolean))
+    return [...names].sort((a, b) => a.localeCompare(b))
+  }, [pricingModels])
+
+  const filteredPricing = useMemo(() => {
+    const query = pricingQuery.trim().toLowerCase()
+    return pricingModels.filter((model) => {
+      if (pricingProvider !== 'all' && model.provider !== pricingProvider) return false
+      if (!query) return true
+      return (
+        (model.display_name || '').toLowerCase().includes(query) ||
+        model.model_id.toLowerCase().includes(query) ||
+        model.provider.toLowerCase().includes(query)
+      )
+    })
+  }, [pricingModels, pricingQuery, pricingProvider])
+
+  const pricingTotalPages = Math.max(1, Math.ceil(filteredPricing.length / PRICING_PAGE_SIZE))
+  const pricingSafePage = Math.min(pricingPage, pricingTotalPages)
+  const pricingPageModels = filteredPricing.slice(
+    (pricingSafePage - 1) * PRICING_PAGE_SIZE,
+    pricingSafePage * PRICING_PAGE_SIZE,
+  )
+  const pricingFrom = filteredPricing.length === 0 ? 0 : (pricingSafePage - 1) * PRICING_PAGE_SIZE + 1
+  const pricingTo = Math.min(pricingSafePage * PRICING_PAGE_SIZE, filteredPricing.length)
+
+  useEffect(() => {
+    if (pricingPage !== pricingSafePage) setPricingPage(pricingSafePage)
+  }, [pricingPage, pricingSafePage])
 
   // Fetch service status
   useEffect(() => {
@@ -153,7 +201,7 @@ export default function SettingsPage() {
 
       <div className="space-y-10 max-w-4xl">
         {/* 1. General Preferences Section */}
-        <section className="bg-workbench-surface border border-workbench-border rounded-xl p-6 shadow-xs">
+        <section className="apple-glass-panel p-6">
           <h2 className="text-base font-bold text-workbench-text tracking-tight mb-5 pb-3 border-b border-workbench-border/60">
             {lang === 'zh' ? '通用偏好' : 'General Preferences'}
           </h2>
@@ -280,66 +328,149 @@ export default function SettingsPage() {
         </section>
 
         {/* 2. Model Pricing Management */}
-        <section className="bg-workbench-surface border border-workbench-border rounded-xl p-6 shadow-xs">
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-workbench-border/60">
+        <section className="apple-glass-panel p-6">
+          <div className="flex flex-col gap-3 mb-4 pb-3 border-b border-workbench-border/60">
             <div>
               <h2 className="text-base font-bold text-workbench-text tracking-tight">
-                {lang === 'zh' ? '模型价格配置' : 'Model Pricing Table'}
+                {t('settings.pricing.title')}
               </h2>
               <p className="text-xs text-workbench-text-muted mt-0.5">
-                {lang === 'zh'
-                  ? '费用按百万 Token 单价计算（$/1M Tokens）'
-                  : 'Prices calculated per 1 million tokens ($/1M Tokens)'}
+                {t('settings.pricing.subtitle', { n: pricingModels.length })}
               </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="search"
+                value={pricingQuery}
+                onChange={(e) => {
+                  setPricingQuery(e.target.value)
+                  setPricingPage(1)
+                }}
+                placeholder={t('settings.pricing.search')}
+                className="h-9 flex-1 min-w-0 px-3 rounded-lg border border-workbench-border bg-workbench-sidebar text-workbench-text text-xs focus:outline-none focus:border-workbench-accent"
+              />
+              <select
+                value={pricingProvider}
+                onChange={(e) => {
+                  setPricingProvider(e.target.value)
+                  setPricingPage(1)
+                }}
+                className="h-9 px-3 rounded-lg border border-workbench-border bg-workbench-sidebar text-workbench-text text-xs focus:outline-none focus:border-workbench-accent"
+              >
+                <option value="all">{t('settings.pricing.allProviders')}</option>
+                {pricingProviders.map((provider) => (
+                  <option key={provider} value={provider}>
+                    {provider}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
           <DataTable loading={pricingLoading}>
             <thead>
               <tr className="border-b border-workbench-border bg-workbench-sidebar text-xs font-medium text-workbench-text-muted">
-                <th className="py-2.5 px-3">模型</th>
-                <th className="py-2.5 px-3">供应商</th>
-                <th className="py-2.5 px-3 text-right">输入 ($/1M)</th>
-                <th className="py-2.5 px-3 text-right">缓存 ($/1M)</th>
-                <th className="py-2.5 px-3 text-right">输出 ($/1M)</th>
-                <th className="py-2.5 px-3 text-right">操作</th>
+                <th className="py-2.5 px-3">{t('settings.pricing.col.model')}</th>
+                <th className="py-2.5 px-3">{t('settings.pricing.col.provider')}</th>
+                <th className="py-2.5 px-3 text-right">{t('settings.pricing.col.input')}</th>
+                <th className="py-2.5 px-3 text-right">{t('settings.pricing.col.cached')}</th>
+                <th className="py-2.5 px-3 text-right">{t('settings.pricing.col.output')}</th>
+                <th className="py-2.5 px-3 text-right">{t('settings.pricing.col.action')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-workbench-border/60">
-              {pricingModels.slice(0, 15).map((m) => (
-                <tr key={m.model_id} className="text-xs font-mono hover:bg-black/[0.02]">
-                  <td className="py-2.5 px-3 font-bold text-workbench-text font-sans">
-                    {m.display_name || m.model_id}
-                  </td>
-                  <td className="py-2.5 px-3 text-workbench-text-muted font-sans">
-                    {m.provider}
-                  </td>
-                  <td className="py-2.5 px-3 text-right text-workbench-text tabular-nums">
-                    ${m.input_price_per_1m.toFixed(2)}
-                  </td>
-                  <td className="py-2.5 px-3 text-right text-workbench-text-muted tabular-nums">
-                    ${m.cached_input_price_per_1m.toFixed(2)}
-                  </td>
-                  <td className="py-2.5 px-3 text-right text-workbench-accent font-semibold tabular-nums">
-                    ${m.output_price_per_1m.toFixed(2)}
-                  </td>
-                  <td className="py-2.5 px-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => handleEditPricing(m)}
-                      className="text-workbench-accent hover:underline font-sans font-medium"
-                    >
-                      编辑
-                    </button>
+              {pricingPageModels.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 px-3 text-center text-xs text-workbench-text-muted">
+                    {t('settings.pricing.empty')}
                   </td>
                 </tr>
-              ))}
+              ) : (
+                pricingPageModels.map((m) => (
+                  <tr key={m.model_id} className="text-xs font-mono hover:bg-black/[0.02]">
+                    <td className="py-2.5 px-3 font-bold text-workbench-text font-sans">
+                      {m.display_name || m.model_id}
+                    </td>
+                    <td className="py-2.5 px-3 text-workbench-text-muted font-sans">
+                      {m.provider}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-workbench-text tabular-nums">
+                      ${m.input_price_per_1m.toFixed(2)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-workbench-text-muted tabular-nums">
+                      ${m.cached_input_price_per_1m.toFixed(2)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-workbench-accent font-semibold tabular-nums">
+                      ${m.output_price_per_1m.toFixed(2)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleEditPricing(m)}
+                        className="text-workbench-accent hover:underline font-sans font-medium"
+                      >
+                        {t('settings.pricing.edit')}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </DataTable>
+
+          {filteredPricing.length > 0 && (
+            <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <p className="text-xs text-workbench-text-muted">
+                {t('settings.pricing.range', { from: pricingFrom, to: pricingTo })}
+                {' · '}
+                {t('settings.pricing.page', { page: pricingSafePage, pages: pricingTotalPages })}
+              </p>
+              <div className="flex flex-wrap items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                  disabled={pricingSafePage <= 1}
+                  onClick={() => setPricingPage((page) => Math.max(1, page - 1))}
+                >
+                  {t('settings.pricing.prev')}
+                </Button>
+                {pricingPageItems(pricingSafePage, pricingTotalPages).map((item, index) =>
+                  item === 'ellipsis' ? (
+                    <span key={`e-${index}`} className="px-1.5 text-xs text-workbench-text-muted">
+                      …
+                    </span>
+                  ) : (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setPricingPage(item)}
+                      className={`h-8 min-w-8 px-2 rounded-lg text-xs font-medium border transition-colors ${
+                        item === pricingSafePage
+                          ? 'bg-workbench-accent text-white border-transparent'
+                          : 'bg-workbench-surface text-workbench-text border-workbench-border hover:bg-workbench-sidebar'
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  ),
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                  disabled={pricingSafePage >= pricingTotalPages}
+                  onClick={() => setPricingPage((page) => Math.min(pricingTotalPages, page + 1))}
+                >
+                  {t('settings.pricing.next')}
+                </Button>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* 3. Data Backup Section */}
-        <section className="bg-workbench-surface border border-workbench-border rounded-xl p-6 shadow-xs">
+        <section className="apple-glass-panel p-6">
           <h2 className="text-base font-bold text-workbench-text tracking-tight mb-2">
             {lang === 'zh' ? '数据备份与快照' : 'Data Backup & Snapshot'}
           </h2>
@@ -363,7 +494,7 @@ export default function SettingsPage() {
               {backingUp ? '正在生成备份...' : '立即创建本地备份'}
             </Button>
             {backupResult && (
-              <span className="text-xs font-mono text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+              <span className="text-xs font-mono text-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-300 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800">
                 {backupResult}
               </span>
             )}
@@ -371,7 +502,7 @@ export default function SettingsPage() {
         </section>
 
         {/* 4. Local Service & Environment Section */}
-        <section id="service" className="bg-workbench-surface border border-workbench-border rounded-xl p-6 shadow-xs scroll-mt-20">
+        <section id="service" className="apple-glass-panel p-6 scroll-mt-20">
           <h2 className="text-base font-bold text-workbench-text tracking-tight mb-2">
             {lang === 'zh' ? '本地运行状态与环境' : 'Local Service Status'}
           </h2>
@@ -382,22 +513,22 @@ export default function SettingsPage() {
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
-            <div className="p-3 bg-workbench-sidebar rounded-lg border border-workbench-border flex items-center justify-between">
+            <div className="p-3 bg-workbench-surface/60 rounded-xl border border-workbench-border/60 flex items-center justify-between">
               <span className="text-workbench-text-muted font-sans">服务状态</span>
               <StatusLabel status="healthy" label="运行中 (Healthy)" size="sm" />
             </div>
 
-            <div className="p-3 bg-workbench-sidebar rounded-lg border border-workbench-border flex items-center justify-between">
+            <div className="p-3 bg-workbench-surface/60 rounded-xl border border-workbench-border/60 flex items-center justify-between">
               <span className="text-workbench-text-muted font-sans">监听端口</span>
               <span className="font-bold text-workbench-text">127.0.0.1:3820</span>
             </div>
 
-            <div className="p-3 bg-workbench-sidebar rounded-lg border border-workbench-border flex items-center justify-between">
+            <div className="p-3 bg-workbench-surface/60 rounded-xl border border-workbench-border/60 flex items-center justify-between">
               <span className="text-workbench-text-muted font-sans">已存记录总数</span>
               <span className="font-bold text-workbench-text">{serviceInfo?.records ?? '—'} 条</span>
             </div>
 
-            <div className="p-3 bg-workbench-sidebar rounded-lg border border-workbench-border flex items-center justify-between">
+            <div className="p-3 bg-workbench-surface/60 rounded-xl border border-workbench-border/60 flex items-center justify-between">
               <span className="text-workbench-text-muted font-sans">版本号</span>
               <span className="text-workbench-text">v{APP_VERSION}</span>
             </div>
@@ -407,10 +538,10 @@ export default function SettingsPage() {
 
       {/* Pricing Edit Modal */}
       {editingModel && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <form
             onSubmit={handleSavePricing}
-            className="w-full max-w-md bg-workbench-surface text-workbench-text rounded-xl border border-workbench-border p-6 shadow-xl space-y-4"
+            className="w-full max-w-md apple-glass-panel text-workbench-text rounded-2xl p-6 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between pb-3 border-b border-workbench-border/60">
               <h3 className="font-bold text-base text-workbench-text">

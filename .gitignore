@@ -44,3 +44,4 @@ data/*.bak-*
 .playwright-cli/
 .claude/
 .trae/
+/scratch/

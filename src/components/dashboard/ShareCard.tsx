@@ -526,7 +526,7 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="control-surface pressable min-h-10 shrink-0 px-3 py-1.5 text-xs font-mono active:scale-95 sm:min-h-[32px]"
+        className="apple-glass-panel h-9 shrink-0 px-3.5 text-xs font-mono font-medium text-workbench-text hover:bg-workbench-sidebar/70 active:scale-[0.98] transition-all flex items-center justify-center select-none"
       >
         {t('share.button')}
       </button>
@@ -536,17 +536,17 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
           className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6"
           onClick={closeModal}
         >
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-md" />
           <div
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="share-dialog-title"
-            className="relative z-10 w-full max-w-[780px] rounded-xl border border-eva-border bg-eva-bg shadow-2xl overflow-hidden"
+            className="relative z-10 w-full max-w-[780px] rounded-2xl apple-glass-panel shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-eva-border bg-eva-panel/40 px-5 py-3.5">
+            <div className="flex items-center justify-between border-b border-workbench-border/40 bg-workbench-surface/40 px-5 py-3.5">
               <div className="flex items-center gap-2.5">
                 <span className="flex size-7 items-center justify-center rounded-lg border border-eva-border bg-eva-panel text-eva-purple">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-4">
@@ -585,7 +585,7 @@ export function ShareCard({ stats, timeRange, currency, theme, selectedSources, 
             </div>
 
             {/* Actions Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-eva-border bg-eva-panel/30 px-5 py-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-workbench-border/40 bg-workbench-surface/40 px-5 py-3.5">
               <div className="flex items-center gap-2 text-xs font-mono text-eva-text-dim">
                 <span className="inline-block size-2 rounded-full bg-status-success animate-pulse" />
                 <span>{scopeLabel}</span>

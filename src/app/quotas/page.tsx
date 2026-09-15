@@ -125,7 +125,7 @@ export default function QuotasPage() {
 
       {/* Quotas Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-8">
-        <div className="p-5 bg-workbench-surface border border-workbench-border rounded-xl shadow-xs">
+        <div className="p-5 apple-glass-metric">
           <div className="text-xs font-semibold text-workbench-text-muted uppercase tracking-wider mb-1">
             {lang === 'zh' ? '支持的供应商' : 'Providers'}
           </div>
@@ -137,7 +137,7 @@ export default function QuotasPage() {
           </div>
         </div>
 
-        <div className="p-5 bg-workbench-surface border border-workbench-border rounded-xl shadow-xs">
+        <div className="p-5 apple-glass-metric">
           <div className="text-xs font-semibold text-workbench-text-muted uppercase tracking-wider mb-1">
             {lang === 'zh' ? '额度正常' : 'Healthy Quotas'}
           </div>
@@ -149,7 +149,7 @@ export default function QuotasPage() {
           </div>
         </div>
 
-        <div className="p-5 bg-workbench-surface border border-workbench-border rounded-xl shadow-xs">
+        <div className="p-5 apple-glass-metric">
           <div className="text-xs font-semibold text-workbench-text-muted uppercase tracking-wider mb-1">
             {lang === 'zh' ? '需关注或待登录' : 'Attention Needed'}
           </div>
@@ -165,8 +165,8 @@ export default function QuotasPage() {
       </div>
 
       {/* Provider Details Card */}
-      <div className="bg-workbench-surface border border-workbench-border rounded-xl overflow-hidden shadow-xs mb-8">
-        <div className="py-4 px-6 border-b border-workbench-border bg-workbench-sidebar flex items-center justify-between">
+      <div className="apple-glass-panel overflow-hidden mb-8">
+        <div className="py-4 px-6 border-b border-workbench-border/50 bg-workbench-surface/40 flex items-center justify-between">
           <span className="text-xs font-semibold text-workbench-text-muted uppercase tracking-wider">
             {lang === 'zh' ? '各供应商额度详情' : 'Provider Quota Details'}
           </span>

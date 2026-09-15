@@ -1,5 +1,25 @@
 # operateLog
 
+- **[2026-09-15 20:55:00 CST]** 🟡修改
+- **影响范围**：`src/app/globals.css`、`src/components/layout/AppShell.tsx`、`src/components/layout/Sidebar.tsx`、`src/components/dashboard/MetricStrip.tsx`、`src/components/dashboard/SingleMetricTrendChart.tsx`、`src/components/dashboard/TimeRangeDropdown.tsx`、`src/components/dashboard/TrendChart.tsx`、`src/components/ui/SegmentedControl.tsx`、`src/components/ui/Button.tsx`、`src/components/ui/DataTable.tsx`、`src/components/dashboard/ShareCard.tsx`、`src/app/page.tsx`、`src/app/usage/page.tsx`、`src/app/quotas/page.tsx`、`src/app/connections/page.tsx`、`src/app/settings/page.tsx`、`~/.tokentrail/runtime/TokenTrail`
+- **变更摘要**：按照 Apple Human Interface Guidelines（HIG）设计系统完成 TokenTrail 全局 Glassmorphism 材质改造与产品界面契约验收：
+  1. **材质系统**：在 `globals.css` 中建立原生级 Apple 毛玻璃设计变量系统（包含 `--apple-glass-bg`、`--apple-glass-border`、`--apple-glass-highlight` 顶部高光反射边、`--apple-glass-blur` 高斯模糊与饱和度提亮），覆盖 Quiet Workbench、Neon Mecha、Editorial Paper 三套主题。
+  2. **组件升级**：升级 macOS 风格毛玻璃侧边栏（`Sidebar`）、分段胶囊控制器（`SegmentedControl`）、三联浮动透明 KPI 指标卡（`MetricStrip`）、时间下拉筛选弹窗（`TimeRangeDropdown`）、按压缩放反馈触感按钮（`Button`）以及半透明毛玻璃面板（`DataTable` / `ShareCard`）。
+  3. **环境辉光与排版韵律**：在 `AppShell` 引入不可交互的环境渐变色光晕，使得透明面板呈现逼真光线折射；消除页面容器与指标卡之间的多余间距（`space-y-6 sm:space-y-8`）。
+  4. **图表渲染修复**：修复 `SingleMetricTrendChart` 中 Y 轴数值截断问题（补充 `width={64}` 并微调 `margin.left`），图表走势线与渐变使用系统主题主色 `var(--color-accent)`，悬浮卡片适配 `.apple-glass-popover`。
+  5. **实机部署与 Playwright 自动化渲染验收**：同步编译产物并热重启 LaunchAgent 常驻服务（`http://localhost:3820`），通过 Playwright 对 1440px 桌面端、1024px 平板端与 390px 移动端进行 15 项界面契约检查与截图验收，无控制台报错，移动端零横向溢出。
+- **回滚指南**：`git checkout -- src/app/globals.css src/components/ src/app/ operateLog.md && npm run build && rsync -av --delete .next/ ~/.tokentrail/runtime/TokenTrail/.next/ && node bin/tokentrail.js restart`
+
+- **[2026-09-07 18:50:00 CST]** 🟡修改
+- **影响范围**：`src/lib/db.ts`、`src/lib/sync.ts`、`src/lib/migrations.ts`
+- **变更摘要**：删除价格表中的测试占位模型（`auto`、`seed_m8`、`stealth/ox-alpha`、`test`、`test-jsonl-model`、`test-model`），并清除 Hermes 来源的 `test` / `test-model` 假用量。同步时不再自动登记这些模型，避免再次出现在价格配置里。
+- **回滚指南**：`git checkout -- src/lib/db.ts src/lib/sync.ts src/lib/migrations.ts operateLog.md`
+
+- **[2026-09-06 10:40:00 CST]** 🟡修改
+- **影响范围**：`src/app/settings/page.tsx`、`src/lib/i18n.ts`
+- **变更摘要**：设置页模型价格表此前 `slice(0, 15)` 只展示按供应商排序的前 15 条（看起来像只有 Qwen + 少量 Claude）。现展示全部定价记录：副标题显示总数，支持搜索、按供应商筛选、每页 20 条翻页。
+- **回滚指南**：`git checkout -- src/app/settings/page.tsx src/lib/i18n.ts operateLog.md`
+
 - **[2026-09-06 10:12:00 CST]** 🟡修改
 - **影响范围**：`src/lib/quotas/providers/gemini.js`、`tests/quota-gemini.test.mjs`
 - **变更摘要**：去掉源码中硬编码的 Google OAuth Client ID / Client Secret。Antigravity 静默续期只使用本地 token 文件或测试注入的 client，仓库与 GitHub 提交不含第三方密钥；没有 client 时回退到官方 `agy` 打印模式。

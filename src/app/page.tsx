@@ -110,7 +110,7 @@ export default function OverviewPage() {
           actionHref="/connections"
         />
       ) : (
-        <div className="space-y-10">
+        <div className="space-y-6 sm:space-y-8">
           {/* 1. Primary Metric Strip */}
           <MetricStrip
             stats={stats}
@@ -120,7 +120,7 @@ export default function OverviewPage() {
           />
 
           {/* 2. Single Metric Trend Area */}
-          <div className="bg-workbench-surface border border-workbench-border rounded-xl p-5 sm:p-7 shadow-xs">
+          <div className="apple-glass-panel p-5 sm:p-7">
             <SingleMetricTrendChart
               data={stats?.daily || []}
               loading={loading}
@@ -130,9 +130,9 @@ export default function OverviewPage() {
           </div>
 
           {/* 3. Bottom Row: Sources Distribution & Quotas Preview */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 pt-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
             {/* Left: Sources Distribution */}
-            <div className="bg-workbench-surface border border-workbench-border rounded-xl p-5 sm:p-7 shadow-xs flex flex-col justify-between">
+            <div className="apple-glass-panel p-5 sm:p-7 flex flex-col justify-between">
               <TopSourcesList
                 sources={stats?.by_source || []}
                 totalTokens={totalTokens}
@@ -142,7 +142,7 @@ export default function OverviewPage() {
             </div>
 
             {/* Right: Quota Preview */}
-            <div className="bg-workbench-surface border border-workbench-border rounded-xl p-5 sm:p-7 shadow-xs flex flex-col justify-between">
+            <div className="apple-glass-panel p-5 sm:p-7 flex flex-col justify-between">
               <QuotaPreviewCard />
             </div>
           </div>

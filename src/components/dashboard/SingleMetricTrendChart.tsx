@@ -75,23 +75,24 @@ export function SingleMetricTrendChart({
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 12, right: 12, left: -10, bottom: 4 }}>
+            <AreaChart data={chartData} margin={{ top: 12, right: 16, left: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="workbenchGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#157F68" stopOpacity={0.16} />
-                  <stop offset="95%" stopColor="#157F68" stopOpacity={0.01} />
+                  <stop offset="5%" stopColor="var(--color-accent)" stopOpacity={0.22} />
+                  <stop offset="95%" stopColor="var(--color-accent)" stopOpacity={0.01} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 4" stroke="#E5E8EB" vertical={false} />
+              <CartesianGrid strokeDasharray="3 4" stroke="var(--color-border)" vertical={false} strokeOpacity={0.6} />
               <XAxis
                 dataKey="shortDate"
-                tick={{ fill: '#626B73', fontSize: 12, fontFamily: 'var(--theme-font-numeric)' }}
-                axisLine={{ stroke: '#E5E8EB' }}
+                tick={{ fill: 'var(--color-text-muted)', fontSize: 12, fontFamily: 'var(--theme-font-numeric)' }}
+                axisLine={{ stroke: 'var(--color-border)' }}
                 tickLine={false}
                 minTickGap={24}
               />
               <YAxis
-                tick={{ fill: '#626B73', fontSize: 11, fontFamily: 'var(--theme-font-numeric)' }}
+                width={64}
+                tick={{ fill: 'var(--color-text-muted)', fontSize: 11, fontFamily: 'var(--theme-font-numeric)' }}
                 axisLine={false}
                 tickLine={false}
                 tickFormatter={(v: number) =>
@@ -103,7 +104,7 @@ export function SingleMetricTrendChart({
                   if (!active || !payload || !payload.length) return null
                   const item = payload[0].payload as DailyStat & { shortDate: string }
                   return (
-                    <div className="bg-workbench-surface text-workbench-text border border-workbench-border shadow-lg rounded-lg p-3 text-xs min-w-[140px]">
+                    <div className="apple-glass-popover p-3 text-xs min-w-[150px]">
                       <div className="font-semibold text-workbench-text mb-1.5">{item.date}</div>
                       <div className="space-y-1">
                         <div className="flex items-center justify-between gap-4">
@@ -130,11 +131,11 @@ export function SingleMetricTrendChart({
               <Area
                 type="monotone"
                 dataKey={metric === 'tokens' ? 'total_tokens' : 'costDisplay'}
-                stroke="#157F68"
+                stroke="var(--color-accent)"
                 strokeWidth={2.5}
                 fill="url(#workbenchGradient)"
-                dot={{ r: 3.5, stroke: '#157F68', strokeWidth: 2, fill: '#FFFFFF' }}
-                activeDot={{ r: 5, stroke: '#157F68', strokeWidth: 2, fill: '#157F68' }}
+                dot={{ r: 3.5, stroke: 'var(--color-accent)', strokeWidth: 2, fill: 'var(--color-surface)' }}
+                activeDot={{ r: 5, stroke: 'var(--color-surface)', strokeWidth: 2, fill: 'var(--color-accent)' }}
               />
             </AreaChart>
           </ResponsiveContainer>

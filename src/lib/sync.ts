@@ -7,7 +7,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { backfillProjectByRequestPrefix, correctProjectByRequestId, getDb, insertUsageRecord, normalizeSource, replaceUsageRecordByRequestId, normalizeStoredProjectNames, synthesizeRequestId, upsertModelPricing, getConfig, removeUnknownCodexUsageRecords, removeOverlappingAggregateUsageRecords, deleteAntigravityConversationRow, cleanAntigravityConversationRecords } from './db'
+import { backfillProjectByRequestPrefix, correctProjectByRequestId, getDb, insertUsageRecord, isJunkAutoPricingModel, normalizeSource, replaceUsageRecordByRequestId, normalizeStoredProjectNames, synthesizeRequestId, upsertModelPricing, getConfig, removeUnknownCodexUsageRecords, removeOverlappingAggregateUsageRecords, deleteAntigravityConversationRow, cleanAntigravityConversationRecords } from './db'
 import { parseAntigravityTranscript, detectAntigravityProject } from './antigravity'
 import { calculateCost } from './pricing'
 import { ensureInit } from './init'
@@ -1338,6 +1338,7 @@ function normalizeClaudeProjectName(projectDir: string): string {
 /** 确保模型在 pricing 表中有记录（价格默认 0，需后续手动更新） */
 const _knownModels = new Set<string>()
 function ensureModelPricing(model: string): void {
+  if (isJunkAutoPricingModel(model)) return
   if (_knownModels.has(model)) return
   try {
     const db = getDb()

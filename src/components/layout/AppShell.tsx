@@ -10,16 +10,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { lastSyncResult } = usePreferences()
 
   return (
-    <div className="flex min-h-screen bg-workbench-bg text-workbench-text selection:bg-workbench-accent/15 selection:text-workbench-accent">
+    <div className="relative flex min-h-screen bg-workbench-bg text-workbench-text selection:bg-workbench-accent/15 selection:text-workbench-accent">
+      {/* Ambient background bloom mesh for frosted glass refraction */}
+      <div
+        className="fixed inset-0 pointer-events-none z-0 overflow-hidden"
+        aria-hidden="true"
+      >
+        <div
+          className="absolute -top-[16%] -right-[12%] w-[58vw] h-[58vw] max-w-[720px] max-h-[720px] rounded-full blur-[130px] opacity-80"
+          style={{ background: 'radial-gradient(circle, var(--apple-ambient-glow-1) 0%, transparent 70%)' }}
+        />
+        <div
+          className="absolute top-[32%] -left-[14%] w-[48vw] h-[48vw] max-w-[620px] max-h-[620px] rounded-full blur-[140px] opacity-75"
+          style={{ background: 'radial-gradient(circle, var(--apple-ambient-glow-2) 0%, transparent 70%)' }}
+        />
+      </div>
+
       {/* Desktop Sidebar (hidden on small screens) */}
       <div className="hidden md:block shrink-0 sticky top-0 h-screen z-30">
         <Sidebar />
       </div>
 
       {/* Mobile Header (<768px) */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-workbench-sidebar border-b border-workbench-border flex items-center justify-between px-4 z-40">
+      <div className="md:hidden fixed top-0 left-0 right-0 h-14 apple-glass-sidebar border-b border-workbench-border/50 flex items-center justify-between px-4 z-40">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-md bg-workbench-accent flex items-center justify-center">
+          <div className="w-7 h-7 rounded-lg bg-workbench-accent flex items-center justify-center shadow-xs">
             <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 7h16" />
               <path d="M12 7v13" />
@@ -33,7 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           type="button"
           onClick={() => setMobileNavOpen(!mobileNavOpen)}
           aria-label="Toggle menu"
-          className="p-1.5 rounded-lg text-workbench-text-muted hover:text-workbench-text hover:bg-black/5"
+          className="p-1.5 rounded-lg text-workbench-text-muted hover:text-workbench-text hover:bg-black/5 active:scale-95 transition-all"
         >
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             {mobileNavOpen ? (
@@ -48,11 +63,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Mobile Drawer Overlay */}
       {mobileNavOpen && (
         <div
-          className="md:hidden fixed inset-0 bg-black/30 z-50 backdrop-blur-xs transition-opacity"
+          className="md:hidden fixed inset-0 bg-black/40 z-50 backdrop-blur-md transition-opacity"
           onClick={() => setMobileNavOpen(false)}
         >
           <div
-            className="w-[240px] h-full bg-workbench-sidebar shadow-xl"
+            className="w-[240px] h-full apple-glass-sidebar shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <Sidebar onCloseMobile={() => setMobileNavOpen(false)} />
@@ -61,7 +76,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full min-w-0 md:pt-0 pt-14 flex flex-col justify-between">
+      <main className="relative z-10 flex-1 w-full min-w-0 md:pt-0 pt-14 flex flex-col justify-between">
         <div className="w-full max-w-[1240px] mx-auto px-4 sm:px-8 lg:px-10 py-6 sm:py-9">
           {/* Sync notification banner if recently triggered */}
           {lastSyncResult && Date.now() - lastSyncResult.timestamp < 6000 && (

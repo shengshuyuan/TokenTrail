@@ -217,7 +217,7 @@ function UsagePageInner() {
       />
 
       {/* Filter Control Bar */}
-      <div className="bg-workbench-surface border border-workbench-border rounded-xl p-5 mb-8 shadow-xs space-y-4">
+      <div className="apple-glass-panel p-5 mb-8 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           {/* Time range selector */}
           <div className="flex items-center gap-2">
@@ -333,7 +333,7 @@ function UsagePageInner() {
       </div>
 
       {/* Summary Strip for Filtered Data */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-5 mb-8 bg-workbench-surface border border-workbench-border rounded-xl shadow-xs">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-5 mb-8 apple-glass-panel">
         <div>
           <div className="text-xs font-medium text-workbench-text-muted mb-1">
             {lang === 'zh' ? '当前消耗' : 'Filtered Tokens'}
@@ -369,7 +369,7 @@ function UsagePageInner() {
       </div>
 
       {/* Section 1: Grouped Breakdown Table */}
-      <div className="bg-workbench-surface border border-workbench-border rounded-xl p-5 sm:p-7 shadow-xs mb-8">
+      <div className="apple-glass-panel p-5 sm:p-7 mb-8">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <h2 className="text-lg font-bold text-workbench-text tracking-tight">
             {lang === 'zh' ? '分组构成' : 'Group Breakdown'}
@@ -461,7 +461,7 @@ function UsagePageInner() {
       </div>
 
       {/* Section 2: Raw Records Table */}
-      <div className="bg-workbench-surface border border-workbench-border rounded-xl p-5 sm:p-7 shadow-xs">
+      <div className="apple-glass-panel p-5 sm:p-7">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
           <div>
             <h2 className="text-lg font-bold text-workbench-text tracking-tight">

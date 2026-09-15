@@ -50,7 +50,7 @@ export function TimeRangeDropdown({ value, onChange, className = '' }: TimeRange
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="h-9 px-3.5 rounded-lg bg-workbench-surface border border-workbench-border text-sm font-medium text-workbench-text hover:bg-workbench-sidebar flex items-center gap-2 transition-colors shadow-2xs select-none"
+        className="h-9 px-3.5 rounded-xl apple-glass-panel text-sm font-medium text-workbench-text hover:bg-workbench-sidebar/70 flex items-center gap-2 transition-all shadow-2xs select-none active:scale-[0.98]"
       >
         <span className="text-workbench-text-muted">📅</span>
         <span>{getRangeLabel(value)}</span>
@@ -67,7 +67,7 @@ export function TimeRangeDropdown({ value, onChange, className = '' }: TimeRange
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-1.5 w-56 rounded-lg bg-workbench-surface text-workbench-text border border-workbench-border shadow-lg py-1.5 z-50 text-sm animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute right-0 mt-2 w-56 rounded-2xl apple-glass-popover text-workbench-text py-1.5 z-50 text-sm animate-in fade-in zoom-in-95 duration-150 overflow-hidden">
           {RANGES.map((days) => {
             const isSelected = days === value
             return (
@@ -80,12 +80,12 @@ export function TimeRangeDropdown({ value, onChange, className = '' }: TimeRange
                 }}
                 className={`w-full text-left px-3.5 py-2 flex items-center justify-between transition-colors ${
                   isSelected
-                    ? 'bg-workbench-accent-light text-workbench-accent font-semibold'
-                    : 'text-workbench-text hover:bg-workbench-sidebar'
+                    ? 'bg-workbench-accent/15 text-workbench-accent font-semibold'
+                    : 'text-workbench-text hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
                 }`}
               >
                 <span>{getRangeLabel(days)}</span>
-                {isSelected && <span>✓</span>}
+                {isSelected && <span className="text-workbench-accent font-bold">✓</span>}
               </button>
             )
           })}

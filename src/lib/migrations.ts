@@ -1,4 +1,4 @@
-import { getDb, getConfig, setConfig } from './db'
+import { getDb, getConfig, setConfig, deleteJunkTestPricing } from './db'
 import { calculateCost } from './pricing'
 
 /**
@@ -78,6 +78,20 @@ function normalizeInclusiveUsageRows(): void {
   console.log(`[TokenTrail] migration ${NORMALIZE_INCLUSIVE_MARKER}: normalized ${rows.length} rows`)
 }
 
+const JUNK_TEST_PRICING_MARKER = 'migration.delete_junk_test_pricing_v1'
+
+function deleteJunkTestPricingRows(): void {
+  if (getConfig(JUNK_TEST_PRICING_MARKER)) return
+  const result = deleteJunkTestPricing()
+  setConfig(JUNK_TEST_PRICING_MARKER, `${result.pricing} pricing/${result.usage} usage@${new Date().toISOString()}`)
+  if (result.pricing > 0 || result.usage > 0) {
+    console.log(
+      `[TokenTrail] migration ${JUNK_TEST_PRICING_MARKER}: removed ${result.pricing} pricing rows, ${result.usage} test usage rows`,
+    )
+  }
+}
+
 export function runMigrations(): void {
   normalizeInclusiveUsageRows()
+  deleteJunkTestPricingRows()
 }

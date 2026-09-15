@@ -27,21 +27,21 @@ export function Button({
 
   const variantClasses = {
     primary:
-      'bg-workbench-accent text-white hover:bg-workbench-accent-hover shadow-sm border border-transparent active:opacity-95',
+      'bg-workbench-accent text-white hover:bg-workbench-accent-hover shadow-xs border border-workbench-accent/30 active:scale-[0.98]',
     secondary:
-      'bg-workbench-surface text-workbench-text hover:bg-workbench-sidebar border border-workbench-border shadow-xs active:bg-gray-100',
+      'apple-glass-panel text-workbench-text hover:bg-workbench-sidebar/70 active:scale-[0.98]',
     outline:
-      'bg-transparent text-workbench-text hover:bg-workbench-sidebar border border-workbench-border',
+      'bg-transparent text-workbench-text hover:bg-workbench-surface/60 border border-workbench-border/80 active:scale-[0.98]',
     ghost:
-      'bg-transparent text-workbench-text-muted hover:text-workbench-text hover:bg-workbench-sidebar border border-transparent',
+      'bg-transparent text-workbench-text-muted hover:text-workbench-text hover:bg-workbench-surface/60 border border-transparent active:scale-[0.98]',
     danger:
-      'bg-red-600 text-white hover:bg-red-700 shadow-sm border border-transparent',
+      'bg-red-600 text-white hover:bg-red-700 shadow-xs border border-transparent active:scale-[0.98]',
   }[variant]
 
   return (
     <button
       disabled={disabled || loading}
-      className={`inline-flex items-center justify-center font-medium rounded-lg transition-colors duration-150 select-none focus:outline-none focus:ring-2 focus:ring-workbench-accent/20 disabled:opacity-50 disabled:cursor-not-allowed ${sizeClasses} ${variantClasses} ${className}`}
+      className={`inline-flex items-center justify-center font-medium rounded-xl transition-all duration-150 select-none focus:outline-none focus:ring-2 focus:ring-workbench-accent/20 disabled:opacity-50 disabled:cursor-not-allowed ${sizeClasses} ${variantClasses} ${className}`}
       {...props}
     >
       {loading ? (

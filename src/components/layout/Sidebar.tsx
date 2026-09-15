@@ -119,17 +119,17 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
   }, [])
 
   return (
-    <aside className="w-[216px] h-screen bg-workbench-sidebar border-r border-workbench-border flex flex-col justify-between select-none py-6 px-3 shrink-0">
+    <aside className="w-[216px] h-screen apple-glass-sidebar flex flex-col justify-between select-none py-6 px-3 shrink-0">
       {/* Top section: Logo & Nav */}
       <div>
         {/* Brand Header */}
         <Link
           href="/"
           onClick={onCloseMobile}
-          className="flex items-center gap-2.5 px-3 py-2 mb-6 group transition-opacity hover:opacity-90"
+          className="flex items-center gap-2.5 px-3 py-2 mb-6 group transition-all hover:opacity-90 active:scale-[0.98]"
         >
           {/* Logo */}
-          <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 shadow-xs">
+          <div className="w-8 h-8 rounded-xl overflow-hidden shrink-0 shadow-xs border border-black/5 dark:border-white/10">
             <Image
               src="/logo-app.png"
               alt="TokenTrail"
@@ -152,10 +152,10 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
                 key={item.href}
                 href={item.href}
                 onClick={onCloseMobile}
-                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
                   isActive
-                    ? 'bg-workbench-accent-light text-workbench-accent font-semibold shadow-2xs'
-                    : 'text-workbench-text-muted hover:text-workbench-text hover:bg-black/[0.03]'
+                    ? 'bg-workbench-accent/15 text-workbench-accent font-semibold shadow-2xs border border-workbench-accent/25 backdrop-blur-sm'
+                    : 'text-workbench-text-muted hover:text-workbench-text hover:bg-black/[0.04] dark:hover:bg-white/[0.04]'
                 }`}
               >
                 {item.icon(isActive)}
@@ -167,15 +167,15 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
       </div>
 
       {/* Bottom section: Settings & System Status */}
-      <div className="space-y-1 pt-4 border-t border-workbench-border/60">
+      <div className="space-y-1 pt-4 border-t border-workbench-border/40">
         {/* Settings link */}
         <Link
           href="/settings"
           onClick={onCloseMobile}
-          className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+          className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
             pathname === '/settings'
-              ? 'bg-workbench-accent-light text-workbench-accent font-semibold'
-              : 'text-workbench-text-muted hover:text-workbench-text hover:bg-black/[0.03]'
+              ? 'bg-workbench-accent/15 text-workbench-accent font-semibold shadow-2xs border border-workbench-accent/25 backdrop-blur-sm'
+              : 'text-workbench-text-muted hover:text-workbench-text hover:bg-black/[0.04] dark:hover:bg-white/[0.04]'
           }`}
         >
           <svg
@@ -197,7 +197,7 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
         <Link
           href="/settings#service"
           onClick={onCloseMobile}
-          className="flex items-center justify-between px-3.5 py-2 rounded-lg text-xs font-medium text-workbench-text-muted hover:text-workbench-text hover:bg-black/[0.03] transition-colors"
+          className="flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-medium text-workbench-text-muted hover:text-workbench-text hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors border border-transparent hover:border-workbench-border/40"
         >
           <div className="flex items-center gap-3">
             <svg

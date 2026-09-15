@@ -673,6 +673,38 @@ export function getAllPricing() {
   return db.prepare('SELECT * FROM model_pricing ORDER BY provider, model_id').all()
 }
 
+/** Placeholder / fixture model ids that should not appear in the pricing table. */
+const JUNK_AUTO_PRICING_MODELS = new Set([
+  'auto',
+  'seed_m8',
+  'stealth/ox-alpha',
+  'test',
+  'test-jsonl-model',
+  'test-model',
+])
+
+export function isJunkAutoPricingModel(model: string): boolean {
+  const id = String(model || '').trim().toLowerCase()
+  if (!id) return true
+  if (JUNK_AUTO_PRICING_MODELS.has(id)) return true
+  return id === 'test' || id.startsWith('test-') || id.startsWith('test_')
+}
+
+/** Remove fixture pricing rows and synthetic hermes test usage. */
+export function deleteJunkTestPricing(): { pricing: number; usage: number } {
+  const db = getDb()
+  const ids = [...JUNK_AUTO_PRICING_MODELS]
+  const placeholders = ids.map(() => '?').join(', ')
+  const pricing = db.prepare(`DELETE FROM model_pricing WHERE model_id IN (${placeholders})`).run(...ids)
+  const usage = db.prepare(
+    `DELETE FROM usage_records
+     WHERE model IN (${placeholders})
+       AND source = 'hermes'
+       AND project = 'unknown'`,
+  ).run(...ids)
+  return { pricing: pricing.changes, usage: usage.changes }
+}
+
 export function upsertModelPricing(pricing: {
   model_id: string
   display_name: string

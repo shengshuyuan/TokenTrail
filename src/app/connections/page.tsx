@@ -173,11 +173,11 @@ export default function ConnectionsPage() {
       />
 
       {/* Sync Status Banner */}
-      <div className="p-5 mb-8 bg-workbench-surface border border-workbench-border rounded-xl shadow-xs">
+      <div className="p-5 mb-8 apple-glass-panel">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
               <h3 className="text-base font-bold text-workbench-text">
                 {lang === 'zh' ? '本地数据存储正常' : 'Local Data Storage Active'}
               </h3>
@@ -221,7 +221,7 @@ export default function ConnectionsPage() {
             return (
               <div
                 key={tool.id}
-                className="p-4 bg-workbench-surface border border-workbench-border rounded-xl flex flex-col justify-between shadow-2xs hover:border-workbench-accent/40 transition-colors"
+                className="p-4 apple-glass-panel flex flex-col justify-between apple-glass-panel-hover"
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
@@ -249,10 +249,10 @@ export default function ConnectionsPage() {
                   </p>
                 </div>
 
-                <div className="mt-3 pt-2.5 border-t border-workbench-border/60 flex items-center justify-between text-[11px] font-mono text-workbench-text-muted">
+                <div className="mt-3 pt-2.5 border-t border-workbench-border/50 flex items-center justify-between text-[11px] font-mono text-workbench-text-muted">
                   <span className="truncate max-w-[200px]" title={tool.path}>{tool.path}</span>
                   {isConnected && health?.latest_record && (
-                    <span className="shrink-0 text-emerald-700">
+                    <span className="shrink-0 text-emerald-700 dark:text-emerald-400 font-semibold">
                       最近: {new Date(health.latest_record).toLocaleDateString()}
                     </span>
                   )}
@@ -264,7 +264,7 @@ export default function ConnectionsPage() {
       </div>
 
       {/* Integration Guide Section */}
-      <div className="bg-workbench-surface border border-workbench-border rounded-xl p-5 sm:p-7 shadow-xs">
+      <div className="apple-glass-panel p-5 sm:p-7">
         <h2 className="text-lg font-bold text-workbench-text tracking-tight mb-2">
           {lang === 'zh' ? '接入指南与常用命令' : 'Integration Guide & Commands'}
         </h2>

@@ -109,7 +109,7 @@ const chartData = data.map(d => ({
       </div>
       <div className="h-[320px]">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+        <AreaChart data={chartData} margin={{ top: 8, right: 12, left: 4, bottom: 8 }}>
           <defs>
             <linearGradient id="tokenGradient" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="var(--theme-chart-1)" stopOpacity={0.28} />
@@ -130,6 +130,7 @@ const chartData = data.map(d => ({
           />
           <YAxis
             yAxisId="tokens"
+            width={64}
             tick={{ fill: 'var(--theme-text-muted)', fontSize: 11, fontFamily: 'var(--theme-font-mono)' }}
             axisLine={{ stroke: 'var(--theme-border)' }}
             tickLine={{ stroke: 'var(--theme-border)' }}
@@ -138,6 +139,7 @@ const chartData = data.map(d => ({
           <YAxis
             yAxisId="cost"
             orientation="right"
+            width={64}
             tick={{ fill: 'var(--theme-text-muted)', fontSize: 11, fontFamily: 'var(--theme-font-mono)' }}
             axisLine={{ stroke: 'var(--theme-border)' }}
             tickLine={{ stroke: 'var(--theme-border)' }}
