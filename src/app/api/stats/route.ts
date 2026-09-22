@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     // 返回可用的筛选选项（与当前时间范围一致，避免显示无数据的选项）
     const db = getDb()
     const availableSources = db.prepare(
-      'SELECT DISTINCT source FROM usage_records WHERE timestamp >= ? AND timestamp <= ? ORDER BY source'
+      'SELECT DISTINCT source FROM usage_records WHERE timestamp >= ? AND timestamp <= ? AND is_internal = 0 ORDER BY source'
     ).all(startDate, now) as { source: string }[]
     const availableModels = db.prepare(
       `SELECT DISTINCT u.model, COALESCE(mp.display_name, u.model) as display_name

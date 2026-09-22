@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url'
 // so this sandbox DB never touches the real one.
 process.env.TOKENTRAIL_DB_PATH = path.join(os.tmpdir(), `tt-migration-test-${process.pid}.db`)
 
-const { insertUsageRecord, upsertModelPricing, getDb, getAggregatedStats } = await import('../src/lib/db.ts')
+const { insertUsageRecord, upsertModelPricing, getDb, getAggregatedStats, countUsageRecords } = await import('../src/lib/db.ts')
 const { runMigrations } = await import('../src/lib/migrations.ts')
 
 const NOW = Date.now()
@@ -114,6 +114,42 @@ describe('normalize_inclusive_v1 migration (hermes/grok)', () => {
     assert.equal(hermes.total_tokens, 419)
     // openclaw row keeps its inclusive-looking raw values as recorded
     assert.equal(openclaw.total_tokens, 90 + 337 + 10)
+  })
+
+  it('leaves internal rows out of totals and the usage list', () => {
+    const at = Date.now() + 20_000_000
+    insertUsageRecord({
+      source: 'codex',
+      model: 'codex-auto-review',
+      input_tokens: 1000,
+      cached_input_tokens: 0,
+      output_tokens: 0,
+      reasoning_tokens: 0,
+      is_internal: true,
+      cost_usd: 5,
+      request_id: 'internal-review-1',
+      timestamp: at,
+    })
+    insertUsageRecord({
+      source: 'codex',
+      model: 'gpt-5.4',
+      input_tokens: 10,
+      cached_input_tokens: 0,
+      output_tokens: 0,
+      reasoning_tokens: 0,
+      cost_usd: 1,
+      request_id: 'visible-codex-1',
+      timestamp: at + 1,
+    })
+
+    const stats = getAggregatedStats({ startDate: at - 1, endDate: at + 10 })
+    assert.equal(stats.total_tokens, 10)
+    assert.equal(stats.total_requests, 1)
+    assert.equal(stats.by_source.length, 1)
+    assert.equal(stats.by_source[0].total_tokens, 10)
+    assert.equal(stats.by_model.length, 1)
+    assert.equal(stats.by_model[0].model, 'gpt-5.4')
+    assert.equal(countUsageRecords({ startDate: at - 1, endDate: at + 10 }), 1)
   })
 
   it('writes the app_config marker', () => {

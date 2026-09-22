@@ -11,6 +11,7 @@ import { backfillProjectByRequestPrefix, correctProjectByRequestId, getDb, inser
 import { parseAntigravityTranscript, detectAntigravityProject } from './antigravity'
 import { calculateCost } from './pricing'
 import { ensureInit } from './init'
+import { isUnchangedSyncedFile, markSyncedFile } from './sync-checkpoint'
 const { findTraeHistoryFiles, parseTraeHistoryFile } = require('./traework.js') as {
   findTraeHistoryFiles: () => string[]
   parseTraeHistoryFile: (filePath: string) => Array<{
@@ -69,7 +70,34 @@ interface SyncResult {
   inserted: number
   duplicates: number
   errors: number
+  /** Files left untouched because size and mtime still match the last full read. */
+  skipped_files: number
+  /** First failure reason for this source. Line-level parse errors share one message. */
+  error?: string
   duration_ms: number
+}
+
+function formatSyncError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err || 'sync failed')
+  return message.replace(/\s+/g, ' ').slice(0, 240)
+}
+
+function recordSyncError(result: SyncResult, err: unknown) {
+  result.errors++
+  if (!result.error) result.error = formatSyncError(err)
+}
+
+function failedSyncResult(source: string, err: unknown): SyncResult {
+  return {
+    source,
+    scanned: 0,
+    inserted: 0,
+    duplicates: 0,
+    errors: 1,
+    skipped_files: 0,
+    duration_ms: 0,
+    error: formatSyncError(err),
+  }
 }
 
 // ─── Claude Code 同步 ─────────────────────────────────────────
@@ -88,6 +116,7 @@ function syncClaudeCode(): SyncResult {
     inserted: 0,
     duplicates: 0,
     errors: 0,
+    skipped_files: 0,
     duration_ms: 0,
   }
 
@@ -107,6 +136,10 @@ function syncClaudeCode(): SyncResult {
 
     for (const file of files) {
       const filePath = path.join(fullProjectPath, file)
+      if (isUnchangedSyncedFile('claude-code', filePath)) {
+        result.skipped_files++
+        continue
+      }
 
       try {
         const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean)
@@ -153,12 +186,13 @@ function syncClaudeCode(): SyncResult {
             result.scanned++
             if (insertResult.duplicate) result.duplicates++
             else result.inserted++
-          } catch {
-            result.errors++
+          } catch (err) {
+            recordSyncError(result, err)
           }
         }
-      } catch {
-        result.errors++
+        markSyncedFile('claude-code', filePath)
+      } catch (err) {
+        recordSyncError(result, err)
       }
     }
   }
@@ -183,6 +217,7 @@ function syncCodex(): SyncResult {
     inserted: 0,
     duplicates: 0,
     errors: 0,
+    skipped_files: 0,
     duration_ms: 0,
   }
 
@@ -195,6 +230,10 @@ function syncCodex(): SyncResult {
 
   for (const filePath of jsonlFiles) {
     const relativePath = path.relative(CODEX_SESSIONS_DIR, filePath)
+    if (isUnchangedSyncedFile('codex', filePath)) {
+      result.skipped_files++
+      continue
+    }
 
     try {
       const lines = fs.readFileSync(filePath, 'utf-8').split('\n')
@@ -248,12 +287,13 @@ function syncCodex(): SyncResult {
           result.scanned++
           if (insertResult.duplicate) result.duplicates++
           else result.inserted++
-        } catch {
-          result.errors++
+        } catch (err) {
+          recordSyncError(result, err)
         }
       }
-    } catch {
-      result.errors++
+      markSyncedFile('codex', filePath)
+    } catch (err) {
+      recordSyncError(result, err)
     }
   }
 
@@ -286,6 +326,7 @@ function syncKimiCode(): SyncResult {
     inserted: 0,
     duplicates: 0,
     errors: 0,
+    skipped_files: 0,
     duration_ms: 0,
   }
 
@@ -298,14 +339,18 @@ function syncKimiCode(): SyncResult {
     )
 
     for (const filePath of files) {
+      if (isUnchangedSyncedFile('kimi-code', filePath)) {
+        result.skipped_files++
+        continue
+      }
       const wireContext = resolveKimiWireContext(context, filePath)
       let currentProject = normalizeProjectName(wireContext.project)
 
       let lines: string[]
       try {
         lines = fs.readFileSync(filePath, 'utf-8').split('\n')
-      } catch {
-        result.errors++
+      } catch (err) {
+        recordSyncError(result, err)
         continue
       }
 
@@ -352,10 +397,11 @@ function syncKimiCode(): SyncResult {
               result.inserted++
             }
           }
-        } catch {
-          result.errors++
+        } catch (err) {
+          recordSyncError(result, err)
         }
       }
+      markSyncedFile('kimi-code', filePath)
     }
   }
 
@@ -396,6 +442,7 @@ function syncLocalUsageFiles(): SyncResult {
     inserted: 0,
     duplicates: 0,
     errors: 0,
+    skipped_files: 0,
     duration_ms: 0,
   }
 
@@ -404,6 +451,10 @@ function syncLocalUsageFiles(): SyncResult {
 
     const jsonlFiles = findAllJsonl(dir)
     for (const filePath of jsonlFiles) {
+      if (isUnchangedSyncedFile(`local:${name}`, filePath)) {
+        result.skipped_files++
+        continue
+      }
       try {
         const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean)
         for (const line of lines) {
@@ -471,12 +522,13 @@ function syncLocalUsageFiles(): SyncResult {
             result.scanned++
             if (insertResult.duplicate) result.duplicates++
             else result.inserted++
-          } catch {
-            result.errors++
+          } catch (err) {
+            recordSyncError(result, err)
           }
         }
-      } catch {
-        result.errors++
+        markSyncedFile(`local:${name}`, filePath)
+      } catch (err) {
+        recordSyncError(result, err)
       }
     }
   }
@@ -693,10 +745,17 @@ function syncGrok(): SyncResult {
     inserted: 0,
     duplicates: 0,
     errors: 0,
+    skipped_files: 0,
     duration_ms: 0,
   }
 
   if (!fs.existsSync(GROK_LOG_FILE)) {
+    result.duration_ms = Date.now() - start
+    return result
+  }
+
+  if (isUnchangedSyncedFile('grok', GROK_LOG_FILE)) {
+    result.skipped_files++
     result.duration_ms = Date.now() - start
     return result
   }
@@ -708,8 +767,8 @@ function syncGrok(): SyncResult {
   let content: string
   try {
     content = fs.readFileSync(GROK_LOG_FILE, 'utf-8')
-  } catch {
-    result.errors++
+  } catch (err) {
+    recordSyncError(result, err)
     result.duration_ms = Date.now() - start
     return result
   }
@@ -797,11 +856,12 @@ function syncGrok(): SyncResult {
       result.scanned++
       if (insertResult.duplicate) result.duplicates++
       else result.inserted++
-    } catch {
-      result.errors++
+    } catch (err) {
+      recordSyncError(result, err)
     }
   }
 
+  markSyncedFile('grok', GROK_LOG_FILE)
   result.duration_ms = Date.now() - start
   return result
 }
@@ -880,19 +940,24 @@ function syncTraeWork(): SyncResult {
     inserted: 0,
     duplicates: 0,
     errors: 0,
+    skipped_files: 0,
     duration_ms: 0,
   }
 
   let files: string[] = []
   try {
     files = findTraeHistoryFiles()
-  } catch {
-    result.errors++
+  } catch (err) {
+    recordSyncError(result, err)
     result.duration_ms = Date.now() - start
     return result
   }
 
   for (const filePath of files) {
+    if (isUnchangedSyncedFile('traework', filePath)) {
+      result.skipped_files++
+      continue
+    }
     try {
       const records = parseTraeHistoryFile(filePath)
       for (const record of records) {
@@ -929,12 +994,13 @@ function syncTraeWork(): SyncResult {
           result.scanned++
           if (insertResult.duplicate) result.duplicates++
           else result.inserted++
-        } catch {
-          result.errors++
+        } catch (err) {
+          recordSyncError(result, err)
         }
       }
-    } catch {
-      result.errors++
+      markSyncedFile('traework', filePath)
+    } catch (err) {
+      recordSyncError(result, err)
     }
   }
 
@@ -994,6 +1060,7 @@ async function syncVibeCafe(): Promise<SyncResult> {
     inserted: 0,
     duplicates: 0,
     errors: 0,
+    skipped_files: 0,
     duration_ms: 0,
   }
 
@@ -1009,7 +1076,7 @@ async function syncVibeCafe(): Promise<SyncResult> {
     })
 
     if (!res.ok) {
-      result.errors++
+      recordSyncError(result, new Error(`VibeCafé HTTP ${res.status}`))
       result.duration_ms = Date.now() - start
       return result
     }
@@ -1054,12 +1121,12 @@ async function syncVibeCafe(): Promise<SyncResult> {
         result.scanned++
         if (insertResult.duplicate) result.duplicates++
         else result.inserted++
-      } catch {
-        result.errors++
+      } catch (err) {
+        recordSyncError(result, err)
       }
     }
-  } catch {
-    result.errors++
+  } catch (err) {
+    recordSyncError(result, err)
   }
 
   removeOverlappingAggregateUsageRecords()
@@ -1078,6 +1145,7 @@ function syncAntigravityTranscripts(): SyncResult {
     inserted: 0,
     duplicates: 0,
     errors: 0,
+    skipped_files: 0,
     duration_ms: 0,
   }
 
@@ -1110,6 +1178,10 @@ function syncAntigravityTranscripts(): SyncResult {
         ? fullTranscriptPath
         : compactTranscriptPath
       if (!fs.existsSync(transcriptPath)) continue
+      if (isUnchangedSyncedFile('antigravity', transcriptPath)) {
+        result.skipped_files++
+        continue
+      }
 
       try {
         const lines = fs.readFileSync(transcriptPath, 'utf-8').split('\n').filter(Boolean)
@@ -1151,9 +1223,9 @@ function syncAntigravityTranscripts(): SyncResult {
             result.scanned++
             if (insertResult.duplicate) result.duplicates++
             else result.inserted++
-          } catch {
+          } catch (err) {
             failed = true
-            result.errors++
+            recordSyncError(result, err)
           }
         }
 
@@ -1161,8 +1233,9 @@ function syncAntigravityTranscripts(): SyncResult {
         if (events.length > 0 && !failed) {
           deleteAntigravityConversationRow(convId)
         }
-      } catch {
-        result.errors++
+        if (!failed) markSyncedFile('antigravity', transcriptPath)
+      } catch (err) {
+        recordSyncError(result, err)
       }
     }
   }
@@ -1197,59 +1270,59 @@ export async function syncAll(): Promise<SyncResult[]> {
     // Claude Code
     try {
       results.push(syncClaudeCode())
-    } catch {
-      results.push({ source: 'claude-code', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
+    } catch (err) {
+      results.push(failedSyncResult('claude-code', err))
     }
 
     // Codex
     try {
       results.push(syncCodex())
-    } catch {
-      results.push({ source: 'codex', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
+    } catch (err) {
+      results.push(failedSyncResult('codex', err))
     }
 
     // Kimi Code — 扫描 ~/.kimi-code/sessions/**/wire.jsonl 的 usage.record
     try {
       results.push(syncKimiCode())
-    } catch {
-      results.push({ source: 'kimi-code', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
+    } catch (err) {
+      results.push(failedSyncResult('kimi-code', err))
     }
 
     // Antigravity Transcripts
     try {
       results.push(syncAntigravityTranscripts())
-    } catch {
-      results.push({ source: 'antigravity', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
+    } catch (err) {
+      results.push(failedSyncResult('antigravity', err))
     }
 
     // 本地 JSONL 用量文件（OpenClaw、Hermes、Grok 可选 usage 目录）
     try {
       const localResult = syncLocalUsageFiles()
-      if (localResult.scanned > 0) results.push(localResult)
-    } catch {
-      results.push({ source: 'local-usage', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
+      if (localResult.scanned > 0 || localResult.errors > 0 || localResult.skipped_files > 0) results.push(localResult)
+    } catch (err) {
+      results.push(failedSyncResult('local-usage', err))
     }
 
     // Grok CLI — 直接扫描 ~/.grok/logs/unified.jsonl（历史 + 增量）
     try {
       results.push(syncGrok())
-    } catch {
-      results.push({ source: 'grok', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
+    } catch (err) {
+      results.push(failedSyncResult('grok', err))
     }
 
     // TraeWork 历史/增量会话
     try {
       const traeWorkResult = syncTraeWork()
-      if (traeWorkResult.scanned > 0) results.push(traeWorkResult)
-    } catch {
-      results.push({ source: 'traework', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
+      if (traeWorkResult.scanned > 0 || traeWorkResult.errors > 0 || traeWorkResult.skipped_files > 0) results.push(traeWorkResult)
+    } catch (err) {
+      results.push(failedSyncResult('traework', err))
     }
 
     // VibeCafé (OpenClaw, Hermes, etc.)
     try {
       results.push(await syncVibeCafe())
-    } catch {
-      results.push({ source: 'vibecafe', scanned: 0, inserted: 0, duplicates: 0, errors: 1, duration_ms: 0 })
+    } catch (err) {
+      results.push(failedSyncResult('vibecafe', err))
     }
 
     return results

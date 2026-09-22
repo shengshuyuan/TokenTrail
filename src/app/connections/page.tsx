@@ -22,7 +22,9 @@ interface SyncSourceResult {
   inserted: number
   duplicates: number
   errors: number
+  skipped_files?: number
   duration_ms: number
+  error?: string
 }
 
 interface StatusData {
@@ -187,6 +189,13 @@ export default function ConnectionsPage() {
                 ? `已记录 ${statusData?.records ?? 0} 条调用数据 · 本地 SQLite 引擎`
                 : `${statusData?.records ?? 0} records stored locally in SQLite`}
             </p>
+            {statusData?.last_sync?.sources && Object.entries(statusData.last_sync.sources).some(([, item]) => item.error) && (
+              <ul className="mt-2 space-y-1 text-xs text-status-warning">
+                {Object.entries(statusData.last_sync.sources).filter(([, item]) => item.error).map(([source, item]) => (
+                  <li key={source}>{SOURCE_DISPLAY_NAMES[source] || source}：{item.error}</li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="flex items-center gap-4 text-xs font-mono text-workbench-text-muted">

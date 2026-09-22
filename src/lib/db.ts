@@ -215,6 +215,10 @@ function buildWhere(alias: string, filters: FilterParams): { sql: string; params
   conditions.push(`${col('timestamp')} <= ?`)
   params.push(filters.endDate)
 
+  // Codex auto-review and other internal rows stay in the table for audit,
+  // but they are not part of usage the user spent.
+  conditions.push(`${col('is_internal')} = 0`)
+
   if (filters.sources && filters.sources.length > 0) {
     const placeholders = filters.sources.map(() => '?').join(',')
     conditions.push(`${col('source')} IN (${placeholders})`)

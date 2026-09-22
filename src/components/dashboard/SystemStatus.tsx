@@ -16,7 +16,9 @@ interface SyncSourceResult {
   inserted: number
   duplicates: number
   errors: number
+  skipped_files?: number
   duration_ms: number
+  error?: string
 }
 
 interface StatusData {
@@ -367,7 +369,12 @@ function SyncDetails({
             <tbody>
               {entries.map(([source, r]) => (
                 <tr key={source} className="border-b border-eva-border/50 last:border-0">
-                  <td className="px-3 py-1.5 text-eva-text">{sourceDisplayName(source)}</td>
+                  <td className="px-3 py-1.5 text-eva-text">
+                    {sourceDisplayName(source)}
+                    {r.error ? (
+                      <div className="mt-0.5 max-w-[28rem] whitespace-normal text-[11px] text-status-warning">{r.error}</div>
+                    ) : null}
+                  </td>
                   <td className="px-3 py-1.5 text-right text-eva-text-dim">{r.scanned.toLocaleString()}</td>
                   <td className="px-3 py-1.5 text-right text-status-success">{r.inserted > 0 ? `+${r.inserted}` : '0'}</td>
                   <td className="px-3 py-1.5 text-right text-eva-text-dim">{r.duplicates.toLocaleString()}</td>

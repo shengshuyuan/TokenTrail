@@ -22,7 +22,9 @@ interface SyncStatusFile {
     inserted: number
     duplicates: number
     errors: number
+    skipped_files?: number
     duration_ms: number
+    error?: string
   }>
   vibecafe_configured: boolean
   error?: string
@@ -57,8 +59,8 @@ export async function GET() {
     ensureInit()
     const db = getDb()
 
-    const recordCount = (db.prepare('SELECT COUNT(*) as count FROM usage_records').get() as { count: number }).count
-    const latestTs = (db.prepare('SELECT MAX(CAST(timestamp AS INTEGER)) as latest FROM usage_records').get() as { latest: number | null }).latest
+    const recordCount = (db.prepare('SELECT COUNT(*) as count FROM usage_records WHERE is_internal = 0').get() as { count: number }).count
+    const latestTs = (db.prepare('SELECT MAX(CAST(timestamp AS INTEGER)) as latest FROM usage_records WHERE is_internal = 0').get() as { latest: number | null }).latest
     const latestRecord = latestTs ? new Date(latestTs).toISOString() : null
 
     // Per-source health: latest record timestamp per source
@@ -67,6 +69,7 @@ export async function GET() {
              COUNT(*) as count,
              MAX(CAST(timestamp AS INTEGER)) as latest_ts
       FROM usage_records
+      WHERE is_internal = 0
       GROUP BY source
       ORDER BY count DESC
     `).all() as { source: string; count: number; latest_ts: number }[]

@@ -9,7 +9,7 @@ import { rejectUnsafeLocalMutation } from '@/lib/local-request'
 
 const SYNC_STATUS_FILE = path.join(os.homedir(), '.tokentrail', 'sync-status.json')
 
-function writeSyncStatus(success: boolean, sources: Record<string, { scanned: number; inserted: number; duplicates: number; errors: number; duration_ms: number }>, vibecafeConfigured: boolean, error?: string) {
+function writeSyncStatus(success: boolean, sources: Record<string, { scanned: number; inserted: number; duplicates: number; errors: number; skipped_files: number; duration_ms: number; error?: string }>, vibecafeConfigured: boolean, error?: string) {
   try {
     const dir = path.dirname(SYNC_STATUS_FILE)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
@@ -48,14 +48,16 @@ export async function POST(request: NextRequest) {
     const vibecafeConfigured = !!getConfig('vibecafe_api_key')
 
     // Record sync status for the system status page
-    const sourcesMap: Record<string, { scanned: number; inserted: number; duplicates: number; errors: number; duration_ms: number }> = {}
+    const sourcesMap: Record<string, { scanned: number; inserted: number; duplicates: number; errors: number; skipped_files: number; duration_ms: number; error?: string }> = {}
     for (const r of results) {
       sourcesMap[r.source] = {
         scanned: r.scanned,
         inserted: r.inserted,
         duplicates: r.duplicates,
         errors: r.errors,
+        skipped_files: r.skipped_files,
         duration_ms: r.duration_ms,
+        error: r.error,
       }
     }
     writeSyncStatus(totalErrors === 0, sourcesMap, vibecafeConfigured)
