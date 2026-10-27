@@ -12,6 +12,7 @@ Current version: **V0.2.2**
 | Codex | Local scan | TokenTrail reads `~/.codex/sessions/**/*.jsonl` during sync |
 | Kimi Code | Local scan | TokenTrail reads current `~/.kimi-code/sessions/**/wire.jsonl` and legacy `~/.kimi/sessions/**/wire.jsonl` |
 | Grok (CLI/Build) | Local scan | TokenTrail reads `~/.grok/logs/unified.jsonl` (`shell.turn.inference_done`) during sync |
+| Cursor | Official usage API | TokenTrail reuses the local Cursor login and pulls per-call usage events from `cursor.com` during sync |
 | OpenClaw | Local JSONL | OpenClaw writes `~/.openclaw/usage/YYYY-MM-DD.jsonl` after each model call |
 | Hermes | Local JSONL | Hermes writes `~/.hermes/usage/YYYY-MM-DD.jsonl` after each model call |
 | Any tool | Local JSONL | Tool writes `~/.tool/usage/YYYY-MM-DD.jsonl` after each model call |
@@ -71,6 +72,28 @@ You can also write OpenClaw-style lines to `~/.grok/usage/YYYY-MM-DD.jsonl`; the
 ```bash
 tokentrail report --source grok --model grok-4.5 --input 5000 --output 1200 --cached 2000 --reasoning 100
 ```
+
+## Cursor integration
+
+Cursor does not write per-call token usage to local files; the real bill lives in the Cursor dashboard. TokenTrail reads it with the session the Cursor app already stores locally (`~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`, key `cursorAuth/accessToken`, opened read-only). No API key or extra setup is needed.
+
+- **Usage records** — every `tokentrail sync` (and the 4-hour LaunchAgent timer) calls `POST https://cursor.com/api/dashboard/get-filtered-usage-events`. The first sync imports the whole history; later syncs only fetch from the newest stored Cursor record minus 6 hours.
+- **Token buckets** — `input_tokens = inputTokens + cacheWriteTokens`, `cached_input_tokens = cacheReadTokens`, `output_tokens = outputTokens` (same convention as Claude Code).
+- **Cost** — `tokenUsage.totalCents / 100` from the Cursor bill. This is the API-equivalent value of the call, including calls covered by a free or included subscription.
+- **Dedup ID** — `cursor:{timestamp}:{conversationId}:{model}`.
+- **Project** — resolved from `~/.cursor/projects/<workspace-slug>/agent-transcripts/<conversationId>` when that transcript exists; otherwise `unknown`.
+- **VibeCafé overlap** — VibeCafé daily `cursor` aggregates are removed automatically for any day/model that has per-call Cursor records.
+- **Quota** — the quota center calls `GET https://cursor.com/api/usage-summary` and shows the billing-cycle API usage (dollars used / included), total usage %, and on-demand usage when enabled.
+
+```bash
+# Preflight: read-only check of what Cursor returns (prints counts only)
+node src/lib/cursor.js
+
+# Import
+node bin/tokentrail.js sync
+```
+
+If sync reports that the Cursor login expired, open Cursor and sign in again; the next sync picks up the new session automatically.
 
 ## Codex integration
 
@@ -229,6 +252,15 @@ OPENAI_BASE_URL=http://localhost:3820/proxy/openai
 | `GET` | `/api/pricing` | Model pricing table |
 | `POST` | `/api/pricing` | Add/update model pricing |
 | `POST` | `/api/backup` | Create manual backup |
+| `GET` | `/api/quotas` | Normalized quota snapshots |
+| `POST` | `/api/quotas/refresh` | Refresh quota snapshots |
+| `POST` | `/api/quotas/auth` | Start a local CLI login |
+| `GET`/`POST` | `/api/quotas/config` | Read or save quota provider config |
+| `POST` | `/api/quotas/manual` | Import a manual quota snapshot |
+| `GET`/`POST` | `/proxy/openai/*` | OpenAI-compatible proxy. Records usage. GET and POST both require a local origin |
+| `GET`/`POST` | `/proxy/openai-traework/*` | TraeWork OpenAI-compatible proxy |
+
+`POST /api/sync` may include `{ "sources": ["cursor"] }` to sync one source. The body field `vibecafe_api_key` is stored in the local database, not the macOS Keychain.
 
 ## VibeCafé (optional)
 

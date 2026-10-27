@@ -40,7 +40,6 @@ export function MetricStrip({ stats, loading = false, currency, exchangeRate }: 
   const totalTokens = stats?.total_tokens ?? 0
   const totalCostUsd = stats?.total_cost_usd ?? 0
   const totalRequests = stats?.total_requests ?? 0
-  const estimatedTokens = stats?.estimated_tokens ?? 0
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
@@ -54,15 +53,7 @@ export function MetricStrip({ stats, loading = false, currency, exchangeRate }: 
             {formatTokens(totalTokens)}
           </div>
           <div className="flex items-center gap-2 mt-3">
-            <span className="text-xs font-medium text-workbench-text-muted">Total captured</span>
-            {estimatedTokens > 0 && (
-              <span
-                className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 font-mono"
-                title="Antigravity / TraeWork 等字符估算量，不计入主统计"
-              >
-                {t('stats.estimated', { n: formatTokens(estimatedTokens) })}
-              </span>
-            )}
+            <span className="text-xs font-medium text-workbench-text-muted">{t('stats.captured')}</span>
           </div>
         </div>
       </div>
@@ -77,7 +68,7 @@ export function MetricStrip({ stats, loading = false, currency, exchangeRate }: 
             {formatCost(totalCostUsd, currency, exchangeRate)}
           </div>
           <div className="text-xs font-medium text-workbench-text-muted mt-3">
-            {currency === 'USD' ? 'Estimated USD' : 'Estimated CNY'}
+            {currency === 'USD' ? t('stats.costHintUsd') : t('stats.costHintCny')}
           </div>
         </div>
       </div>
@@ -92,7 +83,7 @@ export function MetricStrip({ stats, loading = false, currency, exchangeRate }: 
             {formatNumber(totalRequests)}
           </div>
           <div className="text-xs font-medium text-workbench-text-muted mt-3">
-            API calls recorded
+            {t('stats.callsHint')}
           </div>
         </div>
       </div>

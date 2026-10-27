@@ -175,6 +175,30 @@ export function TraeBrandIcon({ className = 'size-6' }: { className?: string }) 
   )
 }
 
+export function CursorBrandIcon({ className = 'size-6' }: { className?: string }) {
+  return (
+    <div className={`flex shrink-0 items-center justify-center rounded-lg bg-[#111111] border border-black/10 p-1 ${className}`}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" className="size-full text-white">
+        <path d="M12 2.5l8.5 4.9v9.2L12 21.5l-8.5-4.9V7.4L12 2.5z" />
+        <path d="M3.5 7.4L12 12l8.5-4.6M12 12v9.5" />
+      </svg>
+    </div>
+  )
+}
+
+/** Kiro CLI 品牌图标 */
+export function KiroBrandIcon({ className = 'size-6' }: { className?: string }) {
+  return (
+    <div className={`flex shrink-0 items-center justify-center rounded-lg bg-[#5b2be0] border border-white/15 p-1 ${className}`}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="size-full text-white">
+        <path d="M7 4v16" />
+        <path d="M7 12l8-8" />
+        <path d="M10 9l7 11" />
+      </svg>
+    </div>
+  )
+}
+
 /** 根据 Provider ID 渲染对应的品牌图标 */
 export function ProviderBrandIcon({ provider, className = 'size-7' }: { provider: string; className?: string }) {
   const normalized = provider.toLowerCase()
@@ -192,6 +216,8 @@ export function ProviderBrandIcon({ provider, className = 'size-7' }: { provider
     case 'kimi':
     case 'kimi-code':
       return <KimiBrandIcon className={className} />
+    case 'kiro':
+      return <KiroBrandIcon className={className} />
     case 'claude':
     case 'claude-code':
       return <ClaudeBrandIcon className={className} />
@@ -202,6 +228,8 @@ export function ProviderBrandIcon({ provider, className = 'size-7' }: { provider
     case 'traework':
     case 'trae':
       return <TraeBrandIcon className={className} />
+    case 'cursor':
+      return <CursorBrandIcon className={className} />
     default:
       return (
         <div className={`flex shrink-0 items-center justify-center rounded-lg bg-workbench-sidebar border border-workbench-border text-xs font-mono font-bold uppercase text-workbench-text-muted ${className}`}>

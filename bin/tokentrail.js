@@ -174,15 +174,43 @@ function writeLaunchAgent(file, label, command, options = {}) {
   fs.writeFileSync(file, plist)
 }
 
-function bootout(label) {
-  runLaunchctl(['bootout', userLaunchctlTarget(), path.join(LAUNCH_AGENTS_DIR, `${label}.plist`)], { quiet: true })
+/**
+ * Command line of the process launchd is running for this label, or null.
+ * Reads the live process, so it is correct even when the plist file was
+ * deleted or edited after loading.
+ */
+function launchAgentProcessCommand(label) {
+  const info = spawnSync('launchctl', ['print', `${userLaunchctlTarget()}/${label}`], { encoding: 'utf-8', stdio: 'pipe' })
+  if (info.status !== 0) return null
+  const match = /^\s*pid = (\d+)/m.exec(info.stdout || '')
+  if (!match) return null
+  const ps = spawnSync('ps', ['-o', 'command=', '-p', match[1]], { encoding: 'utf-8', stdio: 'pipe' })
+  return ps.status === 0 ? ps.stdout.trim() || null : null
 }
 
+function bootout(label) {
+  // Label form works even when the plist file is gone; the path form would
+  // fail and leave the old service loaded, making bootstrap fail next.
+  runLaunchctl(['bootout', `${userLaunchctlTarget()}/${label}`], { quiet: true })
+}
+
+/**
+ * bootout returns before launchd has finished unloading; bootstrapping right
+ * away fails with "5: Input/output error". Wait for the label to disappear,
+ * then retry a few times.
+ */
 function bootstrap(plistPath) {
-  const result = runLaunchctl(['bootstrap', userLaunchctlTarget(), plistPath])
-  if (result.status !== 0) {
-    throw new Error(`LaunchAgent 加载失败: ${plistPath}`)
+  const label = path.basename(plistPath, '.plist')
+  for (let i = 0; i < 20 && isLaunchAgentLoaded(label); i++) {
+    spawnSync('sleep', ['0.5'])
   }
+  let result
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    result = runLaunchctl(['bootstrap', userLaunchctlTarget(), plistPath], { quiet: true })
+    if (result.status === 0) return
+    spawnSync('sleep', ['1'])
+  }
+  throw new Error(`LaunchAgent 加载失败: ${plistPath}（${(result?.stderr || '').trim()}）`)
 }
 
 function findServiceNodePath() {
@@ -218,6 +246,51 @@ function runWithNodePath(nodePath, command, args, cwd) {
       PATH: `${nodeDir}:${process.env.PATH || ''}`,
     },
   })
+}
+
+/**
+ * Code that the service actually runs; compared by content, not by mtime.
+ * package-lock.json is left out: `npm install` in the runtime copy may rewrite it.
+ */
+const FINGERPRINT_PATHS = ['src', 'bin', 'scripts', 'package.json', 'next.config.js', 'next.config.mjs', 'preload.js']
+
+/**
+ * sha256 over relative path + bytes of every file under FINGERPRINT_PATHS.
+ * Touching a file without changing it keeps the fingerprint; an edit that
+ * restores an older mtime still changes it.
+ */
+function treeFingerprint(root) {
+  const crypto = require('crypto')
+  const hash = crypto.createHash('sha256')
+  const files = []
+  for (const rel of FINGERPRINT_PATHS) {
+    const start = path.join(root, rel)
+    if (!fs.existsSync(start)) continue
+    const stack = [start]
+    while (stack.length) {
+      const current = stack.pop()
+      let stat
+      try { stat = fs.statSync(current) } catch { continue }
+      if (stat.isDirectory()) {
+        let entries = []
+        try { entries = fs.readdirSync(current) } catch { continue }
+        for (const name of entries) {
+          if (name === 'node_modules' || name === '.next' || name === '.DS_Store') continue
+          stack.push(path.join(current, name))
+        }
+      } else {
+        files.push(path.relative(root, current))
+      }
+    }
+  }
+  files.sort()
+  for (const rel of files) {
+    hash.update(rel)
+    hash.update('\0')
+    try { hash.update(fs.readFileSync(path.join(root, rel))) } catch { hash.update('<unreadable>') }
+    hash.update('\0')
+  }
+  return { digest: hash.digest('hex').slice(0, 12), files: files.length }
 }
 
 function prepareRuntimeCopy(nodePath) {
@@ -355,8 +428,27 @@ async function cmdStatus() {
   console.log('')
 }
 
+/**
+ * Wait until /api/health answers. The sync LaunchAgent starts together with
+ * the server (RunAtLoad) and would otherwise fail while Next is still booting.
+ */
+async function waitForServer(config, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const health = await api(config, 'GET', '/api/health')
+    if (health.ok) return true
+    await new Promise(resolve => setTimeout(resolve, 2000))
+  }
+  return false
+}
+
 async function cmdSync() {
   const config = loadConfigOrDefault()
+
+  if (!(await waitForServer(config))) {
+    console.log(`  ✗ 同步失败: 等待 60 秒后仍无法连接 ${config.server_url}，请确认 TokenTrail 服务已启动`)
+    process.exit(1)
+  }
 
   console.log('  正在同步数据...')
   const result = await api(config, 'POST', '/api/sync', {
@@ -463,12 +555,35 @@ async function cmdDoctor() {
   const serverInstalled = fs.existsSync(SERVER_PLIST)
   const syncInstalled = fs.existsSync(SYNC_PLIST)
   const runtimeInstalled = fs.existsSync(path.join(RUNTIME_ROOT, 'package.json'))
-  check('常驻服务配置', serverInstalled, serverInstalled ? SERVER_PLIST : '未安装 LaunchAgent')
-  check('定时同步配置', syncInstalled, syncInstalled ? SYNC_PLIST : '未安装 LaunchAgent')
+  if (runtimeInstalled) {
+    const projectPrint = treeFingerprint(PROJECT_ROOT)
+    const runtimePrint = treeFingerprint(RUNTIME_ROOT)
+    const drifted = projectPrint.digest !== runtimePrint.digest
+    check(
+      '副本同步',
+      !drifted,
+      drifted
+        ? `项目目录与运行副本内容不同（项目 ${projectPrint.digest} / 副本 ${runtimePrint.digest}）。后台服务仍在跑旧代码，请重新 npm run install-service`
+        : `项目目录与运行副本一致（${projectPrint.digest}，${projectPrint.files} 个文件）`,
+    )
+    // Judge the mode from the running process; the plist may be missing or stale.
+    const liveCommand = launchAgentProcessCommand(SERVER_LABEL)
+    const serverPlist = fs.existsSync(SERVER_PLIST) ? fs.readFileSync(SERVER_PLIST, 'utf8') : ''
+    const devMode = liveCommand ? /\s--dev(\s|$)/.test(liveCommand) : serverPlist.includes('--dev')
+    check(
+      '运行模式',
+      Boolean(liveCommand || serverPlist) && !devMode,
+      devMode
+        ? '当前为 Next dev 模式。生产环境请 npm run install-service（默认构建）'
+        : liveCommand || serverPlist ? 'production' : '未检测到常驻服务进程',
+    )
+  }
+  check('常驻服务配置', serverInstalled, serverInstalled ? SERVER_PLIST : '未找到 LaunchAgent 文件（服务可能仍在内存中运行）')
+  check('定时同步配置', syncInstalled, syncInstalled ? SYNC_PLIST : '未找到 LaunchAgent 文件（服务可能仍在内存中运行）')
   check('运行副本', runtimeInstalled, runtimeInstalled ? RUNTIME_ROOT : '未准备')
 
-  const serverLoaded = serverInstalled && isLaunchAgentLoaded(SERVER_LABEL)
-  const syncLoaded = syncInstalled && isLaunchAgentLoaded(SYNC_LABEL)
+  const serverLoaded = isLaunchAgentLoaded(SERVER_LABEL)
+  const syncLoaded = isLaunchAgentLoaded(SYNC_LABEL)
   check('常驻服务加载', serverLoaded, serverLoaded ? '已加载' : '未加载')
   check('定时同步加载', syncLoaded, syncLoaded ? '已加载' : '未加载')
 
@@ -558,6 +673,7 @@ async function cmdInstallService(argv = []) {
   }
 
   const { flags } = parseFlags(argv)
+  const useDev = Boolean(flags.dev)
   ensureLocalDirs()
 
   const existing = loadConfigOrDefault()
@@ -569,16 +685,17 @@ async function cmdInstallService(argv = []) {
   console.log(`  正在准备本机运行副本: ${RUNTIME_ROOT}`)
   prepareRuntimeCopy(nodePath)
 
-  if (flags.build) {
+  if (!useDev) {
     console.log('')
     console.log('  正在构建生产版本...')
     runWithNodePath(nodePath, 'npm', ['run', 'build'], RUNTIME_ROOT)
+  } else {
+    console.log('')
+    console.log('  当前为 dev 模式（--dev）。改代码会热更新，但和 npm run dev 不是同一个进程。')
   }
 
-  // When a production build was produced (--build), serve it in production mode;
-  // otherwise fall back to Next.js dev mode (no build required).
-  const serveEnvPrefix = flags.build ? 'NODE_ENV=production TOKENTRAIL_DB_PATH=' : 'TOKENTRAIL_DB_PATH='
-  const serveDevFlag = flags.build ? '' : ' --dev'
+  const serveEnvPrefix = useDev ? 'TOKENTRAIL_DB_PATH=' : 'NODE_ENV=production TOKENTRAIL_DB_PATH='
+  const serveDevFlag = useDev ? ' --dev' : ''
   const serverCommand = `cd ${shellQuote(RUNTIME_ROOT)} && ${serveEnvPrefix}${shellQuote(DB_PATH)} ${shellQuote(nodePath)} scripts/serve.js${serveDevFlag}`
   const syncCommand = `cd ${shellQuote(RUNTIME_ROOT)} && ${shellQuote(nodePath)} bin/tokentrail.js sync`
 
@@ -592,7 +709,7 @@ async function cmdInstallService(argv = []) {
   runLaunchctl(['kickstart', '-k', `${userLaunchctlTarget()}/${SERVER_LABEL}`])
 
   console.log('')
-  console.log('  ✓ TokenTrail 常驻服务已安装')
+  console.log(`  ✓ TokenTrail 常驻服务已安装（${useDev ? 'dev 模式' : 'production'}）`)
   console.log(`    服务: ${SERVER_PLIST}`)
   console.log(`    同步: ${SYNC_PLIST}`)
   console.log(`    运行: ${RUNTIME_ROOT}`)
@@ -669,7 +786,8 @@ function cmdHelp() {
   console.log('    daemon uninstall   uninstall-service 的别名')
   console.log('')
   console.log('  install-service 选项:')
-  console.log('    --build            构建 production 并常驻 production 模式（推荐）')
+  console.log('    --dev              跳过 production 构建，以 Next dev 模式常驻')
+  console.log('    （默认会构建 production。旧的 --build 仍然接受，效果与默认相同。）')
   console.log('')
   console.log('  report 选项:')
   console.log('    --source <名称>    数据来源（如 openclaw、hermes）')

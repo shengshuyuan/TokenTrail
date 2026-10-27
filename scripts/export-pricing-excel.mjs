@@ -1,7 +1,6 @@
 import Database from 'better-sqlite3';
 import path from 'path';
-import fs from 'fs';
-import xlsx from 'xlsx';
+import ExcelJS from 'exceljs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,24 +27,20 @@ const excelData = rows.map(row => ({
   'Reasoning Price (/1M tokens)': row.reasoning_price_per_1m,
 }));
 
-const worksheet = xlsx.utils.json_to_sheet(excelData);
-
-// Adjust column widths
-const colWidths = [
-  { wch: 15 }, // Provider
-  { wch: 25 }, // Model ID
-  { wch: 25 }, // Display Name
-  { wch: 25 }, // Input Price
-  { wch: 30 }, // Cached Input
-  { wch: 25 }, // Output Price
-  { wch: 30 }, // Reasoning Price
+const workbook = new ExcelJS.Workbook();
+const worksheet = workbook.addWorksheet('Model Pricing');
+worksheet.columns = [
+  { header: 'Provider', key: 'Provider', width: 15 },
+  { header: 'Model ID', key: 'Model ID', width: 25 },
+  { header: 'Display Name', key: 'Display Name', width: 25 },
+  { header: 'Input Price (/1M tokens)', key: 'Input Price (/1M tokens)', width: 25 },
+  { header: 'Cached Input Price (/1M tokens)', key: 'Cached Input Price (/1M tokens)', width: 30 },
+  { header: 'Output Price (/1M tokens)', key: 'Output Price (/1M tokens)', width: 25 },
+  { header: 'Reasoning Price (/1M tokens)', key: 'Reasoning Price (/1M tokens)', width: 30 },
 ];
-worksheet['!cols'] = colWidths;
-
-const workbook = xlsx.utils.book_new();
-xlsx.utils.book_append_sheet(workbook, worksheet, 'Model Pricing');
+worksheet.addRows(excelData);
 
 const outPath = path.join(__dirname, '..', 'TokenTrail_Model_Pricing.xlsx');
-xlsx.writeFile(workbook, outPath);
+await workbook.xlsx.writeFile(outPath);
 
 console.log(`✅ Excel file successfully generated at: ${outPath}`);

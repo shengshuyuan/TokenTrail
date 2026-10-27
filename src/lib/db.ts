@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
+import { invalidateStatsCache } from './stats-cache'
 
 const DB_PATH = process.env.TOKENTRAIL_DB_PATH || path.join(process.cwd(), 'data', 'token-trail.db')
 const DB_DIR = path.dirname(DB_PATH)
@@ -35,6 +36,7 @@ export function getDb(): Database.Database {
       is_internal INTEGER NOT NULL DEFAULT 0,
       is_aggregate INTEGER NOT NULL DEFAULT 0,
       cost_usd REAL NOT NULL DEFAULT 0,
+      credits REAL NOT NULL DEFAULT 0,
       request_id TEXT,
       timestamp INTEGER NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -77,6 +79,7 @@ export function getDb(): Database.Database {
   ensureUsageRecordsInternalColumn(_db)
   ensureUsageRecordsAggregateColumn(_db)
   ensureUsageRecordsEstimatedColumn(_db)
+  ensureUsageRecordsCreditsColumn(_db)
   markLegacyInternalCodexUsageRecords(_db)
   _db.exec('CREATE INDEX IF NOT EXISTS idx_usage_project ON usage_records(project);')
 
@@ -117,18 +120,15 @@ function ensureUsageRecordsEstimatedColumn(db: Database.Database) {
   if (!columns.some(column => column.name === 'estimated')) {
     db.exec('ALTER TABLE usage_records ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0;')
   }
-  // Backfill scanner-derived estimates (idempotent: runs every boot, the
-  // estimated = 0 predicate self-limits). Antigravity session rows are
-  // char-based estimates; VibeCafé aggregates (is_aggregate = 1) are the
-  // platform's own usage numbers and stay unmarked. TraeWork scan rows are
-  // char-weighted estimates (provider = 'trae'); TraeWork proxy rows carry
-  // real usage and no provider.
+  // Backfill scanner-derived estimates. Antigravity legacy session rows (antigravity-*)
+  // are char-based estimates; modern per-event rows (antigravity:*:*) manage their own
+  // estimated flag from native tokens. TraeWork scan rows are char-weighted estimates (provider = 'trae').
   db.prepare(`
     UPDATE usage_records
     SET estimated = 1
     WHERE estimated = 0
       AND (
-        (source = 'antigravity' AND is_aggregate = 0)
+        (source = 'antigravity' AND (request_id LIKE 'antigravity-%' OR request_id NOT LIKE 'antigravity:%:%') AND is_aggregate = 0)
         OR (source = 'traework' AND provider = 'trae')
       )
   `).run()
@@ -141,6 +141,18 @@ function markLegacyInternalCodexUsageRecords(db: Database.Database) {
     WHERE model = 'codex-auto-review'
       AND is_internal = 0
   `).run()
+}
+
+/**
+ * Kiro CLI bills in credits, not tokens. The credits column stores that
+ * per-turn credit usage so Kiro rows carry a meaningful quantity even though
+ * their token counts are 0. Defaults to 0 so every existing source is untouched.
+ */
+function ensureUsageRecordsCreditsColumn(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(usage_records)').all() as { name: string }[]
+  if (!columns.some(column => column.name === 'credits')) {
+    db.exec('ALTER TABLE usage_records ADD COLUMN credits REAL NOT NULL DEFAULT 0;')
+  }
 }
 
 function normalizeStoredTimestamp(value: unknown): number | null {
@@ -193,7 +205,11 @@ interface FilterParams {
   endDate: number
   sources?: string[]
   models?: string[]
+  /** 'measured' 仅实测，'estimated' 仅估算，省略表示全部 */
+  kind?: UsageKind
 }
+
+export type UsageKind = 'measured' | 'estimated'
 
 interface UsageQueryOptions {
   limit?: number
@@ -204,7 +220,54 @@ interface UsageQueryOptions {
  * 构建 WHERE 子句 + 参数。
  * @param alias 表别名（空字符串表示不使用别名，如 'u' 表示 usage_records u）
  */
-function buildWhere(alias: string, filters: FilterParams): { sql: string; params: (string | number)[] } {
+/**
+ * Milliseconds to add to a UTC timestamp so SQLite `date()` lands on the
+ * user's local calendar day. Defaults to the host timezone.
+ * Override with TOKENTRAIL_TZ_OFFSET_MINUTES (China = 480) or app_config
+ * key `timezone_offset_minutes`.
+ */
+export function localDayOffsetMs(): number {
+  const fromEnv = process.env.TOKENTRAIL_TZ_OFFSET_MINUTES
+  if (fromEnv != null && fromEnv !== '' && Number.isFinite(Number(fromEnv))) {
+    return Math.trunc(Number(fromEnv)) * 60 * 1000
+  }
+  try {
+    const row = getDb().prepare(
+      "SELECT value FROM app_config WHERE key = 'timezone_offset_minutes'"
+    ).get() as { value: string } | undefined
+    if (row?.value != null && row.value !== '' && Number.isFinite(Number(row.value))) {
+      return Math.trunc(Number(row.value)) * 60 * 1000
+    }
+  } catch {
+    // DB not ready yet — fall through to the host clock.
+  }
+  return -new Date().getTimezoneOffset() * 60 * 1000
+}
+
+/** SQL expression: local calendar day for a millisecond timestamp column. */
+export function localDayExpr(column: string): string {
+  const offset = Math.trunc(localDayOffsetMs())
+  if (!Number.isFinite(offset)) {
+    throw new Error('invalid timezone offset')
+  }
+  return `date(ROUND((${column} + ${offset}) / 1000), 'unixepoch')`
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Time window for "last N days" in the user's calendar: days=1 means today
+ * since local midnight, days=7 means today plus the previous 6 local days.
+ * Uses the same offset as localDayExpr so totals and the daily chart agree.
+ */
+export function localDayWindow(days: number, now = Date.now()): { startDate: number; endDate: number } {
+  const offset = localDayOffsetMs()
+  const startOfToday = Math.floor((now + offset) / DAY_MS) * DAY_MS - offset
+  const span = Math.max(1, Math.trunc(days))
+  return { startDate: startOfToday - (span - 1) * DAY_MS, endDate: now }
+}
+
+function buildWhere(alias: string, filters: FilterParams, options: { measuredOnly?: boolean } = {}): { sql: string; params: (string | number)[] } {
   const col = (name: string) => alias ? `${alias}.${name}` : name
   const conditions: string[] = []
   const params: (string | number)[] = []
@@ -218,6 +281,14 @@ function buildWhere(alias: string, filters: FilterParams): { sql: string; params
   // Codex auto-review and other internal rows stay in the table for audit,
   // but they are not part of usage the user spent.
   conditions.push(`${col('is_internal')} = 0`)
+
+  // Dashboard totals count measured rows only. Character estimates stay in
+  // the table and are reported separately (see getAggregatedStats).
+  if (options.measuredOnly || filters.kind === 'measured') {
+    conditions.push(`${col('estimated')} = 0`)
+  } else if (filters.kind === 'estimated') {
+    conditions.push(`${col('estimated')} = 1`)
+  }
 
   if (filters.sources && filters.sources.length > 0) {
     const placeholders = filters.sources.map(() => '?').join(',')
@@ -290,6 +361,8 @@ export function insertUsageRecord(record: {
   is_aggregate?: boolean
   estimated?: boolean
   cost_usd: number
+  /** Credit-based usage (Kiro CLI). Lets a row carry a quantity with 0 tokens. */
+  credits?: number
   request_id?: string
   timestamp: number
 }) {
@@ -303,10 +376,13 @@ export function insertUsageRecord(record: {
   const cached_input_tokens = sanitizeTokenCount(record.cached_input_tokens)
   const output_tokens = sanitizeTokenCount(record.output_tokens)
   const reasoning_tokens = sanitizeTokenCount(record.reasoning_tokens)
+  const credits = Number.isFinite(record.credits) && (record.credits as number) > 0 ? (record.credits as number) : 0
   const timestamp = Number.isFinite(record.timestamp) ? Math.trunc(record.timestamp) : Date.now()
+  const cost_usd = shouldZeroUsageCost(record.model) ? 0 : record.cost_usd
 
-  // 拒绝全部 token 为 0 的记录，避免污染统计数据
-  if (input_tokens === 0 && output_tokens === 0 && cached_input_tokens === 0 && reasoning_tokens === 0) {
+  // 拒绝全部 token 为 0 的记录，避免污染统计数据。
+  // 例外：credit 计量来源（如 Kiro CLI）本就无 token，只要带 credits 即视为有效。
+  if (input_tokens === 0 && output_tokens === 0 && cached_input_tokens === 0 && reasoning_tokens === 0 && credits === 0) {
     return { success: false, cost_usd: 0, id: 0, duplicate: false, project_backfilled: false }
   }
 
@@ -324,12 +400,13 @@ export function insertUsageRecord(record: {
   const existing = db.prepare('SELECT id, project FROM usage_records WHERE request_id = ?').get(requestId) as { id: number; project: string } | undefined
   if (existing) {
     const projectBackfilled = backfillProjectForExistingRecord(db, existing.id, existing.project, project)
+    if (projectBackfilled) invalidateStatsCache()
     return { success: true, cost_usd: 0, id: existing.id, duplicate: true, project_backfilled: projectBackfilled }
   }
 
   const stmt = db.prepare(`
-    INSERT INTO usage_records (source, provider, project, model, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens, is_internal, is_aggregate, estimated, cost_usd, request_id, timestamp)
-    VALUES (@source, @provider, @project, @model, @input_tokens, @cached_input_tokens, @output_tokens, @reasoning_tokens, @is_internal, @is_aggregate, @estimated, @cost_usd, @request_id, @timestamp)
+    INSERT INTO usage_records (source, provider, project, model, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens, is_internal, is_aggregate, estimated, cost_usd, credits, request_id, timestamp)
+    VALUES (@source, @provider, @project, @model, @input_tokens, @cached_input_tokens, @output_tokens, @reasoning_tokens, @is_internal, @is_aggregate, @estimated, @cost_usd, @credits, @request_id, @timestamp)
     ON CONFLICT(request_id) WHERE request_id IS NOT NULL DO NOTHING
   `)
 
@@ -345,7 +422,8 @@ export function insertUsageRecord(record: {
     is_internal: record.is_internal ? 1 : 0,
     is_aggregate: record.is_aggregate ? 1 : 0,
     estimated: record.estimated ? 1 : 0,
-    cost_usd: record.cost_usd,
+    cost_usd,
+    credits,
     request_id: requestId,
     timestamp,
   })
@@ -355,7 +433,8 @@ export function insertUsageRecord(record: {
     return { success: true, cost_usd: 0, id: 0, duplicate: true, project_backfilled: false }
   }
 
-  return { success: true, cost_usd: record.cost_usd, id: result.lastInsertRowid as number, duplicate: false, project_backfilled: false }
+  invalidateStatsCache()
+  return { success: true, cost_usd, id: result.lastInsertRowid as number, duplicate: false, project_backfilled: false }
 }
 
 /**
@@ -375,6 +454,8 @@ export function replaceUsageRecordByRequestId(record: {
   is_aggregate?: boolean
   estimated?: boolean
   cost_usd: number
+  /** Credit-based usage (Kiro CLI). Preserved on replace like insertUsageRecord. */
+  credits?: number
   request_id: string
   timestamp: number
 }) {
@@ -389,6 +470,7 @@ export function replaceUsageRecordByRequestId(record: {
   const cached_input_tokens = sanitizeTokenCount(record.cached_input_tokens)
   const output_tokens = sanitizeTokenCount(record.output_tokens)
   const reasoning_tokens = sanitizeTokenCount(record.reasoning_tokens)
+  const credits = Number.isFinite(record.credits) && (record.credits as number) > 0 ? (record.credits as number) : 0
   const timestamp = Number.isFinite(record.timestamp) ? Math.trunc(record.timestamp) : Date.now()
 
   db.prepare(`
@@ -405,6 +487,7 @@ export function replaceUsageRecordByRequestId(record: {
         is_aggregate = @is_aggregate,
         estimated = @estimated,
         cost_usd = @cost_usd,
+        credits = @credits,
         timestamp = @timestamp
     WHERE id = @id
   `).run({
@@ -420,11 +503,13 @@ export function replaceUsageRecordByRequestId(record: {
     is_internal: record.is_internal ? 1 : 0,
     is_aggregate: record.is_aggregate ? 1 : 0,
     estimated: record.estimated ? 1 : 0,
-    cost_usd: record.cost_usd,
+    cost_usd: shouldZeroUsageCost(record.model) ? 0 : record.cost_usd,
+    credits,
     timestamp,
   })
 
-  return { success: true, cost_usd: record.cost_usd, id: existing.id, duplicate: true, project_backfilled: false }
+  invalidateStatsCache()
+  return { success: true, cost_usd: shouldZeroUsageCost(record.model) ? 0 : record.cost_usd, id: existing.id, duplicate: true, project_backfilled: false }
 }
 
 /** Remove legacy Codex rows created before a session declared any model. */
@@ -439,6 +524,24 @@ export function removeUnknownCodexUsageRecords(): number {
  * aggregates for days absent from the local scanner so historical coverage is
  * not lost.
  */
+/**
+ * True when a non-aggregate row already covers this source, model, and local
+ * day. VibeCafé daily buckets should not be inserted in that case.
+ */
+export function hasRawUsageOnLocalDay(source: string, model: string, timestamp: number): boolean {
+  const db = getDb()
+  const row = db.prepare(`
+    SELECT 1 AS hit
+    FROM usage_records
+    WHERE is_aggregate = 0
+      AND source = ?
+      AND model = ?
+      AND ${localDayExpr('timestamp')} = ${localDayExpr('?')}
+    LIMIT 1
+  `).get(source, model, timestamp) as { hit: number } | undefined
+  return !!row
+}
+
 export function removeOverlappingAggregateUsageRecords(): number {
   const db = getDb()
   return db.prepare(`
@@ -450,8 +553,8 @@ export function removeOverlappingAggregateUsageRecords(): number {
         WHERE local_row.is_aggregate = 0
           AND local_row.source = aggregate_row.source
           AND local_row.model = aggregate_row.model
-          AND date(ROUND((local_row.timestamp + 28800000) / 1000), 'unixepoch') =
-              date(ROUND((aggregate_row.timestamp + 28800000) / 1000), 'unixepoch')
+          AND ${localDayExpr('local_row.timestamp')} =
+              ${localDayExpr('aggregate_row.timestamp')}
       )
   `).run().changes
 }
@@ -565,13 +668,19 @@ export function countUsageRecords(filters: FilterParams) {
 
 // ─── 聚合统计 ─────────────────────────────────────────────────
 
-export function getAggregatedStats(filters: FilterParams) {
+export function getAggregatedStats(allFilters: FilterParams) {
   const db = getDb()
+  // Measured/estimated split is fixed below; a caller's kind filter would
+  // otherwise zero out one side.
+  const filters: FilterParams = { ...allFilters, kind: undefined }
 
-  const base = buildWhere('', filters)
-  const joined = buildWhere('u', filters)
+  // Measured rows only. Estimated rows (Antigravity chars/3.5, TraeWork scans)
+  // are returned separately and must not inflate the headline numbers.
+  const base = buildWhere('', filters, { measuredOnly: true })
+  const joined = buildWhere('u', filters, { measuredOnly: true })
+  const estimateBase = buildWhere('', filters)
 
-  // 总体统计（涵盖所有用量记录；估算量单独统计供标识）
+  // 总体统计（仅 estimated = 0）
   const overall = db.prepare(`
     SELECT
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
@@ -618,12 +727,11 @@ export function getAggregatedStats(filters: FilterParams) {
     ORDER BY total_tokens DESC
   `).all(...base.params) as { project: string; total_tokens: number; cost_usd: number; count: number }[]
 
-  // 按日分组
-  // 注意：SQLite date() 使用 UTC 时区。对于中国时区(UTC+8)，需要加上 8 小时偏移。
-  // 使用 ROUND() 避免整数除法截断导致午夜边界记录归入前一天
+  // 按日分组。SQLite date() 是 UTC；偏移量跟随本机时区（可配置）。
+  // ROUND() 避免整数除法把午夜边界归入前一天。
   const daily = db.prepare(`
     SELECT
-      date(ROUND((timestamp + 28800000) / 1000), 'unixepoch') as date,
+      ${localDayExpr('timestamp')} as date,
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
       COALESCE(SUM(cost_usd), 0) as cost_usd,
       COUNT(*) as count
@@ -632,14 +740,43 @@ export function getAggregatedStats(filters: FilterParams) {
     ORDER BY date ASC
   `).all(...base.params) as { date: string; total_tokens: number; cost_usd: number; count: number }[]
 
-  // 估算汇总（单独统计估算部分）
+  // 估算汇总（不进入主数字）
   const estimateOnly = db.prepare(`
     SELECT
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as estimated_tokens,
       COALESCE(SUM(cost_usd), 0) as estimated_cost_usd,
       COUNT(*) as estimated_requests
-    FROM usage_records ${base.sql} AND estimated = 1
-  `).get(...base.params) as { estimated_tokens: number; estimated_cost_usd: number; estimated_requests: number }
+    FROM usage_records ${estimateBase.sql} AND estimated = 1
+  `).get(...estimateBase.params) as { estimated_tokens: number; estimated_cost_usd: number; estimated_requests: number }
+
+  const estimatedBySource = db.prepare(`
+    SELECT
+      source,
+      COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens
+    FROM usage_records ${estimateBase.sql} AND estimated = 1
+    GROUP BY source
+    ORDER BY total_tokens DESC
+  `).all(...estimateBase.params) as { source: string; total_tokens: number }[]
+
+  // Cursor model families, still measured rows only (estimated = 0).
+  const cursorModels = db.prepare(`
+    SELECT
+      model,
+      COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
+      COALESCE(SUM(cost_usd), 0) as cost_usd,
+      COUNT(*) as count
+    FROM usage_records ${base.sql} AND source = 'cursor'
+    GROUP BY model
+  `).all(...base.params) as { model: string; total_tokens: number; cost_usd: number; count: number }[]
+
+  const cursorGroups = { named: emptyGroup(), own: emptyGroup(), grok: emptyGroup() }
+  for (const row of cursorModels) {
+    const bucket = cursorModelGroup(row.model)
+    const target = cursorGroups[bucket]
+    target.total_tokens += row.total_tokens
+    target.cost_usd += row.cost_usd
+    target.count += row.count
+  }
 
   // 日均计算：用实际有数据的天数，避免新用户第一天看到被稀释的值
   const activeDays = daily.length || 1
@@ -651,6 +788,8 @@ export function getAggregatedStats(filters: FilterParams) {
     estimated_tokens: estimateOnly.estimated_tokens,
     estimated_cost_usd: estimateOnly.estimated_cost_usd,
     estimated_requests: estimateOnly.estimated_requests,
+    estimated_by_source: estimatedBySource,
+    cursor_groups: cursorGroups,
     avg_daily_tokens: Math.round(overall.total_tokens / activeDays),
     avg_daily_cost_usd: Math.round((overall.total_cost_usd / activeDays) * 100) / 100,
     by_source: bySource,
@@ -658,6 +797,18 @@ export function getAggregatedStats(filters: FilterParams) {
     by_project: byProject,
     daily,
   }
+}
+
+function emptyGroup(): { total_tokens: number; cost_usd: number; count: number } {
+  return { total_tokens: 0, cost_usd: 0, count: 0 }
+}
+
+/** auto / composer-* bill against Cursor's own pool; grok-bot-* is the included Grok subscription. */
+export function cursorModelGroup(model: string): 'own' | 'grok' | 'named' {
+  const id = model.toLowerCase()
+  if (id === 'auto' || id.startsWith('composer')) return 'own'
+  if (id.startsWith('grok-bot') || id.startsWith('cursor-grok')) return 'grok'
+  return 'named'
 }
 
 // ─── 价格查询 ─────────────────────────────────────────────────
@@ -685,13 +836,65 @@ const JUNK_AUTO_PRICING_MODELS = new Set([
   'test',
   'test-jsonl-model',
   'test-model',
+  'verify-model',
+  'unknown-codex',
 ])
 
 export function isJunkAutoPricingModel(model: string): boolean {
   const id = String(model || '').trim().toLowerCase()
   if (!id) return true
   if (JUNK_AUTO_PRICING_MODELS.has(id)) return true
-  return id === 'test' || id.startsWith('test-') || id.startsWith('test_')
+  return id === 'test' || id.startsWith('test-') || id.startsWith('test_') || id.startsWith('verify-') || id.startsWith('verify_')
+}
+
+/**
+ * Cursor 账单里的 grok-bot-*：套餐附带的 Grok Bot，只记用量、不算美元金额。
+ * （OpenRouter 也没有这些模型；账单 totalCents 只是等值参考，不是实付。）
+ */
+export function isCursorGrokBotModel(model: string): boolean {
+  return String(model || '').trim().toLowerCase().startsWith('grok-bot')
+}
+
+/** Models that must never contribute to cost_usd (junk fixtures + Cursor Grok Bot). */
+export function shouldZeroUsageCost(model: string): boolean {
+  return isJunkAutoPricingModel(model) || isCursorGrokBotModel(model)
+}
+
+/** Zero historical Cursor Grok Bot rows and wipe their list-price placeholders. */
+export function zeroCursorGrokBotCosts(): { usage: number; pricing: number } {
+  const db = getDb()
+  const usage = db.prepare(`
+    UPDATE usage_records
+    SET cost_usd = 0
+    WHERE lower(model) LIKE 'grok-bot%'
+      AND cost_usd != 0
+  `).run().changes
+  const pricing = db.prepare(`
+    UPDATE model_pricing
+    SET input_price_per_1m = 0,
+        cached_input_price_per_1m = 0,
+        output_price_per_1m = 0,
+        reasoning_price_per_1m = 0,
+        updated_at = ?
+    WHERE lower(model_id) LIKE 'grok-bot%'
+      AND (input_price_per_1m != 0 OR cached_input_price_per_1m != 0
+           OR output_price_per_1m != 0 OR reasoning_price_per_1m != 0)
+  `).run(Date.now()).changes
+  if (usage > 0 || pricing > 0) invalidateStatsCache()
+  return { usage, pricing }
+}
+
+/** Ensure placeholder / fixture / invalid model names never accrue billed costs. */
+export function zeroJunkModelUsageCosts(): number {
+  const db = getDb()
+  const ids = [...JUNK_AUTO_PRICING_MODELS]
+  const placeholders = ids.map(() => '?').join(', ')
+  return db.prepare(`
+    UPDATE usage_records
+    SET cost_usd = 0
+    WHERE (model IN (${placeholders}) OR model LIKE 'test-%' OR model LIKE 'test_%' OR model LIKE 'verify-%' OR model LIKE 'verify_%')
+      AND cost_usd != 0
+  `).run(...ids).changes
 }
 
 /** Remove fixture pricing rows and synthetic hermes test usage. */

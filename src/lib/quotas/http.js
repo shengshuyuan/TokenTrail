@@ -3,9 +3,10 @@
 // 任何日志与错误信息都不得包含凭证或响应原文。
 
 /** 抛出带错误码的异常（auth / rate_limited / timeout / network / malformed / unsupported_version）。 */
-function codedError(code, message) {
+function codedError(code, message, extra = {}) {
   const err = new Error(message || code)
   err.code = code
+  Object.assign(err, extra)
   return err
 }
 
@@ -24,6 +25,17 @@ function queryString(params) {
     .filter(([, v]) => v !== undefined && v !== null)
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
     .join('&')
+}
+
+const MAX_RETRY_AFTER_MS = 30 * 60 * 1000
+
+function parseRetryAfterMs(value, now = Date.now()) {
+  if (typeof value !== 'string' || !value.trim()) return undefined
+  const text = value.trim()
+  const seconds = Number(text)
+  const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(text) - now
+  if (!Number.isFinite(ms) || ms <= 0) return undefined
+  return Math.min(Math.ceil(ms), MAX_RETRY_AFTER_MS)
 }
 
 /**
@@ -53,7 +65,11 @@ async function requestJson(url, opts = {}) {
   }
 
   if (res.status === 401 || res.status === 403) throw codedError('auth', 'unauthorized')
-  if (res.status === 429) throw codedError('rate_limited', 'rate limited')
+  if (res.status === 429) {
+    throw codedError('rate_limited', 'rate limited', {
+      retryAfterMs: parseRetryAfterMs(res.headers?.get?.('retry-after')),
+    })
+  }
   if (res.status >= 500) throw codedError('network', 'server error')
 
   let json
@@ -102,6 +118,7 @@ function windowKindFromMinutes(minutes) {
 
 module.exports = {
   codedError,
+  parseRetryAfterMs,
   readJsonIfExists,
   queryString,
   requestJson,

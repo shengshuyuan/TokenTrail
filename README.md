@@ -106,6 +106,8 @@ The service creates a runtime copy under `~/.tokentrail/runtime/TokenTrail`, kee
 
 > Legacy commands `npm run install-service`, `npm run uninstall-service`, `npm run restart`, and `npm run doctor` still work; the `daemon-*` aliases are the recommended, more readable form.
 
+`install-service` is macOS LaunchAgent only, and it builds a production copy by default. Linux and Windows can run `npm run dev` or `npm start` in the foreground; there is no background service installer for those systems. Day-to-day development should use `npm run dev` in this project directory. The LaunchAgent serves `~/.tokentrail/runtime/TokenTrail`, so edits here do not affect it until you install again. `npm run doctor` reports when those two trees differ. Pass `--dev` only when you explicitly want the service in Next dev mode.
+
 ## Data Sources
 
 TokenTrail is self-contained. No external platform dependency.
@@ -117,6 +119,8 @@ TokenTrail is self-contained. No external platform dependency.
 | Claude Code | `~/.claude/projects/*/sessions/*.jsonl` |
 | Codex | `~/.codex/sessions/**/*.jsonl` |
 | Kimi Code | `~/.kimi-code/sessions/**/wire.jsonl` and `~/.kimi/sessions/**/wire.jsonl` |
+| ZCode | `~/.zcode/usage/*.jsonl` (incrementally exported from ZCode's local DB before each sync; run `npm run export-zcode` manually anytime) |
+| Cursor | Per-call model, tokens and billed cost from the official `cursor.com` usage events, using the local Cursor login (full history first, incremental afterwards) |
 
 ### Other tools (must integrate)
 
@@ -218,6 +222,7 @@ Open **Account Quotas** in the dashboard header. TokenTrail never fabricates rem
 | **Grok** | Visible Terminal: `grok login --oauth` | Subscription credits / monthly usage via Grok CLI OAuth | Management Key + Team ID is xAI API prepaid/billing, not the Grok web subscription |
 | **GLM** | Coding Plan token / `ANTHROPIC_AUTH_TOKEN` | Coding Plan 5h window and official MCP usage | Only a token that can call the Coding Plan monitor API works |
 | **Kimi** | Visible Terminal: `kimi login`, or a **Kimi Code** console key | Kimi Code `/coding/v1/usages` windows and booster pack | Moonshot Open Platform keys only read the open-platform wallet — do not mix the two |
+| **Cursor** | Just stay signed in to the Cursor app (reuses the session in `state.vscdb`) | Monthly API / total / on-demand usage from the official `cursor.com/api/usage-summary` | No key needed |
 
 If TokenTrail cannot open the login window, run the same official command yourself, then refresh:
 
@@ -308,7 +313,7 @@ If data looks wrong, check the raw records and sync result first. TokenTrail kee
 
 ## Tech Stack
 
-- Next.js 14, React 18, Recharts, Tailwind CSS
+- Next.js 15, React 19, Recharts, Tailwind CSS
 - SQLite via better-sqlite3
 - macOS LaunchAgent for the optional persistent service
 - Node.js CLI with no external CLI framework dependency

@@ -1,5 +1,59 @@
 # operateLog
 
+用量数据在本机 SQLite（本地数据库），不进 git。下面历史条目里出现的 `data/token-trail.db` 都是指这份本地数据库。
+
+- **[2026-10-28 00:05:00 CST]** 🟢新增
+- **影响范围**：`src/lib/kiro.js`、`src/lib/sync/sources/kiro.ts`、`src/lib/sync-checkpoint.ts`、`src/lib/db.ts`、`src/lib/quotas/providers/kiro.js`、`src/lib/quotas/{server.ts,useQuotas.ts}`、`src/app/api/quotas/{route.ts,refresh/route.ts}`、`src/app/usage/page.tsx`、`src/components/dashboard/QuotaProviderRow.tsx`、`src/lib/i18n.ts`、`src/types/index.ts`、`src/lib/format.ts`、`tests/kiro-usage.test.mjs`、`data/token-trail.db`、`~/.tokentrail/runtime/TokenTrail`
+- **变更摘要**：Kiro CLI 用量上报与额度查询：
+  1. 原始调用记录：每个 prompt turn 一条实测记录（`estimated = 0`），模型按 turn 取自 `~/.kiro/logs/*/kiro.log` 的 `q.create_response.request`（会话中途换模型不再错标；日志记为 auto 的记 `kiro-auto`）；输入 token = 服务端回报的 contextUsage 百分比 × 模型上下文窗口；输出 token Kiro 不记录，存 0、页面显示 `—`；费用 = credits × $0.04（GetUsageLimits 官方超额单价）。
+  2. 账号额度：Kiro Adapter 改为与 `/usage` 同源的 `GET management.<region>.kiro.dev/Get-Usage-Limits`，复用 Kiro CLI 登录态（过期时由 `kiro-cli chat _ get-kas-token` 续期），展示套餐名、本期已用/上限/剩余、重置时间、赠送额度，附本地今日消耗；邮箱 / userId 不入快照。
+  3. 修复：刷新接口写死 6 家导致 Kiro 单家刷新 400；设置里关闭的产品后端也不再查询（GET `?providers=`、POST `providers`）。
+  4. 只重扫 Kiro：新增按来源的扫描 epoch（`SOURCE_SCAN_EPOCH.kiro = 3`），其他来源的检查点不受影响；删除先前额外加的 Credit 计量面板与 credits 聚合。
+  5. 验收：全量 254 项测试、tsc、lint 通过；部署前备份 `~/.tokentrail/backups/token-trail-2026-10-27T15-13-25-333Z.db`；线上实测 34 条 Kiro 实测记录、额度页 KIRO PRO 已用 55%。
+- **回滚指南**：`git revert` 本次提交后 `npm run install-service`；清 Kiro 数据：`DELETE FROM usage_records WHERE source = 'kiro'`、`DELETE FROM sync_file_checkpoints WHERE source = 'kiro'`
+
+- **[2026-10-24 09:36:00 CST]** 🟡修复
+- **影响范围**：`src/lib/quotas/providers/grok.js`、`tests/quota-grok.test.mjs`、`~/.tokentrail/runtime/TokenTrail`
+- **变更摘要**：修复 Grok 账号额度查询连接报 `malformed: provider request failed` 的问题：
+  1. 根因分析：Grok CLI proxy 在周周期开始且用量为 0% 时（或 unified billing 账号无用量），后台 Protobuf 默认值序列化会自然省略 `creditUsagePercent` 字段；`mapCliCreditsWindow` 原先将缺少百分比视为 `null` 并在 `fetchCliSubscriptionQuota` 误报 `malformed: grok credits percent missing`，导致额度中心每次新周期重置后展示网络/解析失败红标。
+  2. 修复方案：在 `mapCliCreditsWindow` 中，若周周期明确存在但未返回 `creditUsagePercent`，按业务真实逻辑缺省为 `usedPercent: 0`；同时修正测试用例。
+  3. 验收与部署：全量测试 237/237 通过、lint 与 tsc 通过、构建与副本同步通过；常驻服务重启并触发 `/api/quotas/refresh` 实测 6 大服务商（Codex、Gemini、Grok、GLM、Kimi、Cursor）全量 6/6 成功，Grok 状态恢复 healthy（周用量 0%、计划 X Premium+、准确重置时间）。
+- **回滚指南**：`git checkout -- src/lib/quotas/providers/grok.js tests/quota-grok.test.mjs operateLog.md`
+
+
+- **[2026-10-09 14:45:00 CST]** 🟢优化
+- **影响范围**：`src/components/dashboard/MetricStrip.tsx`、`src/app/page.tsx`、`src/lib/sync/sources/antigravity.ts`、`src/lib/antigravity.ts`、`src/lib/db.ts`、`data/token-trail.db`
+- **变更摘要**：彻底移除「另有估算」视觉干扰，Antigravity 纯净实测上报：
+  1. 页面视觉净化：在 `MetricStrip.tsx` 移除 `另有估算` 黄色标签，在 `page.tsx` 移除 `showEstimateCaution` 提示条；总览主卡片只展示清晰整洁的实测数据（Tokens / 实测合计）。
+  2. 严格杜绝估算：在 `sources/antigravity.ts` 明确对 `event.estimated` 跳过处理，未记录物理 Token 的日志不再生成虚构估算；同步清空本地数据库中 Antigravity 历史遗留的所有 `estimated = 1` 记录。
+  3. 当前看板状态：`estimated_tokens` 降为 0，Antigravity 仅保留 2,426 条 100% 物理实测数据（334.5M Token / $42.37），页面彻底不再出现任何「另有估算（Antigravity）」提示。
+  4. 部署：测试套件 210/210 通过，全量代码已同步至运行副本并重启常驻服务。
+- **回滚指南**：`git checkout -- src/components/dashboard/MetricStrip.tsx src/app/page.tsx src/lib/sync/sources/antigravity.ts`
+
+- **[2026-10-08 12:00:00 CST]** 🟡优化
+- **影响范围**：`src/lib/db.ts`、`src/lib/sync/`、`src/lib/cursor.js`、`src/components/dashboard/MetricStrip.tsx`、`src/app/page.tsx`、`src/app/usage/page.tsx`、`src/app/connections/page.tsx`、`src/app/settings/page.tsx`、额度页文案、OpenAI 代理、`bin/tokentrail.js`、文档
+- **变更摘要**：主统计只计实测行，估算单独显示；同步按来源拆分并可单独触发；统计查询短缓存；VibeCafé 在已有明细的日期跳过汇总；Cursor 截断会在接入页提示；代理 GET 做本地校验；安装服务默认 production，doctor 对比项目目录和运行副本；按日统计跟随本机时区。
+- **回滚指南**：用 git 恢复上述文件。本地数据库不用动。
+
+- **[2026-10-07 18:50:00 CST]** 🟢新增
+- **影响范围**：`src/lib/cursor.js`（新）、`src/lib/quotas/providers/cursor.js`（新）、`src/lib/quotas/providers/index.js`、`src/lib/quotas/types.ts`、`src/lib/sync.ts`、`src/lib/i18n.ts`、`src/types/index.ts`、`src/app/api/quotas/{refresh,manual}/route.ts`、`src/app/quotas/page.tsx`、`src/app/connections/page.tsx`、`src/components/dashboard/{QuotaCenter,QuotaProviderRow,QuotaPreviewCard,QuotaManualModal,QuotaBrandIcons}.tsx`、`tests/cursor-usage.test.mjs`（新）、`README.md`、`README.zh-CN.md`、`docs/INTEGRATION.md`、`AI_readme.md`（新）、`data/token-trail.db`、`~/.tokentrail/runtime/TokenTrail`
+- **变更摘要**：接入 Cursor（用户新购 Pro 月度套餐）的用量统计与额度监控：
+  1. 用量上报：`src/lib/cursor.js` 只读打开 Cursor 的 `state.vscdb` 取登录态，调用 `cursor.com/api/dashboard/get-filtered-usage-events` 分页拉取逐次调用；`sync.ts` 新增 `syncCursor()`，首次全量、之后从最新一条明细（排除 VibeCafé 汇总）往前 6 小时增量，`request_id = cursor:<ts>:<conversationId>:<model>` 去重；费用直接用账单 `totalCents`；项目由 `~/.cursor/projects/*/agent-transcripts/<conversationId>` 推出。
+  2. 额度监控：新增 `cursor` Provider，读 `cursor.com/api/usage-summary`，展示本计费周期 API 额度（$已用/$套餐）、总额度占比、按量付费；超过一周的重置时间改为显示具体日期。
+  3. 首次导入 2466 条 Cursor 明细（等值 $279.85，其中 grok-bot-* 免费订阅调用占 $268.8）；VibeCafé 的 cursor 按天汇总被既有规则自动替换。
+  4. 部署：`npm run install-service` 重新生成运行副本（会带上工作区内所有未提交改动），全量 204 项测试、tsc、lint 通过。
+- **回滚指南**：`git checkout -- <上述已修改文件> && rm src/lib/cursor.js src/lib/quotas/providers/cursor.js tests/cursor-usage.test.mjs AI_readme.md && npm run install-service`；清数据：`DELETE FROM usage_records WHERE request_id LIKE 'cursor:%'`、`DELETE FROM quota_snapshots WHERE provider = 'cursor'`
+
+- **[2026-09-28 12:25:00 CST]** 🟢新增
+- **影响范围**：`src/lib/zcode.js`、`src/lib/sync.ts`、`src/lib/db.ts`（同步已提交修复至运行副本）、`package.json`、`tests/zcode-export.test.mjs`、`README.md`、`README.zh-CN.md`、`~/.zcode/usage/`、`data/token-trail.db`、`~/.tokentrail/runtime/TokenTrail`
+- **变更摘要**：接入 ZCode（ZCode CLI/桌面端 AI 编码代理）自身的 token 用量上报，其他来源逻辑零改动：
+  1. 新增只读导出器 `src/lib/zcode.js`：读取 ZCode 本地 SQLite（`~/.zcode/cli/db/db.sqlite` 的 `model_usage` 表），把每次模型调用的真实 usage 增量导出为标准用量 JSONL（`~/.zcode/usage/YYYY-MM-DD.jsonl`），watermark 记于 `.export-state.json`，用量文件被清空时自动全量重导；`request_id` 固定为 `zcode:<model_usage.id>`，由唯一索引兜底去重。
+  2. `sync.ts` 三处加法接入：`syncAll()` 在扫描 local-usage 前调用导出器（失败不阻断任何来源）；`LOCAL_USAGE_SOURCES` 增加 `~/.zcode/usage`；`INCLUSIVE_USAGE_SOURCES` 增加 `zcode`（ZCode 的桶为 OpenAI 式包含口径，cached ⊆ input，入库时统一互斥化）。
+  3. 数据回填：导出 65+ 条历史记录并入库（89 条，含持续增量），项目归因来自会话工作目录（TokenTrail/Wheretopress/Superdesk），provider 归为 `zai`。
+  4. 价格补齐：ZCode 上报的大写模型 ID（`GLM-5.3-Flash`/`GLM-5.3`）此前按未知模型注册为 0 价，已对齐价格表中同款小写模型现行费率并回填历史 `cost_usd`。
+  5. 部署：仅同步 `db.ts`/`sync.ts`/`sync-checkpoint.ts`/`zcode.js` 四个后端 lib 文件到运行副本并 `daemon-restart`（未触碰任何 UI 文件），实测服务端同步幂等（重扫全 duplicates，新调用自动增量入库）。
+- **回滚指南**：`git checkout -- src/lib/sync.ts package.json README.md README.zh-CN.md operateLog.md && rm src/lib/zcode.js tests/zcode-export.test.mjs`；运行副本恢复 `cp /tmp/tt-zcode-backup/*.ts ~/.tokentrail/runtime/TokenTrail/src/lib/ && rm ~/.tokentrail/runtime/TokenTrail/src/lib/{zcode.js,sync-checkpoint.ts}` 后 `npm run daemon-restart`（/tmp 备份清空后可用 git 版本重拷）；如需清除数据：`rm -rf ~/.zcode/usage` 并 `DELETE FROM usage_records WHERE request_id LIKE 'zcode:%'`
+
 - **[2026-09-15 20:55:00 CST]** 🟡修改
 - **影响范围**：`src/app/globals.css`、`src/components/layout/AppShell.tsx`、`src/components/layout/Sidebar.tsx`、`src/components/dashboard/MetricStrip.tsx`、`src/components/dashboard/SingleMetricTrendChart.tsx`、`src/components/dashboard/TimeRangeDropdown.tsx`、`src/components/dashboard/TrendChart.tsx`、`src/components/ui/SegmentedControl.tsx`、`src/components/ui/Button.tsx`、`src/components/ui/DataTable.tsx`、`src/components/dashboard/ShareCard.tsx`、`src/app/page.tsx`、`src/app/usage/page.tsx`、`src/app/quotas/page.tsx`、`src/app/connections/page.tsx`、`src/app/settings/page.tsx`、`~/.tokentrail/runtime/TokenTrail`
 - **变更摘要**：按照 Apple Human Interface Guidelines（HIG）设计系统完成 TokenTrail 全局 Glassmorphism 材质改造与产品界面契约验收：

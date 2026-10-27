@@ -3,7 +3,21 @@
 // 快照只允许包含规范化额度数据，严禁出现凭证（API Key / OAuth Token /
 // Cookie / Authorization 头）与账号隐私字段（邮箱、完整账号 ID、Team ID）。
 
-export type ProviderId = 'codex' | 'gemini' | 'grok' | 'glm' | 'kimi'
+export type ProviderId = 'codex' | 'gemini' | 'grok' | 'glm' | 'kimi' | 'cursor' | 'kiro'
+
+/** 账号额度页面支持的 provider 列表（顺序即展示顺序）。 */
+export const QUOTA_PROVIDER_IDS: ProviderId[] = ['codex', 'gemini', 'grok', 'glm', 'kimi', 'cursor', 'kiro']
+
+/** provider id → 简短展示名（供总览卡片与设置开关复用）。 */
+export const QUOTA_PROVIDER_LABELS: Record<ProviderId, string> = {
+  codex: 'Codex',
+  gemini: 'Antigravity',
+  grok: 'Grok',
+  glm: 'GLM',
+  kimi: 'Kimi',
+  cursor: 'Cursor',
+  kiro: 'Kiro CLI',
+}
 
 export type QuotaStatus =
   | 'loading'
@@ -76,6 +90,8 @@ export interface ProviderQuotaSnapshot {
   source: QuotaSource
   fetchedAt?: number
   lastSuccessAt?: number
+  lastAttemptAt?: number
+  retryAfterAt?: number
   stale: boolean
   /** 次级信息（如 MCP 用量、订阅额度不可自动读取的说明），不参与主行状态判定。 */
   notices?: string[]
@@ -89,4 +105,24 @@ export interface QuotasResponse {
   providers: ProviderQuotaSnapshot[]
   updated_at: number | null
   refreshing: boolean
+  throttled?: boolean
+  retryAfterMs?: number
+  retryAfter?: number
+  nextAllowedAt?: number
+  refresh?: {
+    succeeded?: number
+    failed?: number
+    stale?: number
+    total?: number
+    skipped?: number
+    attempted?: ProviderId[]
+    succeededProviders?: ProviderId[]
+  }
+  summary?: {
+    succeeded?: number
+    failed?: number
+    stale?: number
+    total?: number
+  }
+  error?: string
 }

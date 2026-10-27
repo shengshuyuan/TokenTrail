@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { syncAll, SyncInProgressError } from '@/lib/sync'
+import { invalidateStatsCache } from '@/lib/stats-cache'
 import { getConfig, setConfig } from '@/lib/db'
 import { ensureInit } from '@/lib/init'
 import fs from 'fs'
@@ -9,7 +10,7 @@ import { rejectUnsafeLocalMutation } from '@/lib/local-request'
 
 const SYNC_STATUS_FILE = path.join(os.homedir(), '.tokentrail', 'sync-status.json')
 
-function writeSyncStatus(success: boolean, sources: Record<string, { scanned: number; inserted: number; duplicates: number; errors: number; skipped_files: number; duration_ms: number; error?: string }>, vibecafeConfigured: boolean, error?: string) {
+function writeSyncStatus(success: boolean, sources: Record<string, { scanned: number; inserted: number; duplicates: number; errors: number; skipped_files: number; duration_ms: number; error?: string; warning?: string }>, vibecafeConfigured: boolean, error?: string) {
   try {
     const dir = path.dirname(SYNC_STATUS_FILE)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
@@ -38,7 +39,12 @@ export async function POST(request: NextRequest) {
       setConfig('vibecafe_api_key', body.vibecafe_api_key)
     }
 
-    const results = await syncAll()
+    const only = Array.isArray((body as { sources?: unknown }).sources)
+      ? (body as { sources: unknown[] }).sources.filter((item): item is string => typeof item === 'string' && item.length > 0)
+      : undefined
+
+    const results = await syncAll(only && only.length > 0 ? { only } : {})
+    invalidateStatsCache()
 
     const totalInserted = results.reduce((s, r) => s + r.inserted, 0)
     const totalDuplicates = results.reduce((s, r) => s + r.duplicates, 0)
@@ -48,7 +54,7 @@ export async function POST(request: NextRequest) {
     const vibecafeConfigured = !!getConfig('vibecafe_api_key')
 
     // Record sync status for the system status page
-    const sourcesMap: Record<string, { scanned: number; inserted: number; duplicates: number; errors: number; skipped_files: number; duration_ms: number; error?: string }> = {}
+    const sourcesMap: Record<string, { scanned: number; inserted: number; duplicates: number; errors: number; skipped_files: number; duration_ms: number; error?: string; warning?: string }> = {}
     for (const r of results) {
       sourcesMap[r.source] = {
         scanned: r.scanned,
@@ -58,6 +64,7 @@ export async function POST(request: NextRequest) {
         skipped_files: r.skipped_files,
         duration_ms: r.duration_ms,
         error: r.error,
+        warning: r.warning,
       }
     }
     writeSyncStatus(totalErrors === 0, sourcesMap, vibecafeConfigured)

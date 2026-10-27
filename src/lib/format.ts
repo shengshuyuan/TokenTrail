@@ -46,6 +46,18 @@ export function formatCost(
 }
 
 /**
+ * Format a credit quantity for display (Kiro CLI bills in credits, not tokens).
+ * Keeps two decimals under 1000, then compacts with K/M like tokens.
+ * e.g., 386.2704 → "386.27", 1234.5 → "1.23K"
+ */
+export function formatCredits(credits: number): string {
+  if (!Number.isFinite(credits)) return '—'
+  if (credits >= 1_000_000) return (credits / 1_000_000).toFixed(2) + 'M'
+  if (credits >= 1_000) return (credits / 1_000).toFixed(2) + 'K'
+  return credits.toFixed(2)
+}
+
+/**
  * Format a number with commas (固定 en-US locale)。
  * e.g., 1234567 → "1,234,567"
  */

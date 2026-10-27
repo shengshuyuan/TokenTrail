@@ -1,3 +1,18 @@
+/**
+ * Kimi Code wire.jsonl parser.
+ * Reads usage.record (current) and StatusUpdate.token_usage (legacy).
+ * Token buckets are already mutually exclusive. This file stays plain JS;
+ * the TypeScript sync source imports it through a typed require().
+ *
+ * @typedef {Object} KimiUsageRecord
+ * @property {string} model
+ * @property {number} input_tokens
+ * @property {number} cached_input_tokens
+ * @property {number} output_tokens
+ * @property {number} reasoning_tokens
+ * @property {number} timestamp
+ */
+
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')

@@ -1,4 +1,4 @@
-import { getDb, getConfig, setConfig, deleteJunkTestPricing } from './db'
+import { getDb, getConfig, setConfig, deleteJunkTestPricing, zeroCursorGrokBotCosts } from './db'
 import { calculateCost } from './pricing'
 
 /**
@@ -91,7 +91,55 @@ function deleteJunkTestPricingRows(): void {
   }
 }
 
+const CURSOR_AUTO_MODEL_MARKER = 'migration.cursor_default_to_auto_v1'
+
+/**
+ * Cursor's usage API reports Auto mode as model "default". Rename stored rows
+ * to "auto" (request_id keeps the raw name so re-syncs still dedupe) and drop
+ * the price=0 placeholder that ensureModelPricing registered for "default".
+ */
+function renameCursorDefaultModel(): void {
+  if (getConfig(CURSOR_AUTO_MODEL_MARKER)) return
+  const db = getDb()
+  const migrate = db.transaction(() => {
+    const usage = db.prepare("UPDATE usage_records SET model = 'auto' WHERE source = 'cursor' AND model = 'default'").run()
+    const pricing = db.prepare(`
+      DELETE FROM model_pricing
+      WHERE model_id = 'default'
+        AND input_price_per_1m = 0 AND cached_input_price_per_1m = 0
+        AND output_price_per_1m = 0 AND reasoning_price_per_1m = 0
+    `).run()
+    setConfig(CURSOR_AUTO_MODEL_MARKER, `${usage.changes} usage/${pricing.changes} pricing@${new Date().toISOString()}`)
+    return usage.changes
+  })
+  const renamed = migrate()
+  if (renamed > 0) console.log(`[TokenTrail] migration ${CURSOR_AUTO_MODEL_MARKER}: renamed ${renamed} cursor rows default → auto`)
+}
+
+const CURSOR_GROK_BOT_ZERO_COST_MARKER = 'migration.cursor_grok_bot_zero_cost_v1'
+
+/**
+ * Cursor Grok Bot (grok-bot-*) is an included subscription pool. Historical
+ * rows stored Cursor's list-price totalCents as cost_usd; zero those out so
+ * dashboards only count real billed spend. New writes already force $0.
+ */
+function zeroCursorGrokBotUsageCosts(): void {
+  if (getConfig(CURSOR_GROK_BOT_ZERO_COST_MARKER)) return
+  const result = zeroCursorGrokBotCosts()
+  setConfig(
+    CURSOR_GROK_BOT_ZERO_COST_MARKER,
+    `${result.usage} usage/${result.pricing} pricing@${new Date().toISOString()}`,
+  )
+  if (result.usage > 0 || result.pricing > 0) {
+    console.log(
+      `[TokenTrail] migration ${CURSOR_GROK_BOT_ZERO_COST_MARKER}: zeroed ${result.usage} usage rows, ${result.pricing} pricing rows`,
+    )
+  }
+}
+
 export function runMigrations(): void {
   normalizeInclusiveUsageRows()
   deleteJunkTestPricingRows()
+  renameCursorDefaultModel()
+  zeroCursorGrokBotUsageCosts()
 }

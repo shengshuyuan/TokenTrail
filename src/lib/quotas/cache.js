@@ -22,8 +22,9 @@ function rowsToSnapshots(rows, now) {
       const snap = JSON.parse(row.snapshot_json)
       if (!snap || typeof snap !== 'object' || typeof snap.provider !== 'string') continue
       snap.lastSuccessAt = row.last_success_at ?? snap.lastSuccessAt ?? null
+      snap.lastAttemptAt = row.fetched_at ?? snap.lastAttemptAt ?? snap.fetchedAt ?? null
       snap.lastErrorCode = row.last_error_code ?? null
-      snap.stale = isDataStale(snap.lastSuccessAt, now)
+      snap.stale = typeof snap.lastSuccessAt === 'number' && isDataStale(snap.lastSuccessAt, now)
       byProvider.set(snap.provider, snap)
     } catch {
       // malformed 行等价于无缓存
@@ -39,7 +40,7 @@ function rowsToSnapshots(rows, now) {
  */
 function withPreviousFallback(next, previous, now) {
   const fallbackEligible = new Set(['timeout', 'network', 'rate_limited', 'malformed'])
-  const hasPrevData = previous && Array.isArray(previous.windows) && previous.windows.length > 0
+  const hasPrevData = previous && (previous.windows?.length > 0 || previous.wallets?.length > 0)
   if (!next.error || !fallbackEligible.has(next.error.code) || !hasPrevData) return next
 
   return {
@@ -52,8 +53,10 @@ function withPreviousFallback(next, previous, now) {
     stale: isDataStale(previous.lastSuccessAt, now),
     notices: previous.notices,
     action: previous.action,
-    fetchedAt: now,
+    fetchedAt: previous.fetchedAt,
+    lastAttemptAt: now,
     lastSuccessAt: previous.lastSuccessAt,
+    retryAfterAt: next.retryAfterAt,
     error: next.error,
   }
 }

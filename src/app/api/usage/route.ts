@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { countUsageRecords, queryUsageRecords } from '@/lib/db'
+import { countUsageRecords, localDayWindow, queryUsageRecords, type UsageKind } from '@/lib/db'
 import { ensureInit } from '@/lib/init'
 import { InvalidQueryParameterError, parseBoundedInteger, parseFilterList } from '@/lib/api-params'
 
@@ -16,13 +16,20 @@ export async function GET(request: NextRequest) {
     const requestedPage = parseBoundedInteger(searchParams.get('page'), 1, 1, Number.MAX_SAFE_INTEGER)
     const limit = 10
 
-    const now = Date.now()
-    const startDate = now - days * 24 * 60 * 60 * 1000
+    const kindParam = searchParams.get('kind')
+    if (kindParam != null && kindParam !== '' && kindParam !== 'all' && kindParam !== 'measured' && kindParam !== 'estimated') {
+      throw new InvalidQueryParameterError('Invalid query parameter: kind')
+    }
+    const kind: UsageKind | undefined = kindParam === 'measured' || kindParam === 'estimated' ? kindParam : undefined
+
+    // Same calendar-day window as /api/stats so totals and rows match.
+    const { startDate, endDate } = localDayWindow(days)
     const filters = {
       startDate,
-      endDate: now,
+      endDate,
       sources: parseFilterList(sourceParam, 'source'),
       models: parseFilterList(modelParam, 'model'),
+      kind,
     }
 
     const total = countUsageRecords(filters)

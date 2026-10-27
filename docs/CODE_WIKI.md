@@ -1,6 +1,10 @@
 # TokenTrail Code Wiki
 
-> 更新时间：2026-09-02（0.3.0 账号额度中心）
+> **Deprecated as a user-facing source of truth.** 用户说明以 `AI_readme.md` 和 `README.zh-CN.md` 为准。本文只保留给改代码的人，而且 2026-09-02 之后没有按来源逐项更新。
+>
+> 2026-10 实际还会同步这些来源：Claude Code、Codex、Kimi Code、Grok、Cursor、Antigravity、ZCode、TraeWork、OpenClaw、Hermes、VibeCafé。扫描器在 `src/lib/sync/sources/`，编排在 `src/lib/sync/index.ts`。额度适配器另有 Cursor。
+>
+> 更新时间：2026-09-02（0.3.0 账号额度中心），2026-10-08 仅补充上面的范围说明。
 > 适用范围：当前仓库主应用、CLI、API、数据层、额度适配器与 Dashboard 前端
 > 说明：本仓库几乎没有传统意义上的“类（class）”，核心实现以 `函数 + React 组件 + Next.js Route Handler` 为主，因此本文档重点解释关键函数、组件和模块边界。
 

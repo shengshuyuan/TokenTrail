@@ -63,6 +63,10 @@ describe('normalize_inclusive_v1 migration (hermes/grok)', () => {
     insert('openclaw', 'gpt-4.1', { input: 90, cached: 337, output: 10, reason: 0 }, { request_id: 'mig-openclaw-1' })
     // fully-subsetted row (cached == input) → input becomes 0, valid
     insert('grok', 'gpt-4.1', { input: 40, cached: 40, output: 10, reason: 10 }, { request_id: 'mig-grok-2' })
+    // Cursor Auto rows stored under the API's raw "default" name
+    insert('cursor', 'default', { input: 10, output: 10 }, { request_id: 'cursor:1:conv:default' })
+    insert('codex', 'default', { input: 10, output: 10 }, { request_id: 'mig-codex-default' })
+    upsertModelPricing({ model_id: 'default', display_name: 'default', provider: 'unknown', input_price_per_1m: 0, output_price_per_1m: 0 })
 
     runMigrations()
   })
@@ -158,6 +162,25 @@ describe('normalize_inclusive_v1 migration (hermes/grok)', () => {
   })
 })
 
+describe('cursor_default_to_auto_v1 migration', () => {
+  it('renames cursor "default" rows to auto, keeps request_id, leaves other sources alone', () => {
+    const cursorRow = rowByRequestId('cursor:1:conv:default')
+    assert.equal(cursorRow.model, 'auto')
+    assert.equal(rowByRequestId('mig-codex-default').model, 'default')
+  })
+
+  it('drops the price=0 placeholder for "default"', () => {
+    assert.equal(getDb().prepare("SELECT 1 FROM model_pricing WHERE model_id = 'default'").get(), undefined)
+  })
+
+  it('counts Auto in the Cursor-own group', () => {
+    const row = rowByRequestId('cursor:1:conv:default')
+    const stats = getAggregatedStats({ startDate: row.timestamp, endDate: row.timestamp + 1 })
+    assert.equal(stats.cursor_groups.own.count, 1)
+    assert.equal(stats.cursor_groups.named.count, 0)
+  })
+})
+
 describe('estimated backfill on boot', () => {
   it('marks antigravity session rows and traework scan rows, not vc aggregates or proxy rows', () => {
     // Rows inserted after this process' first getDb() are not backfilled in
@@ -175,7 +198,11 @@ describe('estimated backfill on boot', () => {
         .all('antigravity-%', 'vc:%', 'traework:%', 'chatcmpl-xyz', 'codex:real-1')
       console.log(JSON.stringify(rows))
     `
-    const stdout = execFileSync(process.execPath, ['--input-type=module', '--eval', childScript], {
+    const stdout = execFileSync(process.execPath, [
+      '--experimental-strip-types',
+      '--import', pathToFileURL(path.resolve('tests/register-ts-resolve.mjs')).href,
+      '--input-type=module', '--eval', childScript,
+    ], {
       env: { ...process.env, TOKENTRAIL_DB_PATH: process.env.TOKENTRAIL_DB_PATH },
       encoding: 'utf8',
     })

@@ -7,7 +7,7 @@
 export type Source = string
 
 /** 已知的来源列表（用于显示名称映射和输入提示） */
-export const KNOWN_SOURCES = ['codex', 'kimi-code', 'claude-code', 'openclaw', 'hermes', 'lobster'] as const
+export const KNOWN_SOURCES = ['codex', 'kimi-code', 'claude-code', 'kiro', 'openclaw', 'hermes', 'lobster'] as const
 
 /** 用量上报请求 */
 export interface UsageReport {
@@ -38,6 +38,10 @@ export interface UsageRecord {
   request_id: string | null
   timestamp: number
   created_at: string
+  /** 1 = token 数是估算值（如 TraeWork 按字符估算），不计入汇总 */
+  estimated?: number
+  /** Credit 计量用量（Kiro CLI 按 credits 计费，无 token 时携带数量） */
+  credits?: number
 }
 
 /** 模型价格配置 */
@@ -69,6 +73,14 @@ export interface StatsResponse {
   estimated_tokens: number
   estimated_cost_usd: number
   estimated_requests: number
+  /** 估算 token 按来源拆开，供「另有估算」标签点名 */
+  estimated_by_source?: { source: string; total_tokens: number }[]
+  /** Cursor 实测用量的三类分组；其他来源不计入 */
+  cursor_groups?: {
+    named: { total_tokens: number; cost_usd: number; count: number }
+    own: { total_tokens: number; cost_usd: number; count: number }
+    grok: { total_tokens: number; cost_usd: number; count: number }
+  }
   avg_daily_tokens: number
   avg_daily_cost_usd: number
   by_source: SourceStat[]
@@ -121,11 +133,13 @@ export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   'codex-review': 'Codex Review',
   'claude-code': 'Claude Code',
   'kimi-code': 'Kimi Code',
+  'kiro': 'Kiro CLI',
   'openclaw': 'OpenClaw',
   'hermes': 'Hermes',
   'lobster': 'Lobster',
   'traework': 'TraeWork',
   'antigravity': 'Antigravity',
   'grok': 'Grok',
+  'cursor': 'Cursor',
   'vibecafe': 'VibeCafé',
 }

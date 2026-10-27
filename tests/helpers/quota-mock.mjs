@@ -74,6 +74,9 @@ export function createFakeFetch(routes = []) {
     return {
       ok: (route.status ?? 200) < 400,
       status: route.status ?? 200,
+      headers: {
+        get: (name) => route.headers?.[String(name).toLowerCase()] ?? route.headers?.[String(name)] ?? null,
+      },
       text: async () => body,
     }
   }
@@ -89,8 +92,11 @@ export function createFakeStore(initialRows = []) {
       return rows.map((r) => ({ ...r }))
     },
     async saveAll(next) {
-      rows.length = 0
-      rows.push(...next.map((r) => ({ ...r })))
+      for (const row of next) {
+        const index = rows.findIndex((existing) => existing.provider === row.provider)
+        if (index === -1) rows.push({ ...row })
+        else rows[index] = { ...row }
+      }
     },
   }
 }

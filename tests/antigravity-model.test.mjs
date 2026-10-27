@@ -143,6 +143,54 @@ describe('parseAntigravityTranscript (per-event attribution)', () => {
     assert.equal(events[1].timestamp, events[0].timestamp)
   })
 
+  it('parses native token usage from modern Antigravity CLI entries', () => {
+    const lines = [
+      userExplicit('question 1', '2026-10-04T10:00:00Z'),
+      JSON.stringify({
+        source: 'MODEL',
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: '2026-10-04T10:00:05Z',
+        input_tokens: 15200,
+        cache_read_tokens: 64000,
+        output_tokens: 420,
+        thinking: 'thought',
+      }),
+      userExplicit('question 2', '2026-10-04T10:01:00Z'),
+      JSON.stringify({
+        source: 'MODEL',
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: '2026-10-04T10:01:10Z',
+        input_tokens: 2100,
+        cache_read_tokens: 78000,
+        output_tokens: 310,
+      }),
+    ]
+    const events = parseAntigravityTranscript(lines)
+    assert.equal(events.length, 2)
+    assert.equal(events[0].estimated, false)
+    assert.equal(events[0].input_tokens, 15200)
+    assert.equal(events[0].cached_input_tokens, 64000)
+    assert.equal(events[0].output_tokens, 420)
+
+    assert.equal(events[1].estimated, false)
+    assert.equal(events[1].input_tokens, 2100)
+    assert.equal(events[1].cached_input_tokens, 78000)
+    assert.equal(events[1].output_tokens, 310)
+  })
+
+  it('marks legacy estimated entries with estimated = true', () => {
+    const lines = [
+      userExplicit('hello', '2026-09-01T10:00:00Z'),
+      modelResponse('hi', '2026-09-01T10:00:05Z'),
+    ]
+    const events = parseAntigravityTranscript(lines)
+    assert.equal(events.length, 2)
+    assert.equal(events[0].estimated, true)
+    assert.equal(events[1].estimated, true)
+  })
+
   it('returns an empty list for a transcript without usage-bearing entries', () => {
     const lines = [JSON.stringify({ source: 'TOOL', content: 'tool output' })]
     assert.deepEqual(parseAntigravityTranscript(lines), [])

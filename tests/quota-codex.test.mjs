@@ -109,6 +109,30 @@ describe('Codex quota adapter', () => {
     assert.equal(windows[1].usedPercent, undefined)
   })
 
+  it('rejects snapshots that have no readable quota numbers', async () => {
+    const officialNoNumbers = officialUsageResponse({
+      rate_limit: {
+        primary_window: { reset_at: 1_788_775_725 },
+        secondary_window: { reset_at: 1_789_357_610 },
+      },
+    })
+    const { fetchImpl } = createFakeFetch([{ match: '/backend-api/wham/usage', status: 200, json: officialNoNumbers }])
+    const official = await runAdapter('codex', fetchQuota, {
+      fs: createFakeFs({ [`${HOME}/.codex/auth.json`]: authJson() }),
+      home: HOME,
+      now: () => Date.parse('2026-09-01T12:00:00.000Z'),
+      fetchImpl,
+    })
+    assert.equal(official.status, 'unsupported_version')
+
+    const local = await runAdapter('codex', fetchQuota, {
+      fs: sessionsFs([rateLimitLine({ primary: { resets_at: 1788279327 }, secondary: { resets_at: 1788749093 } })]),
+      home: HOME,
+      now: () => Date.parse('2026-09-01T12:00:00.000Z'),
+    })
+    assert.equal(local.error.code, 'no_data')
+  })
+
   it('maps credits balance to a wallet and plan_type to plan label', () => {
     const wallet = mapCreditsToWallet({ has_credits: true, unlimited: false, balance: 12.5 })
     assert.deepEqual(wallet, { label: 'credits', balance: 12.5, currency: 'USD' })
@@ -139,8 +163,17 @@ describe('Codex quota adapter', () => {
   })
 
   it('derives provider status from the worst window (95%+ critical, 100% exhausted)', async () => {
+    const eventTime = '2026-09-01T10:00:00.000Z'
+    const providerSnap = await fetchQuota({
+      fs: sessionsFs([rateLimitLine({ primary: { used_percent: 96, window_minutes: 300, resets_at: 1788279327 } }, eventTime)]),
+      home: HOME,
+      now: () => Date.now(),
+    })
+    assert.equal(providerSnap.fetchedAt, Date.parse(eventTime))
+    assert.equal(providerSnap.lastSuccessAt, Date.parse(eventTime))
+
     const critical = await runAdapter('codex', fetchQuota, {
-      fs: sessionsFs([rateLimitLine({ primary: { used_percent: 96, window_minutes: 300, resets_at: 1788279327 } })]),
+      fs: sessionsFs([rateLimitLine({ primary: { used_percent: 96, window_minutes: 300, resets_at: 1788279327 } }, eventTime)]),
       home: HOME,
       now: () => Date.now(),
     })

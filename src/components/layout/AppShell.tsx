@@ -3,11 +3,9 @@
 import React, { useState } from 'react'
 import Link from 'next/link'
 import { Sidebar } from './Sidebar'
-import { usePreferences } from '@/lib/PreferencesContext'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const { lastSyncResult } = usePreferences()
 
   return (
     <div className="relative flex min-h-screen bg-workbench-bg text-workbench-text selection:bg-workbench-accent/15 selection:text-workbench-accent">
@@ -78,23 +76,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Main Content Area */}
       <main className="relative z-10 flex-1 w-full min-w-0 md:pt-0 pt-14 flex flex-col justify-between">
         <div className="w-full max-w-[1240px] mx-auto px-4 sm:px-8 lg:px-10 py-6 sm:py-9">
-          {/* Sync notification banner if recently triggered */}
-          {lastSyncResult && Date.now() - lastSyncResult.timestamp < 6000 && (
-            <div
-              role="alert"
-              className={`mb-6 p-3 rounded-lg border text-sm flex items-center justify-between transition-all ${
-                lastSyncResult.success
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : 'bg-red-50 border-red-200 text-red-800'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span>{lastSyncResult.success ? '✓' : '✗'}</span>
-                <span>{lastSyncResult.message}</span>
-              </div>
-            </div>
-          )}
-
           {children}
         </div>
 

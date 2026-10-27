@@ -12,9 +12,11 @@ export interface AntigravityEvent {
   entryIndex: number
   model: string
   input_tokens: number
+  cached_input_tokens?: number
   output_tokens: number
   reasoning_tokens?: number
   timestamp: number
+  estimated: boolean
 }
 
 /** 兜底模型：与历史行为一致，检测不到任何线索时使用 */
@@ -138,6 +140,21 @@ const TOOL_RESULT_TYPES = new Set([
 ])
 
 export function parseAntigravityTranscript(lines: string[]): AntigravityEvent[] {
+  // 检查当前会话日志中是否包含 Antigravity 新版 CLI 原生上报的真实 token 计量
+  let hasNativeTokens = false
+  for (const line of lines) {
+    if (!line) continue
+    try {
+      const entry = JSON.parse(line)
+      if (entry.source === 'MODEL' && typeof entry.input_tokens === 'number') {
+        hasNativeTokens = true
+        break
+      }
+    } catch {
+      // Ignore invalid JSON lines
+    }
+  }
+
   let currentModel = DEFAULT_ANTIGRAVITY_MODEL
   let sawExplicitSwitch = false
   let lastTimestamp = Date.now()
@@ -165,6 +182,26 @@ export function parseAntigravityTranscript(lines: string[]): AntigravityEvent[] 
         }
       }
 
+      if (hasNativeTokens) {
+        // ─── 真实用量模式（2026-10-03 起新版 Antigravity CLI） ───────────────
+        // 新版日志在每个 PLANNER_RESPONSE 包含物理真实 input_tokens, cache_read_tokens, output_tokens
+        if (entry.source === 'MODEL' && entry.type === 'PLANNER_RESPONSE' && typeof entry.input_tokens === 'number') {
+          events.push({
+            entryIndex,
+            model: currentModel,
+            input_tokens: entry.input_tokens,
+            cached_input_tokens: typeof entry.cache_read_tokens === 'number' ? entry.cache_read_tokens : 0,
+            output_tokens: typeof entry.output_tokens === 'number' ? entry.output_tokens : 0,
+            reasoning_tokens: 0,
+            timestamp: lastTimestamp,
+            estimated: false,
+          })
+        }
+        // 用户输入及工具输出已在模型的 prompt 上下文及 input_tokens 中反映，不产生虚构事件
+        continue
+      }
+
+      // ─── 估算兜底模式（旧版日志无 token 字段时按字符÷3.5） ──────────────────
       // 1. 工具执行结果：作为后续模型调用的 Prompt 上下文累加，自身不作为模型调用事件
       const isToolResult =
         entry.source === 'TOOL' ||
@@ -185,6 +222,7 @@ export function parseAntigravityTranscript(lines: string[]): AntigravityEvent[] 
           input_tokens: Math.max(1, Math.round(chars / 3.5)),
           output_tokens: 1,
           timestamp: lastTimestamp,
+          estimated: true,
         })
         continue
       }
@@ -213,6 +251,7 @@ export function parseAntigravityTranscript(lines: string[]): AntigravityEvent[] 
           output_tokens: outputTokens,
           reasoning_tokens: reasoningTokens,
           timestamp: lastTimestamp,
+          estimated: true,
         })
 
         runningContextChars += totalOutputChars

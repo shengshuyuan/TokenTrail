@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
  * Imports the real src/lib/local-request.ts (the module is intentionally free
  * of next/server imports so plain node --test can exercise it).
  */
-import { rejectUnsafeLocalMutation } from '../src/lib/local-request.ts'
+import { rejectUnsafeLocalMutation, rejectUnsafeProxyGet } from '../src/lib/local-request.ts'
 
 function localRequest(headers = {}) {
   return new Request('http://localhost:3820/api/quotas/config', {
@@ -91,6 +91,28 @@ describe('rejectUnsafeLocalMutation', () => {
     it('allows cross-site requests when explicitly enabled', () => {
       assert.equal(
         rejectUnsafeLocalMutation(localRequest({ origin: 'https://evil.example' })),
+        null
+      )
+    })
+
+    it('still refuses a remote proxy GET that would use the stored API key', async () => {
+      const res = rejectUnsafeProxyGet(new Request('http://127.0.0.1:3820/proxy/openai/models', {
+        method: 'GET',
+        headers: { origin: 'https://evil.example', host: '127.0.0.1:3820' },
+      }))
+      assert.equal(await statusOf(res), 403)
+    })
+
+    it('allows a remote proxy GET that brings its own Authorization', () => {
+      assert.equal(
+        rejectUnsafeProxyGet(new Request('http://127.0.0.1:3820/proxy/openai/models', {
+          method: 'GET',
+          headers: {
+            origin: 'https://evil.example',
+            host: '127.0.0.1:3820',
+            authorization: 'Bearer caller-key',
+          },
+        })),
         null
       )
     })

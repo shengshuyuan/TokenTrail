@@ -10,6 +10,12 @@ interface UserPreferences {
   theme: Theme
   showProjectNames: boolean
   exchangeRate: number
+  /**
+   * 账号额度页面要显示/查询的 provider id 列表。
+   * null = 未设置（全部显示，默认）。订阅过期的产品可在设置里取消勾选，
+   * 取消后该产品既不查询也不显示。
+   */
+  quotaVisibleProviders: string[] | null
 }
 
 interface PreferencesContextValue extends UserPreferences {
@@ -17,6 +23,7 @@ interface PreferencesContextValue extends UserPreferences {
   setTheme: (t: Theme) => void
   setShowProjectNames: (show: boolean) => void
   setExchangeRate: (rate: number) => void
+  setQuotaVisibleProviders: (ids: string[] | null) => void
   isHydrated: boolean
   syncing: boolean
   lastSyncResult: {
@@ -36,6 +43,7 @@ const defaultPreferences: UserPreferences = {
   theme: DEFAULT_THEME,
   showProjectNames: false,
   exchangeRate: USD_CNY_EXCHANGE_RATE.rate,
+  quotaVisibleProviders: null,
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null)
@@ -60,6 +68,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           exchangeRate: typeof parsed.exchangeRate === 'number' && parsed.exchangeRate > 0
             ? parsed.exchangeRate
             : USD_CNY_EXCHANGE_RATE.rate,
+          quotaVisibleProviders: Array.isArray(parsed.quotaVisibleProviders)
+            ? parsed.quotaVisibleProviders.filter((id: unknown): id is string => typeof id === 'string')
+            : null,
         })
       }
     } catch {
@@ -95,6 +106,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
 
   const setExchangeRate = useCallback((rate: number) => {
     updatePreference('exchangeRate', rate)
+  }, [updatePreference])
+
+  const setQuotaVisibleProviders = useCallback((ids: string[] | null) => {
+    updatePreference('quotaVisibleProviders', ids)
   }, [updatePreference])
 
   // Global sync trigger
@@ -141,6 +156,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
         setTheme,
         setShowProjectNames,
         setExchangeRate,
+        setQuotaVisibleProviders,
         isHydrated,
         syncing,
         lastSyncResult,

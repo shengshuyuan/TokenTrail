@@ -81,6 +81,14 @@ function mapCreditsToWallet(credits) {
   return { label: 'credits', balance, currency: 'USD' }
 }
 
+function hasWindowValue(window) {
+  return ['usedPercent', 'used', 'limit', 'remaining'].some((key) => typeof window?.[key] === 'number')
+}
+
+function hasReadableWindowValue(windows) {
+  return Array.isArray(windows) && windows.some(hasWindowValue)
+}
+
 function planLabelFromRateLimits(rateLimits) {
   const plan = rateLimits?.plan_type
   return typeof plan === 'string' && plan.trim() ? plan : undefined
@@ -197,7 +205,9 @@ async function fetchOfficialQuota(deps, session) {
   if (!rateLimits) throw codedError('unsupported_version', 'unrecognized Codex usage response')
 
   const windows = mapRateLimitsToWindows(rateLimits)
-  if (windows.length === 0) throw codedError('unsupported_version', 'Codex usage response has no windows')
+  if (windows.length === 0 || !hasReadableWindowValue(windows)) {
+    throw codedError('unsupported_version', 'Codex usage response has no readable windows')
+  }
   const wallet = mapCreditsToWallet(rateLimits.credits)
   const now = deps.now()
   const snapshot = {
@@ -222,7 +232,7 @@ function loggedInEmptySnapshot(deps, session) {
     provider: 'codex',
     product: 'subscription',
     accountLabel: session?.authMode === 'api_key' ? 'API Key' : 'ChatGPT',
-    status: 'healthy',
+    status: 'partial',
     windows: [],
     wallets: [],
     source: 'local_cli',
@@ -310,8 +320,9 @@ async function fetchQuota(deps) {
 
   const rateLimits = latest.rate_limits
   const windows = mapRateLimitsToWindows(rateLimits)
+  if (!hasReadableWindowValue(windows)) throw codedError('no_data', 'no readable quota values')
   const wallet = mapCreditsToWallet(rateLimits.credits)
-  const now = deps.now()
+  const timestamp = latest.timestamp || deps.now()
 
   const snapshot = {
     provider: 'codex',
@@ -321,8 +332,8 @@ async function fetchQuota(deps) {
     windows,
     wallets: wallet ? [wallet] : [],
     source: 'local_session',
-    fetchedAt: now,
-    lastSuccessAt: now,
+    fetchedAt: timestamp,
+    lastSuccessAt: timestamp,
     stale: false,
   }
   snapshot.status = deriveProviderStatus({ windows, fallback: 'healthy' })
@@ -336,6 +347,7 @@ module.exports = {
   extractLatestRateLimits,
   mapRateLimitsToWindows,
   mapCreditsToWallet,
+  hasReadableWindowValue,
   planLabelFromRateLimits,
   normalizeOfficialWindow,
   normalizeOfficialRateLimits,

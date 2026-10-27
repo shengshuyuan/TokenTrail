@@ -25,6 +25,7 @@ interface SyncSourceResult {
   skipped_files?: number
   duration_ms: number
   error?: string
+  warning?: string
 }
 
 interface StatusData {
@@ -43,29 +44,85 @@ interface StatusData {
 
 type GuideTab = 'quick' | 'proxy' | 'cli' | 'codex' | 'claude' | 'kimi' | 'traework'
 
+type StorageTone = 'ok' | 'warning' | 'error' | 'pending'
+
+const STORAGE_DOT_CLASS: Record<StorageTone, string> = {
+  ok: 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]',
+  warning: 'bg-amber-500',
+  error: 'bg-red-500',
+  pending: 'bg-gray-400 animate-pulse',
+}
+
+/**
+ * 把 /api/status 的结果翻译成存储状态灯：
+ * 读取失败 = 红；同步失败或数据超过 4 小时未更新 = 黄；其余 = 绿。
+ */
+function describeStorageHealth({ loading, error, data, lang }: {
+  loading: boolean
+  error: string | null
+  data: StatusData | null
+  lang: 'zh' | 'en'
+}): { tone: StorageTone; title: string; detail?: string } {
+  const zh = lang === 'zh'
+  if (error) {
+    return {
+      tone: 'error',
+      title: zh ? '无法读取本地存储状态' : 'Cannot read local storage status',
+      detail: data
+        ? (zh ? `显示的是上一次的结果（${error}）` : `showing previous result (${error})`)
+        : error,
+    }
+  }
+  if (!data) {
+    return { tone: 'pending', title: loading ? (zh ? '正在检查本地存储…' : 'Checking local storage…') : (zh ? '尚无状态数据' : 'No status yet') }
+  }
+  if (data.status === 'error') {
+    return { tone: 'error', title: zh ? '本地存储异常' : 'Local storage error' }
+  }
+  if (data.last_sync && !data.last_sync.success) {
+    return {
+      tone: 'warning',
+      title: zh ? '上次同步失败' : 'Last sync failed',
+      detail: data.last_sync.error || undefined,
+    }
+  }
+  if (data.status === 'warning') {
+    return {
+      tone: 'warning',
+      title: zh ? '本地存储可用，但数据超过 4 小时未更新' : 'Storage OK, but no new data for 4+ hours',
+    }
+  }
+  return { tone: 'ok', title: zh ? '本地数据存储正常' : 'Local Data Storage Active' }
+}
+
 export default function ConnectionsPage() {
   const { lang, t } = useLang()
-  const { syncing, triggerSync, lastSyncResult, refreshKey } = usePreferences()
+  const { syncing, triggerSync, refreshKey } = usePreferences()
 
   const [statusData, setStatusData] = useState<StatusData | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<GuideTab>('quick')
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
 
+  const [statusError, setStatusError] = useState<string | null>(null)
+
   const fetchStatus = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/status')
-      if (res.ok) {
-        const json = await res.json()
-        setStatusData(json)
-      }
-    } catch {
-      // keep previous
+      const res = await fetch('/api/status', { cache: 'no-store' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json = await res.json()
+      setStatusData(json)
+      setStatusError(null)
+    } catch (err) {
+      console.error('[TokenTrail] connections: status request failed', err)
+      setStatusError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
   }, [])
+
+  const storage = describeStorageHealth({ loading, error: statusError, data: statusData, lang })
 
   useEffect(() => {
     fetchStatus()
@@ -107,6 +164,13 @@ export default function ConnectionsPage() {
       type: 'CLI 日志',
       path: '~/.grok/logs',
       desc: '扫描 Grok CLI 历史 inference_done 事件并区分项目',
+    },
+    {
+      id: 'cursor',
+      name: 'Cursor',
+      type: '官方账单',
+      path: 'cursor.com/dashboard',
+      desc: '复用本机 Cursor 登录态，拉取官方账单里每次调用的模型、token 与真实费用',
     },
     {
       id: 'antigravity',
@@ -179,20 +243,28 @@ export default function ConnectionsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
-              <h3 className="text-base font-bold text-workbench-text">
-                {lang === 'zh' ? '本地数据存储正常' : 'Local Data Storage Active'}
-              </h3>
+              <span className={`w-2.5 h-2.5 rounded-full ${STORAGE_DOT_CLASS[storage.tone]}`} />
+              <h3 className="text-base font-bold text-workbench-text">{storage.title}</h3>
+              {statusError && (
+                <Button size="sm" variant="secondary" onClick={() => fetchStatus()}>
+                  {lang === 'zh' ? '重试' : 'Retry'}
+                </Button>
+              )}
             </div>
             <p className="text-xs text-workbench-text-muted mt-1">
-              {lang === 'zh'
-                ? `已记录 ${statusData?.records ?? 0} 条调用数据 · 本地 SQLite 引擎`
-                : `${statusData?.records ?? 0} records stored locally in SQLite`}
+              {storage.detail ? `${storage.detail} · ` : ''}
+              {statusData
+                ? lang === 'zh'
+                  ? `已记录 ${statusData.records} 条调用数据 · 本地 SQLite 引擎`
+                  : `${statusData.records} records stored locally in SQLite`
+                : ''}
             </p>
-            {statusData?.last_sync?.sources && Object.entries(statusData.last_sync.sources).some(([, item]) => item.error) && (
+            {statusData?.last_sync?.sources && Object.entries(statusData.last_sync.sources).some(([, item]) => item.error || item.warning) && (
               <ul className="mt-2 space-y-1 text-xs text-status-warning">
-                {Object.entries(statusData.last_sync.sources).filter(([, item]) => item.error).map(([source, item]) => (
-                  <li key={source}>{SOURCE_DISPLAY_NAMES[source] || source}：{item.error}</li>
+                {Object.entries(statusData.last_sync.sources).filter(([, item]) => item.error || item.warning).map(([source, item]) => (
+                  <li key={source}>
+                    {SOURCE_DISPLAY_NAMES[source] || source}：{item.error || `${t('connections.historyTruncated')} (${item.warning})`}
+                  </li>
                 ))}
               </ul>
             )}

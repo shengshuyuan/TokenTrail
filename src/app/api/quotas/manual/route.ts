@@ -7,7 +7,7 @@ import type { ProviderQuotaSnapshot, ProviderId } from '@/lib/quotas/types'
 
 export const dynamic = 'force-dynamic'
 
-const VALID_PROVIDERS: Set<string> = new Set(['codex', 'gemini', 'grok', 'glm', 'kimi'])
+const VALID_PROVIDERS: Set<string> = new Set(['codex', 'gemini', 'grok', 'glm', 'kimi', 'cursor'])
 
 /** POST /api/quotas/manual — 用户手动录入或通过提取脚本导入额度快照 */
 export async function POST(req: Request) {

@@ -1,22 +1,19 @@
 #!/usr/bin/env node
 
 /**
- * 账号额度中心 UI 验收脚本
+ * 账号额度页面 UI 验收脚本。
  *
- * 用 Playwright（系统 Chrome）驱动真实页面：
- * - 状态矩阵：全部正常 / 82% 黄色 / 95%+ 红色 / 耗尽 / 不支持 / 未登录 / 服务未运行 / 过期 / 首次加载
- * - 无障碍：role=dialog、焦点锁定、Escape、遮罩关闭、焦点归还
- * - 移动端 390px：底部抽屉、无横向溢出、触控高度
- * - 刷新：loading 保留旧数据、节流提示
+ * 用法：先启动服务（默认 http://127.0.0.1:3821），再运行：
+ *   node scripts/ui-verify-quotas.mjs
  *
- * 用法：先启动服务（默认 http://localhost:3821），再 node scripts/ui-verify-quotas.mjs
+ * 所有额度接口都由 Playwright mock，不触发真实刷新。
  */
 
 import { chromium } from 'playwright-core'
 import fs from 'node:fs'
 import path from 'node:path'
 
-const BASE_URL = process.env.QUOTA_VERIFY_URL || 'http://localhost:3821'
+const BASE_URL = process.env.QUOTA_VERIFY_URL || 'http://127.0.0.1:3821'
 const OUT_DIR = path.join(process.cwd(), 'output')
 fs.mkdirSync(OUT_DIR, { recursive: true })
 
@@ -44,223 +41,183 @@ function provider(id, status, overrides = {}) {
   }
 }
 
-function response(providers, { status = 'healthy', attention = 0, fetchedAt = Date.now() } = {}) {
+function response(providers, extra = {}) {
   return {
-    status,
-    attention_count: attention,
+    status: extra.status || 'healthy',
+    attention_count: extra.attention_count ?? providers.filter((p) => p.stale || p.error).length,
     providers,
-    updated_at: fetchedAt,
+    updated_at: extra.updated_at ?? Date.now(),
     refreshing: false,
+    ...extra,
   }
 }
+
+const OLD_SUCCESS_AT = Date.now() - 20 * 60_000
 
 const MIXED = response([
   provider('codex', 'healthy', {
     planLabel: 'plus',
-    windows: [
-      win('primary', '5h', 23, { windowMinutes: 300, resetsAt: Date.now() + 2.3 * 3600_000 }),
-      win('secondary', 'week', 25, { windowMinutes: 10080, resetsAt: Date.now() + 5.5 * 86400_000 }),
-    ],
+    windows: [win('primary', '5h', 23, { windowMinutes: 300, resetsAt: Date.now() + 3600_000 })],
     source: 'local_session',
+    lastSuccessAt: Date.now() - 90_000,
   }),
-  provider('gemini', 'unsupported', {
-    error: { code: 'unsupported', safeMessage: 'no readable quota' },
+  provider('gemini', 'stale', {
+    windows: [win('pro', 'pro', 41, { windowMinutes: 300 })],
+    source: 'official_api',
+    stale: true,
+    lastSuccessAt: OLD_SUCCESS_AT,
+    error: { code: 'timeout', safeMessage: 'provider request failed' },
   }),
-  provider('grok', 'unsupported', {
+  provider('grok', 'partial', {
     notices: ['subscription quota cannot be read automatically'],
-    action: { label: 'usage', url: 'https://grok.com/settings', kind: 'open_url' },
+    source: 'local_cli',
+    lastSuccessAt: Date.now() - 2 * 60_000,
     error: { code: 'unsupported', safeMessage: 'auto read unavailable' },
   }),
   provider('glm', 'not_configured', {
     error: { code: 'not_configured', safeMessage: 'not configured' },
   }),
-  provider('kimi', 'not_configured', {
-    error: { code: 'not_configured', safeMessage: 'not logged in or local service unavailable' },
-  }),
-])
-
-const THRESHOLDS = response([
-  provider('codex', 'exhausted', {
-    windows: [win('primary', '5h', 100, { windowMinutes: 300, resetsAt: Date.now() + 1800_000 })],
-    source: 'local_session',
-  }),
-  provider('gemini', 'critical', {
-    windows: [win('m', 'gemini-pro', 96, { resetsAt: Date.now() + 3600_000 })],
-    source: 'official_api',
-  }),
-  provider('glm', 'warning', {
-    planLabel: 'GLM Coding Pro',
-    windows: [win('tokens-5h', '5h', 82, { windowMinutes: 300, resetsAt: Date.now() + 2 * 3600_000 })],
-    notices: ['mcp|120|400|30'],
-    source: 'official_api',
-  }),
-  provider('grok', 'healthy', {
-    product: 'mixed',
-    windows: [win('monthly-postpaid', 'month', 42.5, { used: 42.5, limit: 100, unit: 'credit' })],
-    wallets: [{ label: 'prepaid', balance: 200, currency: 'USD' }],
-    source: 'official_api',
-  }),
   provider('kimi', 'healthy', {
-    windows: [win('kimi-300', '5h', 12, { used: 120, limit: 1000, windowMinutes: 300, resetsAt: Date.now() + 2 * 3600_000 })],
-    wallets: [{ label: 'extra', balance: 15, currency: 'CNY', monthlyUsed: 15, monthlyLimit: 100 }],
+    windows: [win('kimi-300', '5h', 12, { used: 120, limit: 1000, windowMinutes: 300 })],
+    source: 'manual',
+    lastSuccessAt: Date.now() - 4 * 60_000,
+  }),
+], { status: 'stale', attention_count: 3 })
+
+const REFRESH_PARTIAL = response([
+  MIXED.providers[0],
+  provider('gemini', 'healthy', {
+    windows: [win('pro', 'pro', 29, { windowMinutes: 300 })],
+    source: 'official_api',
+    lastSuccessAt: Date.now(),
+  }),
+  provider('grok', 'stale', {
     source: 'local_cli',
-  }),
-], { status: 'exhausted', attention: 3 })
-
-const STALE = response([
-  provider('codex', 'stale', {
-    windows: [win('primary', '5h', 23, { windowMinutes: 300 })],
-    source: 'local_session',
     stale: true,
-    lastSuccessAt: Date.now() - 20 * 60_000,
+    lastSuccessAt: OLD_SUCCESS_AT,
+    error: { code: 'network', safeMessage: 'provider request failed' },
   }),
-  provider('gemini', 'loading'),
-  provider('grok', 'loading'),
-  provider('glm', 'loading'),
-  provider('kimi', 'loading'),
-], { status: 'stale', attention: 1, fetchedAt: Date.now() - 20 * 60_000 })
+  MIXED.providers[3],
+  MIXED.providers[4],
+], {
+  status: 'stale',
+  attention_count: 2,
+  refresh: { succeeded: 3, failed: 1, stale: 1, total: 5 },
+})
 
-const ALL_LOADING = response(
-  ['codex', 'gemini', 'grok', 'glm', 'kimi'].map((id) => provider(id, 'loading')),
-  { status: 'not_configured', fetchedAt: null }
-)
+const THROTTLED = response(MIXED.providers, {
+  status: 'stale',
+  attention_count: 3,
+  throttled: true,
+  retryAfterMs: 12_000,
+})
 
-async function withRoute(page, payload, handler) {
-  await page.route('**/api/quotas**', (route) =>
-    route.fulfill({ json: payload })
-  )
-  try {
-    await handler()
-  } finally {
-    await page.unroute('**/api/quotas**')
-  }
-}
-
-async function openDialog(page) {
-  await page.getByRole('button', { name: /账号额度|QUOTAS/ }).click()
-  await page.waitForSelector('[role="dialog"]')
+async function routeQuotas(page) {
+  let refreshCount = 0
+  await page.route('**/api/quotas/refresh', (route) => {
+    refreshCount += 1
+    route.fulfill({ json: refreshCount === 1 ? REFRESH_PARTIAL : THROTTLED })
+  })
+  await page.route('**/api/quotas', (route) => route.fulfill({ json: MIXED }))
+  await page.route('**/api/stats**', (route) => route.fulfill({
+    json: {
+      total_tokens: 1000,
+      total_cost: 0.02,
+      request_count: 1,
+      by_source: [{ source: 'codex', total_tokens: 1000, cost_usd: 0.02, count: 1 }],
+      by_model: [{ model: 'gpt-5', total_tokens: 1000, cost_usd: 0.02, count: 1 }],
+      daily: [{ date: '2026-10-01', tokens: 1000, cost: 0.02, count: 1 }],
+      available_sources: ['codex'],
+      available_models: ['gpt-5'],
+    },
+  }))
 }
 
 async function run() {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
-  page.setDefaultTimeout(8000)
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  page.setDefaultTimeout(15000)
+  page.setDefaultNavigationTimeout(20000)
+  await routeQuotas(page)
 
-  // ─── 场景 1：混合真实状态 ─────────────────────────────────
-  await withRoute(page, MIXED, async () => {
-    await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' })
-    const trigger = page.getByRole('button', { name: /账号额度|QUOTAS/ })
-    check('顶部入口存在且带 aria-haspopup', (await trigger.getAttribute('aria-haspopup')) === 'dialog')
-    await trigger.click()
-    const dialog = page.locator('[role="dialog"]')
-    await dialog.waitFor()
-    check('弹窗 role=dialog + aria-modal', (await dialog.getAttribute('aria-modal')) === 'true')
-    check('五家 Provider 始终可见', (await dialog.locator('[data-provider]').count()) === 5)
-    check('Codex 正常绿色', await dialog.locator('[data-provider="codex"] .text-status-success').count() > 0)
-    check('Grok 显示“打开官方 Usage”入口', await dialog.getByRole('link', { name: /打开官方 Usage|Open official Usage/ }).count() === 1)
-    check('Grok 不伪造订阅数据（无进度条）', (await dialog.locator('[data-provider="grok"] [role="progressbar"]').count()) === 0)
-    check('Gemini 未配置灰色引导', (await dialog.locator('[data-provider="gemini"]').innerHTML()).includes('quota.error.gemini.unsupported') === false)
-    await page.screenshot({ path: path.join(OUT_DIR, 'quota-desktop-mixed.png') })
-    // Escape 关闭 + 焦点归还
-    await page.keyboard.press('Escape')
-    await page.waitForTimeout(150)
-    check('Escape 关闭弹窗', (await page.locator('[role="dialog"]').count()) === 0)
-    check('焦点归还到入口按钮', await trigger.evaluate((el) => el === document.activeElement))
+  await page.goto(`${BASE_URL}/quotas`, { waitUntil: 'commit' })
+  await page.locator('[data-provider="codex"]').waitFor()
+
+  const geminiText = await page.locator('[data-provider="gemini"]').innerText()
+  const grokText = await page.locator('[data-provider="grok"]').innerText()
+  const kimiText = await page.locator('[data-provider="kimi"]').innerText()
+
+  check('过期数据显示沿用旧值', geminiText.includes('可能已过期') || geminiText.includes('数据过期'))
+  check('行内显示 source', geminiText.includes('来源 官方接口'))
+  check('行内显示 lastSuccessAt', geminiText.includes('上次成功'))
+  check('行内显示错误原因', geminiText.includes('读取超时'))
+  check('partial 不显示成已连接', !grokText.includes('已连接'))
+  check('manual 来源可见', kimiText.includes('来源 手动录入'))
+
+  await page.getByRole('button', { name: /刷新额度/ }).click()
+  await page.getByText(/刷新完成：3 家成功，1 家失败，1 家沿用旧值/).waitFor()
+  check('刷新部分失败有摘要提示', await page.getByText(/刷新完成：3 家成功/).count() === 1)
+
+  await page.getByRole('button', { name: /刷新额度/ }).click()
+  await page.getByText(/约 12 秒后可再试/).waitFor()
+  check('刷新频繁显示限制剩余时间', await page.getByText(/约 12 秒后可再试/).count() === 1)
+
+  await page.getByRole('button', { name: /手动录入/ }).click()
+  await page.getByRole('button', { name: /快捷手动录入/ }).click()
+  const percentInputs = page.locator('input[type="number"]')
+  check('手动录入不预填主窗口百分比', (await percentInputs.nth(0).inputValue()) === '')
+  check('手动录入不预填周窗口百分比', (await percentInputs.nth(1).inputValue()) === '')
+  check('手动录入明确 manual 来源', (await page.locator('[data-auth-provider]').innerText()).includes('manual'))
+
+  await page.screenshot({ path: path.join(OUT_DIR, 'quota-page-refresh-states.png') })
+
+  const home = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  home.setDefaultTimeout(15000)
+  home.setDefaultNavigationTimeout(20000)
+  await routeQuotas(home)
+  await home.goto(BASE_URL, { waitUntil: 'commit' })
+  await home.getByText('账号额度（预览）').waitFor()
+  await home.getByText(/旧值/).waitFor()
+  await home.getByText(/部分可读/).waitFor()
+  const previewText = await home.locator('body').innerText()
+  check('首页预览显示沿用旧值', previewText.includes('旧值'))
+  check('首页预览 partial 不显示健康', previewText.includes('部分可读'))
+
+  const authPage = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  authPage.setDefaultTimeout(15000)
+  authPage.setDefaultNavigationTimeout(20000)
+  await routeQuotas(authPage)
+  let oauthStarts = 0
+  let verifyCalls = 0
+  let statusCalls = 0
+  await authPage.route('**/api/quotas/auth**', (route) => {
+    if (route.request().method() === 'GET') {
+      statusCalls += 1
+      return route.fulfill({ json: { provider: 'gemini', loggedIn: false, credentialUpdatedAt: 100, loginRevision: statusCalls < 2 ? 10 : 11 } })
+    }
+    const body = JSON.parse(route.request().postData() || '{}')
+    if (body.method === 'oauth') {
+      oauthStarts += 1
+      return route.fulfill({ json: { pending: true, credentialUpdatedAt: 100, loginRevision: 10, message: '已打开终端' } })
+    }
+    verifyCalls += 1
+    return route.fulfill({ status: 401, json: { error: '凭证已失效' } })
   })
-
-  // ─── 场景 2：阈值状态（黄/红/耗尽）────────────────────────
-  await withRoute(page, THRESHOLDS, async () => {
-    await openDialog(page)
-    const dialog = page.locator('[role="dialog"]')
-    await dialog.locator('[data-provider="glm"] [aria-valuenow="82"]').waitFor()
-    check('GLM 82% 黄色警告', await dialog.locator('[data-provider="glm"] .text-status-warning').count() > 0)
-    check('Gemini 96% 红色危险', await dialog.locator('[data-provider="gemini"] .text-status-danger').count() > 0)
-    check('Codex 100% 额度已用完', (await dialog.locator('[data-provider="codex"]').innerText()).includes('额度已用完'))
-    check('进度条提供 aria-valuenow', (await dialog.locator('[data-provider="glm"] [role="progressbar"]').getAttribute('aria-valuenow')) === '82')
-    check('Kimi 加油包钱包渲染', (await dialog.locator('[data-provider="kimi"]').innerText()).includes('¥15'))
-    await page.screenshot({ path: path.join(OUT_DIR, 'quota-desktop-thresholds.png') })
-
-    // 焦点锁定：Tab 循环不逃出弹窗
-    for (let i = 0; i < 25; i += 1) await page.keyboard.press('Tab')
-    const insideFocus = await dialog.evaluate((el) => el.contains(document.activeElement))
-    check('Tab 焦点锁定在弹窗内', insideFocus)
-    await page.locator('[role="dialog"]').getByRole('button', { name: /关闭额度弹窗|Close quota dialog/ }).click()
-    await page.waitForTimeout(150)
-    check('点击关闭按钮后弹窗消失', (await page.locator('[role="dialog"]').count()) === 0)
-  })
-
-  // ─── 场景 3：过期数据不伪装实时 ───────────────────────────
-  await withRoute(page, STALE, async () => {
-    await openDialog(page)
-    const dialog = page.locator('[role="dialog"]')
-    check('过期标记“可能已过期”', (await dialog.locator('[data-provider="codex"]').innerText()).includes('可能已过期'))
-    check('过期行不显示绿色正常', (await dialog.locator('[data-provider="codex"] .text-status-success').count()) === 0)
-    await page.screenshot({ path: path.join(OUT_DIR, 'quota-desktop-stale.png') })
-    await page.keyboard.press('Escape')
-  })
-
-  // ─── 场景 4：首次无缓存（骨架屏）─────────────────────────
-  await withRoute(page, ALL_LOADING, async () => {
-    await openDialog(page)
-    const dialog = page.locator('[role="dialog"]')
-    check('首次无缓存显示骨架屏', (await dialog.locator('.animate-pulse').count()) >= 5)
-    await page.screenshot({ path: path.join(OUT_DIR, 'quota-desktop-loading.png') })
-    await page.keyboard.press('Escape')
-  })
-
-  // ─── 场景 5：移动端 390px 底部抽屉 ────────────────────────
-  await withRoute(page, THRESHOLDS, async () => {
-    const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } })
-    mobile.setDefaultTimeout(8000)
-    await mobile.route('**/api/quotas**', (route) => route.fulfill({ json: THRESHOLDS }))
-    await mobile.goto(BASE_URL, { waitUntil: 'networkidle' })
-    await mobile.getByRole('button', { name: /账号额度|QUOTAS/ }).click()
-    await mobile.locator('[role="dialog"]').waitFor()
-    const dialog = mobile.locator('[role="dialog"]')
-    const overflow = await dialog.evaluate((el) => document.documentElement.scrollWidth > window.innerWidth + 1)
-    check('390px 无横向溢出', !overflow)
-    const refreshBox = await dialog.getByRole('button', { name: /刷新|REFRESH/ }).boundingBox()
-    check('移动端刷新按钮触控高度 ≥44px', (refreshBox?.height ?? 0) >= 44, `height=${refreshBox?.height}`)
-    await mobile.screenshot({ path: path.join(OUT_DIR, 'quota-mobile-thresholds.png') })
-    // 遮罩点击关闭
-    await mobile.mouse.click(10, 60)
-    await mobile.waitForTimeout(200)
-    check('移动端点击遮罩关闭', (await mobile.locator('[role="dialog"]').count()) === 0)
-    await mobile.close()
-  })
-
-  // ─── 场景 6：手动刷新（保留旧数据 + 节流提示）────────────
-  {
-    let refreshCount = 0
-    await page.route('**/api/quotas', (route) => route.fulfill({ json: MIXED }))
-    await page.route('**/api/quotas/refresh', async (route) => {
-      refreshCount += 1
-      if (refreshCount >= 2) {
-        await new Promise((r) => setTimeout(r, 400)) // 验证等待期间旧数据仍在
-      }
-      route.fulfill({ json: { ...THRESHOLDS, throttled: refreshCount >= 2 } })
-    })
-    await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' })
-    await openDialog(page)
-    const dialog = page.locator('[role="dialog"]')
-    await dialog.getByRole('button', { name: /^刷新$|^REFRESH$/ }).click()
-    await page.waitForTimeout(600)
-    check('刷新响应后更新数据', (await dialog.innerText()).includes('额度已用完'))
-    await dialog.getByRole('button', { name: /^刷新$|^REFRESH$/ }).click()
-    check('刷新等待期间保留旧数据', (await dialog.locator('[data-provider="codex"]').count()) === 1)
-    await page.waitForTimeout(700)
-    check('节流时显示提示', (await dialog.innerText()).includes('刚刚刷新过'))
-    await page.unroute('**/api/quotas**')
-    await page.unroute('**/api/quotas/refresh')
-  }
+  await authPage.goto(`${BASE_URL}/quotas`, { waitUntil: 'commit' })
+  await authPage.getByRole('button', { name: /手动录入 \/ 提取/ }).click()
+  await authPage.getByRole('button', { name: 'ANTIGRAVITY' }).click()
+  await authPage.getByRole('button', { name: '打开终端并登录 Antigravity' }).click()
+  await authPage.getByText(/凭证已失效；请检查终端登录结果/).waitFor()
+  await authPage.waitForTimeout(2500)
+  check('Antigravity 只发起一次终端登录', oauthStarts === 1)
+  check('钥匙串登录事件后只校验一次且不再启动终端', verifyCalls === 1 && statusCalls === 2)
 
   await browser.close()
-
-  console.log(failures === 0 ? '\n全部 UI 验收通过 ✓' : `\n${failures} 项验收失败 ✗`)
+  console.log(failures === 0 ? '\n额度 UI 验收通过 ✓' : `\n${failures} 项验收失败 ✗`)
   process.exit(failures === 0 ? 0 : 1)
 }
 
 run().catch((err) => {
-  console.error('验收脚本异常:', err)
+  console.error(err)
   process.exit(1)
 })

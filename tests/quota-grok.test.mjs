@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   CLI_BILLING_BASE,
+  GROK_CLI_VERSION_FALLBACK,
   OIDC_TOKEN_URL,
   subscriptionNotice,
   resolveManagementConfig,
@@ -111,6 +112,8 @@ describe('Grok quota adapter', () => {
     assert.ok(calls.every((c) => c.url.startsWith(CLI_BILLING_BASE)))
     assert.ok(calls.every((c) => c.opts.headers.Authorization === `Bearer ${CLI_TOKEN}`))
     assert.ok(calls.every((c) => c.opts.headers['X-XAI-Token-Auth'] === 'xai-grok-cli'))
+    assert.ok(calls.every((c) => c.opts.headers['x-grok-client-version'] === GROK_CLI_VERSION_FALLBACK))
+    assert.ok(calls.every((c) => c.opts.headers['User-Agent'] === `grok-shell/${GROK_CLI_VERSION_FALLBACK}`))
     const json = JSON.stringify(snap)
     assertNoSecrets(json, [CLI_TOKEN, CLI_EMAIL, CLI_TEAM, 'refresh-secret'], 'grok cli snapshot')
   })
@@ -258,8 +261,20 @@ describe('Grok quota adapter', () => {
     assert.equal(credits.usedPercent, 12.5)
     assert.equal(credits.resetsAt, Date.parse('2026-09-08T00:00:00Z'))
     assert.equal(mapCliCreditsWindow({}), null)
+    assert.equal(mapCliCreditsWindow({ nextResetTime: '2026-09-08T00:00:00Z' }), null)
     assert.equal(mapCliMonthlyWindow({ monthlyLimit: 200, used: 50 }).usedPercent, 25)
     assert.equal(mapCliMonthlyWindow({ config: { monthlyLimit: 200, used: 50 } }).usedPercent, 25)
+    assert.equal(mapCliMonthlyWindow({ config: { monthlyLimit: { val: 10000 }, used: { val: 2500 } } }).usedPercent, 25)
+    assert.equal(mapCliMonthlyWindow({ config: { monthlyLimit: { val: 0 }, used: { val: 0 } } }), null)
+    assert.equal(mapCliMonthlyWindow({ config: { monthlyLimit: { val: 0 }, used: { val: 79 } } }), null)
+    const fromProducts = mapCliCreditsWindow({
+      config: {
+        currentPeriod: { type: 'USAGE_PERIOD_TYPE_WEEKLY', end: '2026-09-08T00:00:00Z' },
+        productUsage: [{ product: 'GrokBuild', usagePercent: 1 }],
+      },
+    })
+    assert.equal(fromProducts.usedPercent, 1)
+    assert.equal(mapCliCreditsWindow({ config: { currentPeriod: { type: 'USAGE_PERIOD_TYPE_MONTHLY' }, creditUsagePercent: 10 } }), null)
   })
 
   it('prefers fresh Grok CLI OAuth subscription quota over Management API config', async () => {
@@ -279,6 +294,136 @@ describe('Grok quota adapter', () => {
     assert.equal(snap.product, 'subscription')
     assert.equal(snap.source, 'local_cli')
     assert.ok(calls.every((c) => c.url.startsWith(CLI_BILLING_BASE)))
+  })
+
+  it('reads the current unified-billing credits payload and the installed CLI version', async () => {
+    const fsMod = createFakeFs({
+      [`${HOME}/.grok/auth.json`]: grokAuthJson(),
+      [`${HOME}/.grok/version.json`]: JSON.stringify({ version: '1.0.46' }),
+      [`${HOME}/.grok/settings_cache.json`]: JSON.stringify({
+        payload: JSON.stringify({ settings: { subscription_tier_display: 'X Premium+' } }),
+      }),
+    })
+    const { fetchImpl, calls } = createFakeFetch([
+      {
+        match: '?format=credits',
+        status: 200,
+        json: {
+          config: {
+            currentPeriod: { type: 'USAGE_PERIOD_TYPE_WEEKLY', end: '2026-10-09T16:53:44.308508+00:00' },
+            creditUsagePercent: 1,
+            onDemandCap: { val: 0 },
+            onDemandUsed: { val: 0 },
+            productUsage: [{ product: 'GrokBuild', usagePercent: 1 }],
+            isUnifiedBillingUser: true,
+            prepaidBalance: { val: 0 },
+          },
+        },
+      },
+      {
+        match: /\/v1\/billing$/,
+        status: 200,
+        json: { config: { monthlyLimit: { val: 0 }, used: { val: 0 }, onDemandCap: { val: 0 } } },
+      },
+    ])
+    const snap = await runAdapter('grok', fetchQuota, {
+      env: {},
+      now: NOW,
+      home: HOME,
+      fs: fsMod,
+      fetchImpl,
+    })
+    assert.equal(snap.status, 'healthy')
+    assert.equal(snap.planLabel, 'X Premium+')
+    assert.equal(snap.windows.length, 1)
+    assert.equal(snap.windows[0].usedPercent, 1)
+    assert.equal(snap.windows[0].resetsAt, Date.parse('2026-10-09T16:53:44.308508+00:00'))
+    assert.equal(snap.wallets.length, 0)
+    assert.ok(calls.every((c) => c.opts.headers['x-grok-client-version'] === '1.0.46'))
+    assertNoSecrets(JSON.stringify(snap), [CLI_TOKEN, CLI_EMAIL, CLI_TEAM], 'unified billing snapshot')
+  })
+
+  it('treats omitted creditUsagePercent in weekly period as 0% usage', async () => {
+    const fsMod = createFakeFs({ [`${HOME}/.grok/auth.json`]: grokAuthJson() })
+    const { fetchImpl } = createFakeFetch([
+      {
+        match: '?format=credits',
+        status: 200,
+        json: {
+          config: {
+            currentPeriod: { type: 'USAGE_PERIOD_TYPE_WEEKLY', end: '2026-10-23T16:53:44.308508+00:00' },
+            isUnifiedBillingUser: true,
+          },
+        },
+      },
+      { match: /\/v1\/billing$/, status: 200, json: { config: { monthlyLimit: { val: 0 }, used: { val: 79 } } } },
+    ])
+    const snap = await runAdapter('grok', fetchQuota, {
+      env: {},
+      now: NOW,
+      home: HOME,
+      fs: fsMod,
+      fetchImpl,
+    })
+    assert.equal(snap.status, 'healthy')
+    assert.equal(snap.windows.length, 1)
+    assert.equal(snap.windows[0].usedPercent, 0)
+    assert.equal(snap.windows[0].id, 'credits')
+    assert.equal(snap.windows[0].resetsAt, Date.parse('2026-10-23T16:53:44.308508+00:00'))
+  })
+
+  it('retries Grok credits when currentPeriod is initially missing for unified billing', async () => {
+    const fsMod = createFakeFs({ [`${HOME}/.grok/auth.json`]: grokAuthJson() })
+    let creditsCalls = 0
+    const fetchImpl = async (url) => {
+      const target = String(url)
+      const weekly = {
+        currentPeriod: { type: 'USAGE_PERIOD_TYPE_WEEKLY', end: '2026-10-23T16:53:44.308508+00:00' },
+        isUnifiedBillingUser: true,
+      }
+      const json = target.includes('format=credits')
+        ? { config: creditsCalls++ === 0 ? { isUnifiedBillingUser: true } : weekly }
+        : { config: { monthlyLimit: { val: 0 }, used: { val: 79 } } }
+      return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify(json) }
+    }
+    const snap = await runAdapter('grok', fetchQuota, {
+      env: {},
+      now: NOW,
+      home: HOME,
+      fs: fsMod,
+      fetchImpl,
+    })
+    assert.equal(creditsCalls, 2)
+    assert.equal(snap.status, 'healthy')
+    assert.equal(snap.windows.length, 1)
+    assert.equal(snap.windows[0].usedPercent, 0)
+    assert.equal(snap.windows[0].id, 'credits')
+  })
+
+  it('keeps a missing weekly period for unified billing as a retryable read error', async () => {
+    const fsMod = createFakeFs({ [`${HOME}/.grok/auth.json`]: grokAuthJson() })
+    const { fetchImpl } = createFakeFetch([
+      {
+        match: '?format=credits',
+        status: 200,
+        json: {
+          config: {
+            isUnifiedBillingUser: true,
+          },
+        },
+      },
+      { match: /\/v1\/billing$/, status: 200, json: { config: { monthlyLimit: { val: 0 }, used: { val: 79 } } } },
+    ])
+    const snap = await runAdapter('grok', fetchQuota, {
+      env: {},
+      now: NOW,
+      home: HOME,
+      fs: fsMod,
+      fetchImpl,
+    })
+    assert.equal(snap.status, 'network_error')
+    assert.equal(snap.error.code, 'malformed')
+    assert.equal(snap.windows.length, 0)
   })
 
   it('maps unrecognized Grok CLI billing structure to unsupported_version', async () => {
@@ -318,11 +463,18 @@ describe('Grok quota adapter', () => {
   })
 
   it('maps 429 and timeouts to keep-old-data errors', async () => {
-    const { fetchImpl: limitedFetch } = createFakeFetch(billingRoutes({ balance: { status: 429, json: {} } }))
+    const { fetchImpl: limitedFetch } = createFakeFetch(billingRoutes({ balance: { status: 429, headers: { 'retry-after': '90' }, json: {} } }))
+    await assert.rejects(fetchQuota({ env: CONFIGURED_ENV, now: NOW, fetchImpl: limitedFetch }), (err) => {
+      assert.equal(err.code, 'rate_limited')
+      assert.equal(err.retryAfterMs, 90_000)
+      return true
+    })
+
+    const { fetchImpl: limitedRunAdapterFetch } = createFakeFetch(billingRoutes({ balance: { status: 429, json: {} } }))
     const limited = await runAdapter('grok', fetchQuota, {
       env: CONFIGURED_ENV,
       now: NOW,
-      fetchImpl: limitedFetch,
+      fetchImpl: limitedRunAdapterFetch,
     })
     assert.equal(limited.error.code, 'rate_limited')
 

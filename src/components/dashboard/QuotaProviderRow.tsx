@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import type { ProviderQuotaSnapshot, QuotaStatus, QuotaWindow, ProviderId } from '@/lib/quotas/types'
+import type { ProviderQuotaSnapshot, QuotaWindow, ProviderId } from '@/lib/quotas/types'
 import { useLang } from '@/lib/LanguageContext'
 import { t as translate, type Lang } from '@/lib/i18n'
 import { ProviderBrandIcon } from './QuotaBrandIcons'
@@ -14,6 +14,8 @@ const PROVIDER_NAMES: Record<string, { zh: string; en: string }> = {
   grok: { zh: 'Grok', en: 'Grok' },
   glm: { zh: 'GLM', en: 'GLM' },
   kimi: { zh: 'Kimi', en: 'Kimi' },
+  cursor: { zh: 'Cursor', en: 'Cursor' },
+  kiro: { zh: 'Kiro CLI', en: 'Kiro CLI' },
 }
 
 const DEFAULT_ACCOUNTS: Record<string, { zh: string; en: string }> = {
@@ -22,6 +24,8 @@ const DEFAULT_ACCOUNTS: Record<string, { zh: string; en: string }> = {
   grok: { zh: 'X Premium+', en: 'X Premium+' },
   glm: { zh: 'GLM 订阅', en: 'GLM Subscription' },
   kimi: { zh: 'Kimi 账号', en: 'Kimi Account' },
+  cursor: { zh: 'Cursor 账号', en: 'Cursor Account' },
+  kiro: { zh: 'Kiro 账号', en: 'Kiro Account' },
 }
 
 // ─── 时间格式化 ──────────────────────────────────────────────
@@ -31,6 +35,15 @@ const WEEKDAYS_ZH = ['周日', '周一', '周二', '周三', '周四', '周五',
 function formatClock(ts: number): string {
   const d = new Date(ts)
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function formatTime(ts: number | undefined, lang: Lang): string {
+  if (!ts) return translate('quota.time.none', lang)
+  const d = new Date(ts)
+  const date = lang === 'zh'
+    ? `${d.getMonth() + 1}/${d.getDate()}`
+    : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return `${date} ${formatClock(ts)}`
 }
 
 function formatReset(resetsAt: number | undefined, now: number, lang: Lang): string | null {
@@ -51,8 +64,15 @@ function formatReset(resetsAt: number | undefined, now: number, lang: Lang): str
     return translate('quota.resetIn', lang, { d })
   }
   const date = new Date(resetsAt)
-  const weekday = lang === 'zh' ? WEEKDAYS_ZH[date.getDay()] : date.toLocaleDateString('en-US', { weekday: 'short' })
-  return translate('quota.resetAt', lang, { d: weekday, time: formatClock(resetsAt) })
+  // 超过一周（如 Cursor 的月度计费周期）只写星期几会有歧义，改为具体日期
+  const day = diff >= 7 * 86400_000
+    ? lang === 'zh'
+      ? `${date.getMonth() + 1}/${date.getDate()}`
+      : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : lang === 'zh'
+      ? WEEKDAYS_ZH[date.getDay()]
+      : date.toLocaleDateString('en-US', { weekday: 'short' })
+  return translate('quota.resetAt', lang, { d: day, time: formatClock(resetsAt) })
 }
 
 // ─── 窗口标签友好化 ──────────────────────────────────────────
@@ -60,6 +80,18 @@ function formatReset(resetsAt: number | undefined, now: number, lang: Lang): str
 function windowLabel(win: QuotaWindow, lang: Lang): string {
   const rawId = (win.id || '').toLowerCase()
   const rawLabel = (win.label || '').toLowerCase()
+
+  // Kiro CLI credits 窗口
+  if (rawId === 'kiro-credit') return lang === 'zh' ? '本期 Credits' : 'Credits'
+  if (rawId.startsWith('kiro-credit-trial')) return lang === 'zh' ? '新手赠送' : 'Welcome bonus'
+  if (rawId.startsWith('kiro-credit-bonus')) return win.label || (lang === 'zh' ? '赠送额度' : 'Bonus')
+  if (rawId === 'kiro-today') return lang === 'zh' ? '今日消耗' : 'Today'
+
+  // Cursor 月度计费周期
+  if (rawId === 'cursor-api') return translate('quota.window.cursorApi', lang)
+  if (rawId === 'cursor-auto') return translate('quota.window.cursorAuto', lang)
+  if (rawId === 'cursor-total') return translate('quota.window.cursorTotal', lang)
+  if (rawId === 'cursor-on-demand') return translate('quota.window.cursorOnDemand', lang)
 
   // Antigravity (Gemini Models & Claude/GPT Models)
   if (rawId.startsWith('gemini-models-') || rawLabel.startsWith('gemini models')) {
@@ -112,17 +144,28 @@ function percentColor(percent: number | undefined): { bar: string; text: string 
 }
 
 function formatAmount(amount: number, currency: string): string {
+  if (currency === 'credits' || currency === 'credit') {
+    const abs = Math.abs(amount)
+    const text = abs >= 100 ? abs.toFixed(0) : abs.toFixed(2)
+    return `${amount < 0 ? '-' : ''}${text} cr`
+  }
   const symbol = currency === 'USD' ? '$' : currency === 'CNY' ? '¥' : `${currency} `
   const abs = Math.abs(amount)
   const text = abs >= 100 ? abs.toFixed(0) : abs.toFixed(2)
   return `${amount < 0 ? '-' : ''}${symbol}${text}`
 }
 
+function errorText(snapshot: ProviderQuotaSnapshot, lang: Lang): string | null {
+  const code = snapshot.error?.code
+  if (!code) return null
+  return translate(`quota.error.${code}` as never, lang)
+}
+
 // ─── 组件 ────────────────────────────────────────────────────
 
 interface QuotaProviderRowProps {
   snapshot: ProviderQuotaSnapshot
-  onRetry?: () => void
+  onRetry?: (provider: ProviderId) => void
   onManualClick?: (provider: ProviderId) => void
 }
 
@@ -153,6 +196,12 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
   const isGeminiLoggedInNoQuota = provider === 'gemini' && snapshot.status === 'unsupported' && snapshot.windows.length === 0
 
   const hasWindows = snapshot.windows.length > 0
+  const canRetry = Boolean(onRetry && (snapshot.error || snapshot.stale || snapshot.action?.kind === 'retry'))
+  const metaItems = [
+    t('quota.meta.source', { source: translate(`quota.source.${snapshot.source}` as never, lang) }),
+    t('quota.meta.lastSuccess', { time: formatTime(snapshot.lastSuccessAt, lang) }),
+  ]
+  const err = errorText(snapshot, lang)
 
   return (
     <div
@@ -233,7 +282,7 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
             <button
               type="button"
               onClick={() => onManualClick && onManualClick(provider)}
-              title="已连接 · 点击配置"
+              title={t('quota.action.connectedTitle')}
               className="inline-flex items-center gap-1.5 rounded-full border border-status-success/30 bg-status-success/10 px-2.5 py-0.5 text-xs font-mono text-status-success hover:border-status-success/60 transition-colors w-fit"
             >
               <span className="size-1.5 rounded-full bg-status-success" />
@@ -253,7 +302,7 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
             <button
               type="button"
               onClick={() => onManualClick && onManualClick(provider)}
-              title="已通过 Grok CLI 登录 · 点击重新授权或配置"
+              title={t('quota.action.grokReauthTitle')}
               className="inline-flex items-center gap-1.5 rounded-full border border-status-success/30 bg-status-success/10 px-2.5 py-0.5 text-[11px] font-mono text-status-success hover:border-status-success/60 transition-colors w-fit"
             >
               <span className="size-1.5 rounded-full bg-status-success" />
@@ -275,7 +324,7 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
               className="inline-flex items-center gap-1.5 rounded-full border border-status-danger/30 bg-status-danger/10 px-2.5 py-0.5 text-xs font-mono text-status-danger hover:border-status-danger/60 transition-colors w-fit"
             >
               <span className="size-1.5 rounded-full bg-status-danger" />
-              {t('quota.status.auth_error')} · 重新授权
+              {t('quota.status.auth_error')} · {t('quota.action.reauth')}
             </button>
           ) : snapshot.status === 'not_configured' ? (
             <button
@@ -284,7 +333,7 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
               className="inline-flex items-center gap-1.5 rounded-full border border-eva-purple/40 bg-eva-purple/10 px-2.5 py-0.5 text-xs font-mono text-eva-purple hover:bg-eva-purple/20 transition-colors w-fit"
             >
               <span className="size-1.5 rounded-full bg-eva-purple" />
-              发起授权 / 连接
+              {t('quota.action.connect')}
             </button>
           ) : (
             <button
@@ -302,6 +351,28 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
               {t('quota.staleNote', { time: formatClock(snapshot.lastSuccessAt) })}
             </span>
           )}
+          <span className="text-[10px] font-mono leading-snug text-eva-text-dim">
+            {metaItems.join(' · ')}
+          </span>
+          {err && (
+            <span className="text-[10px] font-mono leading-snug text-status-warning">
+              {t('quota.meta.error', { error: err })}
+            </span>
+          )}
+          {snapshot.retryAfterAt && snapshot.retryAfterAt > now && (
+            <span className="text-[10px] font-mono leading-snug text-status-warning">
+              {t('quota.meta.retryAt', { time: formatTime(snapshot.retryAfterAt, lang) })}
+            </span>
+          )}
+          {canRetry && (
+            <button
+              type="button"
+              onClick={() => onRetry?.(provider)}
+              className="inline-flex w-fit items-center gap-1 rounded border border-eva-border/70 px-2 py-1 text-[10px] font-mono text-eva-text-dim hover:border-eva-purple/60 hover:text-eva-text"
+            >
+              {t('quota.action.retryRefresh')}
+            </button>
+          )}
         </div>
 
         {/* Column 4: 额度使用 / 操作 (Quota Usage / Action) */}
@@ -314,23 +385,28 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
                 const colors = percentColor(percent)
                 const clamped = typeof percent === 'number' ? Math.max(2, Math.min(100, percent)) : 0
 
+                const displayPercent = typeof percent === 'number' ? Math.round(percent) : undefined
+
                 return (
-                  <div key={win.id} className="flex items-center gap-3 text-xs">
+                  <div
+                    key={win.id}
+                    className="grid grid-cols-[minmax(5.5rem,7.5rem)_minmax(3rem,1fr)_4.75rem_minmax(6.5rem,8.5rem)] items-center gap-x-2 text-xs"
+                  >
                     {/* 窗口名称 */}
-                    <span className="w-20 sm:w-28 shrink-0 font-medium text-eva-text-dim truncate" title={windowLabel(win, lang)}>
+                    <span className="truncate font-medium text-eva-text-dim" title={windowLabel(win, lang)}>
                       {windowLabel(win, lang)}
                     </span>
 
                     {/* 进度条 */}
-                    {typeof percent === 'number' ? (
+                    {typeof displayPercent === 'number' ? (
                       <>
                         <div
                           role="progressbar"
                           aria-label={`${name} ${windowLabel(win, lang)}`}
-                          aria-valuenow={Math.round(clamped)}
+                          aria-valuenow={displayPercent}
                           aria-valuemin={0}
                           aria-valuemax={100}
-                          className="h-1.5 flex-1 min-w-[60px] overflow-hidden rounded-full bg-eva-border/60"
+                          className="h-1.5 min-w-[3rem] overflow-hidden rounded-full bg-eva-border/60"
                         >
                           <div
                             className={`h-full rounded-full transition-all duration-300 ${colors.bar}`}
@@ -338,22 +414,26 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
                           />
                         </div>
 
-                        {/* 百分比 */}
-                        <span className={`w-16 shrink-0 font-mono text-right font-medium ${colors.text}`}>
-                          {t('quota.used', { p: Math.round(percent * 10) / 10 })}
+                        {/* 百分比：整数、单行，避免「27.2% / 已用」折行 */}
+                        <span className={`whitespace-nowrap text-right font-mono font-medium tabular-nums ${colors.text}`}>
+                          {t('quota.used', { p: displayPercent })}
                         </span>
                       </>
                     ) : typeof win.used === 'number' && typeof win.limit === 'number' ? (
-                      <span className="flex-1 font-mono text-eva-text text-xs">
+                      <span className="col-span-2 font-mono text-eva-text text-xs whitespace-nowrap">
                         {t('quota.rawUsage', { used: win.used, limit: win.limit })}
                       </span>
+                    ) : win.unit === 'credit' && typeof win.used === 'number' ? (
+                      <span className="col-span-2 font-mono text-eva-text text-xs whitespace-nowrap">
+                        {t('quota.creditsUsed', { used: win.used })}
+                      </span>
                     ) : (
-                      <span className="flex-1 font-mono text-eva-text-dim text-xs">{t('quota.noLimit')}</span>
+                      <span className="col-span-2 font-mono text-eva-text-dim text-xs">{t('quota.noLimit')}</span>
                     )}
 
                     {/* 重置倒计时 */}
                     {reset && (
-                      <span className="w-28 sm:w-36 shrink-0 font-mono text-right text-[11px] text-eva-text-dim truncate">
+                      <span className="whitespace-nowrap text-right font-mono text-[11px] text-eva-text-dim">
                         {reset}
                       </span>
                     )}
@@ -385,16 +465,16 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-3">
                     <path d="M12 5v14M5 12h14" />
                   </svg>
-                  发起授权 / 配置
+                  {t('quota.action.configure')}
                 </button>
               )}
               {snapshot.action?.kind === 'retry' && onRetry && (
                 <button
                   type="button"
-                  onClick={onRetry}
+                  onClick={() => onRetry(provider)}
                   className="pressable control-surface inline-flex items-center px-3 py-1.5 text-xs font-mono"
                 >
-                  {t('quota.action.retry')}
+                  {t('quota.action.retryRefresh')}
                 </button>
               )}
             </div>

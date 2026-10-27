@@ -55,6 +55,33 @@ export function rejectUnsafeLocalMutation(request: Request): Response | null {
   )
 }
 
+/**
+ * Every proxy call (GET or POST) can forward the locally stored API key.
+ * Apply the same origin check as mutations. When remote access is explicitly
+ * enabled, refuse to attach that stored key: the caller must send its own
+ * `Authorization: Bearer ...`.
+ */
+export function rejectUnsafeProxyRequest(request: Request): Response | null {
+  const rejected = rejectUnsafeLocalMutation(request)
+  if (rejected) return rejected
+
+  const auth = request.headers.get('authorization')
+  if (process.env.TOKENTRAIL_ALLOW_REMOTE === '1' && !auth?.startsWith('Bearer ')) {
+    return jsonResponse(
+      {
+        success: false,
+        error: 'Remote proxy calls cannot use the locally stored API key. Send your own Authorization header.',
+      },
+      403,
+    )
+  }
+
+  return null
+}
+
+/** @deprecated use rejectUnsafeProxyRequest; kept for existing callers. */
+export const rejectUnsafeProxyGet = rejectUnsafeProxyRequest
+
 function jsonResponse(body: object, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,

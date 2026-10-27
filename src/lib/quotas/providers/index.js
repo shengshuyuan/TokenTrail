@@ -1,5 +1,5 @@
 // ─── 账号额度中心 · Adapter 注册 ─────────────────────────────
-// 汇总五个 Provider 的真实依赖（fs/home/env/fetch/now）。
+// 汇总六个 Provider 的真实依赖（fs/home/env/fetch/now）。
 // 服务端专用：凭证只在这里出现，且只存在于内存。
 
 const codex = require('./codex.js')
@@ -7,6 +7,8 @@ const gemini = require('./gemini.js')
 const grok = require('./grok.js')
 const glm = require('./glm.js')
 const kimi = require('./kimi.js')
+const cursor = require('./cursor.js')
+const kiro = require('./kiro.js')
 
 const fs = require('fs')
 
@@ -32,6 +34,8 @@ function createAdapters(overrides = {}) {
       grok: grok.fetchQuota,
       glm: glm.fetchQuota,
       kimi: kimi.fetchQuota,
+      cursor: cursor.fetchQuota,
+      kiro: kiro.fetchQuota,
     },
   }
 }

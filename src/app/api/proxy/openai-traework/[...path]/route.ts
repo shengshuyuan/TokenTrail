@@ -3,7 +3,7 @@ import { insertUsageRecord, getConfig } from '@/lib/db'
 import { calculateCost } from '@/lib/pricing'
 import { ensureInit } from '@/lib/init'
 import { SseUsageTracker, normalizeOpenAIUsage } from '@/lib/proxy-usage'
-import { rejectUnsafeLocalMutation } from '@/lib/local-request'
+import { rejectUnsafeProxyRequest } from '@/lib/local-request'
 
 const DEFAULT_UPSTREAM = 'https://api.openai.com/v1'
 
@@ -64,14 +64,14 @@ function recordUsage(opts: {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { path: string[] } | Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   return handleRequest(request, await params)
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { path: string[] } | Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   return handleRequest(request, await params)
 }
@@ -80,10 +80,8 @@ async function handleRequest(
   request: NextRequest,
   { path }: { path: string[] }
 ) {
-  if (request.method !== 'GET') {
-    const rejected = rejectUnsafeLocalMutation(request)
-    if (rejected) return rejected
-  }
+  const rejected = rejectUnsafeProxyRequest(request)
+  if (rejected) return rejected
 
   const upstream = getUpstreamUrl()
   const targetPath = path.join('/')

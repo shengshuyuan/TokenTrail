@@ -13,7 +13,7 @@ import {
 } from '../src/lib/quotas/providers/gemini.js'
 import { runAdapter } from '../src/lib/quotas/refresh.js'
 import { resolveCliBinary } from '../src/lib/quotas/cli-login.js'
-import { createFakeFs } from './helpers/quota-mock.mjs'
+import { createFakeFetch, createFakeFs } from './helpers/quota-mock.mjs'
 
 const HOME = '/home/test'
 const NOW = () => Date.parse('2026-09-01T12:00:00.000Z')
@@ -34,7 +34,7 @@ function loggedInFs(extra = {}) {
       token: {
         access_token: 'ya29.fresh',
         refresh_token: '1//refresh',
-        expiry: '2026-09-01T18:00:00+08:00',
+        expiry: '2026-09-02T18:00:00+08:00',
         token_type: 'Bearer',
       },
       auth_method: 'consumer',
@@ -107,11 +107,28 @@ describe('Gemini quota via Antigravity CLI', () => {
       fs: createFakeFs({ [AGY_BIN]: '#!/bin/sh' }),
       home: HOME,
       now: NOW,
-      execFileImpl: async () => {
-        throw new Error('must not spawn agy')
-      },
+      execFileImpl: execFileFor({ '/usage': { stdout: '', stderr: 'Print mode: silent auth failed' } }),
     })
     assert.equal(snap.status, 'not_configured')
+  })
+
+  it('reads the keyring login through agy even when the old token file is absent or expired', async () => {
+    for (const fsMod of [
+      createFakeFs({ [AGY_BIN]: '#!/bin/sh' }),
+      loggedInFs({ [`${HOME}/.gemini/antigravity-cli/antigravity-oauth-token`]: JSON.stringify({
+        token: { refresh_token: 'old', access_token: 'old', expiry: '2026-08-01T00:00:00Z' },
+      }) }),
+    ]) {
+      const snap = await runAdapter('gemini', fetchQuota, {
+        fs: fsMod,
+        home: HOME,
+        now: NOW,
+        execFileImpl: execFileFor({ '/usage': USAGE_TSV }),
+      })
+      assert.equal(snap.status, 'healthy')
+      assert.equal(snap.source, 'local_cli')
+      assert.equal(snap.windows.length, 4)
+    }
   })
 
   it('reports not_configured when logged in but agy is missing', async () => {
@@ -244,6 +261,63 @@ describe('Gemini quota via Antigravity CLI', () => {
 
     assert.equal(windows[2].id, 'claude-and-gpt-models-week')
     assert.equal(windows[2].usedPercent, 0)
+  })
+
+  it('reads CloudCode quota directly as official_api when available', async () => {
+    const { fetchImpl, calls } = createFakeFetch([
+      {
+        match: 'cloudcode-pa.googleapis.com',
+        status: 200,
+        json: {
+          groups: [{
+            displayName: 'Gemini Models',
+            buckets: [{ window: '5h', resetTime: '2026-09-06T06:28:42Z', remainingFraction: 0.8 }],
+          }],
+        },
+      },
+    ])
+    const snap = await runAdapter('gemini', fetchQuota, {
+      fs: loggedInFs(),
+      home: HOME,
+      now: NOW,
+      fetchImpl,
+    })
+    assert.equal(snap.status, 'healthy')
+    assert.equal(snap.source, 'official_api')
+    assert.equal(snap.windows[0].usedPercent, 20)
+    assert.equal(calls.length, 1)
+  })
+
+  it('does not try fallback URLs or agy CLI after CloudCode 429', async () => {
+    const { fetchImpl, calls } = createFakeFetch([
+      { match: 'cloudcode-pa.googleapis.com', status: 429, headers: { 'retry-after': '120' }, json: {} },
+    ])
+    await assert.rejects(fetchQuota({
+      fs: loggedInFs(),
+      home: HOME,
+      now: NOW,
+      fetchImpl,
+      execFileSyncImpl: () => AGY_BIN,
+    }), (err) => {
+      assert.equal(err.code, 'rate_limited')
+      assert.equal(err.retryAfterMs, 120_000)
+      return true
+    })
+    assert.equal(calls.length, 1)
+  })
+
+  it('aborts CloudCode quota fetch on timeout', async () => {
+    const { fetchImpl, calls } = createFakeFetch([
+      { match: 'cloudcode-pa.googleapis.com', hang: true },
+    ])
+    await assert.rejects(fetchQuota({
+      fs: loggedInFs(),
+      home: HOME,
+      now: NOW,
+      fetchImpl,
+      timeoutMs: 25,
+    }), (err) => err.code === 'timeout')
+    assert.equal(calls.length, 1)
   })
 
   it('refreshAntigravityToken proactively refreshes token and writes back to disk', async () => {

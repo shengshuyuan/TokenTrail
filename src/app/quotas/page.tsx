@@ -1,63 +1,106 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import type { QuotasResponse, ProviderId, ProviderQuotaSnapshot } from '@/lib/quotas/types'
+import React, { useState } from 'react'
+import type { ProviderId, ProviderQuotaSnapshot, QuotasResponse } from '@/lib/quotas/types'
+import { QUOTA_PROVIDER_IDS, QUOTA_PROVIDER_LABELS } from '@/lib/quotas/types'
+import { useQuotas } from '@/lib/quotas/useQuotas'
+import { usePreferences } from '@/lib/PreferencesContext'
 import { AppShell } from '@/components/layout/AppShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
-import { StatusLabel } from '@/components/ui/StatusLabel'
 import { QuotaProviderRow, QuotaProviderRowSkeleton } from '@/components/dashboard/QuotaProviderRow'
 import { QuotaManualModal } from '@/components/dashboard/QuotaManualModal'
 import { useLang } from '@/lib/LanguageContext'
 
-const PROVIDER_IDS: ProviderId[] = ['codex', 'gemini', 'grok', 'glm', 'kimi']
+const PROVIDER_IDS: ProviderId[] = QUOTA_PROVIDER_IDS
+const ATTENTION_STATUSES = new Set(['warning', 'critical', 'exhausted', 'auth_error', 'network_error', 'partial', 'stale', 'unsupported_version'])
+const PROVIDER_REFRESH_ERROR_STATUSES = new Set(['loading', 'network_error', 'partial', 'stale'])
+
+type RefreshResponse = Partial<QuotasResponse> & {
+  throttled?: boolean
+  retryAfterMs?: number
+  retryAfter?: number
+  nextAllowedAt?: number
+  error?: string
+  refresh?: RefreshSummary
+  summary?: RefreshSummary
+}
+
+type RefreshSummary = {
+  total?: number
+  succeeded?: number
+  failed?: number
+  stale?: number
+  skipped?: number
+}
+
+function providerRefreshed(snapshot: ProviderQuotaSnapshot): boolean {
+  return !snapshot.stale && !snapshot.error && !PROVIDER_REFRESH_ERROR_STATUSES.has(snapshot.status)
+}
+
+function retryAfterText(data: RefreshResponse, lang: 'zh' | 'en'): string {
+  const now = Date.now()
+  const ms =
+    typeof data.retryAfterMs === 'number'
+      ? data.retryAfterMs
+      : typeof data.retryAfter === 'number'
+        ? data.retryAfter * 1000
+        : typeof data.nextAllowedAt === 'number'
+          ? Math.max(0, data.nextAllowedAt - now)
+          : 0
+  if (ms <= 0) return ''
+  const seconds = Math.ceil(ms / 1000)
+  return lang === 'zh' ? `，约 ${seconds} 秒后可再试` : `, try again in about ${seconds}s`
+}
+
+function refreshNotice(data: RefreshResponse, lang: 'zh' | 'en', provider?: ProviderId): string {
+  if (data.throttled) {
+    return lang === 'zh'
+      ? `刷新过于频繁，未发起新请求，仍显示缓存${retryAfterText(data, lang)}`
+      : `Refresh is rate limited; cached data shown${retryAfterText(data, lang)}`
+  }
+
+  const summary = data.refresh ?? data.summary
+  const scopedProviders = (data.providers ?? []).filter((p) => !provider || p.provider === provider)
+  const total = summary?.total ?? scopedProviders.length
+  const stale = summary?.stale ?? scopedProviders.filter((p) => p.stale).length
+  const succeeded = summary?.succeeded ?? scopedProviders.filter(providerRefreshed).length
+  const failed = summary?.failed ?? Math.max(0, total - succeeded)
+  const skipped = summary?.skipped ?? 0
+
+  if (total > 0 && succeeded === 0 && failed > 0) {
+    return lang === 'zh' ? '没有读取到新的额度，请查看各供应商状态' : 'No fresh quota read; check provider status'
+  }
+  if (failed > 0 || stale > 0 || skipped > 0) {
+    return lang === 'zh'
+      ? `刷新完成：${succeeded} 家成功，${failed} 家失败，${stale} 家沿用旧值${skipped ? `，${skipped} 家等待限流` : ''}`
+      : `Refresh finished: ${succeeded} succeeded, ${failed} failed, ${stale} kept old values${skipped ? `, ${skipped} waiting for retry` : ''}`
+  }
+  return provider
+    ? lang === 'zh' ? '该供应商额度已刷新' : 'Provider quota refreshed'
+    : lang === 'zh' ? '额度刷新成功' : 'Quotas refreshed'
+}
 
 export default function QuotasPage() {
-  const { lang, t } = useLang()
-  const [data, setData] = useState<QuotasResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
+  const { lang } = useLang()
+  const { quotaVisibleProviders } = usePreferences()
+  const { data, loading, loadError, refreshing, fetchQuotas, refresh, backgroundRefreshing } = useQuotas()
   const [notice, setNotice] = useState<string | null>(null)
   const [manualModalOpen, setManualModalOpen] = useState(false)
   const [manualTargetProvider, setManualTargetProvider] = useState<ProviderId>('grok')
 
-  const fetchQuotas = useCallback(async () => {
-    try {
-      const res = await fetch('/api/quotas', { cache: 'no-store' })
-      if (res.ok) {
-        const json = await res.json()
-        setData(json)
-      }
-    } catch {
-      // keep existing snapshot
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchQuotas()
-  }, [fetchQuotas])
-
-  const handleRefresh = async () => {
+  const handleRefresh = async (provider?: ProviderId) => {
     if (refreshing) return
-    setRefreshing(true)
     setNotice(null)
-    try {
-      const res = await fetch('/api/quotas/refresh', { method: 'POST' })
-      const json = await res.json()
-      if (json.throttled) {
-        setNotice(lang === 'zh' ? '刷新过于频繁，已返回最新缓存' : 'Refreshed recently; cached snapshot returned')
-      } else if (json.providers) {
-        setData(json)
-        setNotice(lang === 'zh' ? '已刷新各供应商额度' : 'Provider quotas refreshed')
-      }
-    } catch {
-      setNotice(lang === 'zh' ? '刷新失败，请稍后重试' : 'Refresh failed, please try again')
-    } finally {
-      setRefreshing(false)
-      setTimeout(() => setNotice(null), 4000)
+    const outcome = await refresh(provider)
+    if (!outcome) return
+    const json = outcome.json as RefreshResponse
+    if (!outcome.ok) {
+      setNotice(json.error || (lang === 'zh' ? '刷新失败，保留原有数据' : 'Refresh failed, previous data kept'))
+    } else if (json.providers) {
+      setNotice(refreshNotice(json, lang, provider))
     }
+    setTimeout(() => setNotice(null), 4000)
   }
 
   const openManualModal = (provider: ProviderId) => {
@@ -66,11 +109,20 @@ export default function QuotasPage() {
   }
 
   // Derived stats
-  const providers = data?.providers || []
-  const healthyCount = providers.filter((p) => p.status === 'healthy').length
-  const warningCount = providers.filter((p) =>
-    ['warning', 'critical', 'exhausted', 'auth_error'].includes(p.status)
-  ).length
+  // 账号额度显示开关：未设置(null)=全部显示；否则只保留勾选的 provider。
+  const isProviderVisible = (id: string) =>
+    quotaVisibleProviders === null || quotaVisibleProviders.includes(id)
+  const visibleProviderIds = PROVIDER_IDS.filter(isProviderVisible)
+  const providers = (data?.providers || []).filter((p) => isProviderVisible(p.provider))
+  const healthyCount = providers.filter((p) => !p.stale && !p.error && p.status === 'healthy').length
+  const warningCount = providers.filter((p) => p.stale || p.error || ATTENTION_STATUSES.has(p.status) || p.status === 'not_configured').length
+  const staleCount = providers.filter((p) => p.stale).length
+  const lastSuccessAt = providers.reduce((acc, p) => Math.max(acc, p.lastSuccessAt ?? 0), 0)
+  const pageNote = lastSuccessAt
+    ? `${lang === 'zh' ? '上次成功读取于' : 'Last successful read'} ${new Date(lastSuccessAt).toLocaleTimeString()}`
+    : data?.updated_at
+      ? `${lang === 'zh' ? '最近尝试于' : 'Last attempt'} ${new Date(data.updated_at).toLocaleTimeString()}`
+      : undefined
 
   return (
     <AppShell>
@@ -82,13 +134,13 @@ export default function QuotasPage() {
             ? '监控各供应商订阅窗口、API 钱包与实时限额状态'
             : 'Monitor subscription windows, API wallets, and real-time quotas'
         }
-        note={data?.updated_at ? `更新于 ${new Date(data.updated_at).toLocaleTimeString()}` : undefined}
+        note={pageNote}
         actions={
           <>
             <Button
               variant="primary"
               loading={refreshing}
-              onClick={handleRefresh}
+              onClick={() => handleRefresh()}
               icon={
                 <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -123,6 +175,25 @@ export default function QuotasPage() {
         </div>
       )}
 
+      {loadError && (
+        <div className="mb-6 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center justify-between gap-3">
+          <span>
+            {data
+              ? lang === 'zh' ? `读取额度失败，下面是上一次的数据（${loadError}）` : `Failed to load quotas; showing previous data (${loadError})`
+              : lang === 'zh' ? `读取额度失败（${loadError}）` : `Failed to load quotas (${loadError})`}
+          </span>
+          <Button size="sm" variant="secondary" onClick={() => fetchQuotas()}>
+            {lang === 'zh' ? '重试' : 'Retry'}
+          </Button>
+        </div>
+      )}
+
+      {backgroundRefreshing && !refreshing && (
+        <div className="mb-6 p-3 rounded-lg bg-workbench-sidebar border border-workbench-border/80 text-workbench-text-muted text-sm">
+          {lang === 'zh' ? '正在后台读取最新额度，完成后会自动更新…' : 'Fetching latest quotas in the background; this page will update automatically…'}
+        </div>
+      )}
+
       {/* Quotas Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-8">
         <div className="p-5 apple-glass-metric">
@@ -130,10 +201,12 @@ export default function QuotasPage() {
             {lang === 'zh' ? '支持的供应商' : 'Providers'}
           </div>
           <div className="text-3xl font-bold font-mono text-workbench-text">
-            {PROVIDER_IDS.length}
+            {visibleProviderIds.length}
           </div>
           <div className="text-xs text-workbench-text-muted mt-1">
-            Codex · Gemini · Grok · GLM · Kimi
+            {visibleProviderIds
+              .map((id) => QUOTA_PROVIDER_LABELS[id] ?? id)
+              .join(' · ')}
           </div>
         </div>
 
@@ -145,7 +218,7 @@ export default function QuotasPage() {
             {healthyCount}
           </div>
           <div className="text-xs text-workbench-text-muted mt-1">
-            {lang === 'zh' ? '快照新鲜且未临界' : 'Fresh and within limits'}
+            {lang === 'zh' ? '新鲜且没有读取错误' : 'Fresh and readable'}
           </div>
         </div>
 
@@ -158,7 +231,9 @@ export default function QuotasPage() {
           </div>
           <div className="text-xs text-workbench-text-muted mt-1">
             {warningCount > 0
-              ? lang === 'zh' ? '存在临近耗尽、已耗尽或未登录项' : 'Low balance, exhausted or unauthenticated'
+              ? staleCount > 0
+                ? lang === 'zh' ? `${staleCount} 家沿用旧值或需要处理` : `${staleCount} kept old values or need action`
+                : lang === 'zh' ? '存在需要处理的供应商' : 'Some providers need action'
               : lang === 'zh' ? '所有账户运行良好' : 'All accounts are operating smoothly'}
           </div>
         </div>
@@ -191,7 +266,7 @@ export default function QuotasPage() {
               <QuotaProviderRow
                 key={snap.provider}
                 snapshot={snap}
-                onRetry={fetchQuotas}
+                onRetry={() => handleRefresh(snap.provider)}
                 onManualClick={openManualModal}
               />
             ))

@@ -4,6 +4,7 @@ import { setConfig, saveQuotaSnapshotRows, type QuotaSnapshotRow } from '@/lib/d
 import { getQuotasForServer } from '@/lib/quotas/server'
 import { setQuotaSecret } from '@/lib/quotas/secret-store'
 import { rejectUnsafeLocalMutation } from '@/lib/local-request'
+import path from 'node:path'
 
 const { createAdapters } = require('@/lib/quotas/providers/index.js') as {
   createAdapters: (overrides?: Record<string, unknown>) => {
@@ -18,6 +19,7 @@ const grok = require('@/lib/quotas/providers/grok.js') as {
   startGrokOAuthLogin: (deps: Record<string, unknown>) => { ok: boolean; alreadyRunning?: boolean; reason?: string }
 }
 const gemini = require('@/lib/quotas/providers/gemini.js') as {
+  TOKEN_REL: string
   readGeminiCliSession: (fsMod: unknown, home: unknown) => { loggedIn: boolean }
 }
 const kimi = require('@/lib/quotas/providers/kimi.js') as {
@@ -46,10 +48,32 @@ function cliAuthStatus(provider: string) {
     const session = grok.readGrokCliSession(deps.fs, deps.home)
     return { provider, loggedIn: grok.grokCliSessionIsFresh(session, Date.now()), loginRunning: grok.isGrokLoginRunning() }
   }
-  if (provider === 'gemini') return { provider, ...gemini.readGeminiCliSession(deps.fs, deps.home) }
+  if (provider === 'gemini') return {
+    provider,
+    ...gemini.readGeminiCliSession(deps.fs, deps.home),
+    credentialUpdatedAt: geminiCredentialUpdatedAt(deps),
+    loginRevision: geminiLoginRevision(deps),
+  }
   if (provider === 'kimi') return { provider, ...kimi.readKimiCliSession(deps.fs, deps.home, Date.now()) }
   if (provider === 'codex') return { provider, ...codex.readCodexCliSession(deps.fs, deps.home, Date.now(), deps.env as Record<string, string | undefined>) }
   return null
+}
+
+function geminiCredentialUpdatedAt(deps: Record<string, any>): number {
+  try {
+    return deps.fs.statSync(path.join(deps.home, gemini.TOKEN_REL)).mtimeMs
+  } catch {
+    return 0
+  }
+}
+
+function geminiLoginRevision(deps: Record<string, any>): number {
+  try {
+    const log = deps.fs.readFileSync(path.join(deps.home, '.gemini', 'antigravity-cli', 'cli.log'), 'utf8')
+    return log.lastIndexOf('OAuth: authenticated successfully')
+  } catch {
+    return -1
+  }
 }
 
 async function persistVerifiedSnapshot(provider: string, snapshot: any) {
@@ -152,12 +176,13 @@ export async function POST(req: Request) {
       testEnv.ANTHROPIC_BASE_URL = baseUrl.trim()
     } else if (provider === 'grok') {
       const method = String(body.method || (creds.key ? 'apikey' : 'oauth')).toLowerCase()
-      if (method === 'oauth') {
+      if (method === 'oauth' || method === 'verify') {
         const { deps, adapters } = createAdapters({ env: testEnv, timeoutMs: 7000 })
         if (grok.grokCliSessionIsFresh(grok.readGrokCliSession(deps.fs, deps.home), Date.now())) {
           const snapshot = await runAdapter(provider, adapters.grok, deps)
           return verifiedResponse(provider, snapshot)
         }
+        if (method === 'verify') return NextResponse.json({ error: 'Grok 登录尚未完成' }, { status: 401 })
         const started = grok.startGrokOAuthLogin(deps)
         if (!started.ok) {
           return NextResponse.json(
@@ -184,9 +209,10 @@ export async function POST(req: Request) {
       testEnv.XAI_TEAM_ID = teamId.trim()
     } else if (provider === 'kimi') {
       const method = String(body.method || (creds.key ? 'kimi_code_key' : 'oauth')).toLowerCase()
-      if (method === 'oauth') {
+      if (method === 'oauth' || method === 'verify') {
         const { deps } = createAdapters({ env: testEnv })
         if (!kimi.readKimiCliSession(deps.fs, deps.home, Date.now()).loggedIn) {
+          if (method === 'verify') return NextResponse.json({ error: 'Kimi 登录尚未完成' }, { status: 401 })
           const started = launchCliLogin('kimi', ['login'], deps)
           if (!started.ok) return NextResponse.json({ error: '未找到 Kimi CLI 或无法打开终端授权', manualCommand: 'kimi login' }, { status: 409 })
           return NextResponse.json({ pending: true, message: '已打开终端；Kimi CLI 将打开官方登录页，请完成授权', manualCommand: 'kimi login' })
@@ -204,10 +230,11 @@ export async function POST(req: Request) {
       }
     } else if (provider === 'codex') {
       const method = String(body.method || (creds.key ? 'apikey' : 'oauth')).toLowerCase()
-      if (method === 'oauth') {
+      if (method === 'oauth' || method === 'verify') {
         const { deps, adapters } = createAdapters({ env: testEnv, timeoutMs: 7000 })
         const session = codex.readCodexCliSession(deps.fs, deps.home, Date.now(), testEnv)
         if (!session.loggedIn) {
+          if (method === 'verify') return NextResponse.json({ error: 'Codex 登录尚未完成' }, { status: 401 })
           const started = launchCliLogin('codex', ['login'], deps)
           if (!started.ok) {
             return NextResponse.json(
@@ -236,13 +263,15 @@ export async function POST(req: Request) {
       }
       testEnv.OPENAI_API_KEY = key.trim()
     } else if (provider === 'gemini') {
+      const method = String(body.method || 'oauth').toLowerCase()
+      if (method !== 'oauth' && method !== 'verify') return NextResponse.json({ error: 'Unsupported Antigravity authorization method' }, { status: 400 })
       const { deps, adapters } = createAdapters({ env: testEnv, timeoutMs: 12000 })
-      if (gemini.readGeminiCliSession(deps.fs, deps.home).loggedIn) {
-        const snapshot = await runAdapter(provider, adapters.gemini, deps)
-        if (snapshot.status !== 'auth_error' && snapshot.status !== 'not_configured') {
-          return NextResponse.json(await persistVerifiedSnapshot(provider, snapshot))
-        }
+      const snapshot = await runAdapter(provider, adapters.gemini, deps)
+      if (method === 'verify' || (snapshot.status !== 'auth_error' && snapshot.status !== 'not_configured')) {
+        return verifiedResponse(provider, snapshot)
       }
+      const credentialUpdatedAt = geminiCredentialUpdatedAt(deps)
+      const loginRevision = geminiLoginRevision(deps)
       const started = launchCliLogin('agy', [], deps)
       if (!started.ok) {
         return NextResponse.json(
@@ -252,6 +281,8 @@ export async function POST(req: Request) {
       }
       return NextResponse.json({
         pending: true,
+        credentialUpdatedAt,
+        loginRevision,
         message: '已打开终端；Antigravity CLI 会打开 Google 登录页，请完成授权',
         manualCommand: 'agy',
       })

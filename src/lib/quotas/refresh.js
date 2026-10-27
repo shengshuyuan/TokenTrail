@@ -15,7 +15,7 @@ const { aggregateQuotaStatus, effectiveSnapshotStatus, isCacheFresh } = require(
 
 // 服务进程级单例：并发刷新合并 + 手动刷新节流（测试可通过 deps 覆盖）
 const defaultInflight = new Map()
-let defaultLastManualAt = 0
+const defaultLastManualAt = new Map()
 
 function resolveInflight(deps) {
   return deps.inflight ?? defaultInflight
@@ -41,9 +41,10 @@ async function runAdapter(providerId, fetchQuota, deps) {
   // 用于卡死在文件扫描等无超时环节的极端情况
   const adapterTimeoutMs = typeof fetchQuota.timeoutMs === 'number' ? fetchQuota.timeoutMs : deps.timeoutMs
   const backstopMs = (adapterTimeoutMs ?? ADAPTER_TIMEOUT_MS) + 1000
+  let timer
   try {
     const timeout = new Promise((_, reject) => {
-      const timer = setTimeout(() => {
+      timer = setTimeout(() => {
         const err = new Error('adapter timeout')
         err.code = 'timeout'
         reject(err)
@@ -55,11 +56,17 @@ async function runAdapter(providerId, fetchQuota, deps) {
     snapshot = await Promise.race([work, timeout])
   } catch (err) {
     const code = err && typeof err.code === 'string' ? err.code : 'network'
+    const retryAfterMs = code === 'rate_limited' && Number.isFinite(err?.retryAfterMs)
+      ? Math.max(1000, err.retryAfterMs)
+      : 60_000
     snapshot = {
       provider: providerId,
       status: THROW_STATUS_BY_CODE[code] ?? 'network_error',
       error: { code: code in THROW_STATUS_BY_CODE ? code : 'unknown', safeMessage: 'provider request failed' },
+      retryAfterAt: code === 'rate_limited' ? deps.now() + retryAfterMs : undefined,
     }
+  } finally {
+    clearTimeout(timer)
   }
 
   // 规范化兜底：Adapter 输出缺字段时补齐，UI 永远拿到完整形状
@@ -72,7 +79,8 @@ async function runAdapter(providerId, fetchQuota, deps) {
     stale: false,
     ...snapshot,
     provider: providerId,
-    fetchedAt: deps.now(),
+    fetchedAt: snapshot?.fetchedAt ?? deps.now(),
+    lastAttemptAt: deps.now(),
   }
 }
 
@@ -80,16 +88,22 @@ async function runAdapter(providerId, fetchQuota, deps) {
  * 强制发起一轮刷新。
  * @returns {{ providers, duration_ms, deduped }} deduped=true 表示本轮与其他并发调用合并
  */
-async function refreshAll(deps) {
+async function refreshAll(deps, options = {}) {
   const adapters = deps.adapters
-  const providerIds = Object.keys(adapters)
+  const allProviderIds = Object.keys(adapters)
+  const requested = Array.isArray(options.providers) && options.providers.length > 0
+    ? options.providers.filter((id) => Object.prototype.hasOwnProperty.call(adapters, id))
+    : allProviderIds
+  const providerIds = [...new Set(requested)]
   const inflight = resolveInflight(deps)
+  const inflightKey = 'round'
 
-  {
-    const existing = inflight.get('round')
-    if (existing) {
-      const result = await existing
-      return { ...result, deduped: true }
+  // ponytail: one global round lock; use per-provider locks only if refresh throughput becomes a bottleneck.
+  while (inflight.has(inflightKey)) {
+    const result = await inflight.get(inflightKey)
+    if (providerIds.every((id) => result.refresh.attempted.includes(id))) {
+      const providers = result.providers.filter((p) => providerIds.includes(p.provider))
+      return { ...result, providers, refresh: { ...refreshSummary(providers), attempted: providerIds }, deduped: true }
     }
   }
 
@@ -121,28 +135,57 @@ async function refreshAll(deps) {
       // 429 / 超时 / 网络失败：保留上一次成功数据
       snap = withPreviousFallback(snap, previous.get(id), deps.now())
       providers.push(snap)
-      rows.push(toRow(snap, previous.get(id)))
+      rows.push(toRow(snap, previous.get(id), deps.now()))
     })
 
     await deps.store.saveAll(rows)
-    return { providers, updated_at: deps.now(), duration_ms: deps.now() - start }
+    const summary = refreshSummary(providers)
+    return {
+      providers,
+      updated_at: deps.now(),
+      duration_ms: deps.now() - start,
+      refresh: {
+        ...summary,
+        attempted: providerIds,
+      },
+    }
   })()
 
-  inflight.set('round', promise)
+  inflight.set(inflightKey, promise)
   try {
     return await promise
   } finally {
-    if (inflight.get('round') === promise) inflight.set('round', null)
+    if (inflight.get(inflightKey) === promise) inflight.delete(inflightKey)
   }
 }
 
-function toRow(snap, previous) {
-  const failed = Boolean(snap.error)
-  const lastSuccessAt = failed ? previous?.lastSuccessAt ?? null : snap.fetchedAt ?? null
+function snapshotSucceeded(snap) {
+  if (snap.error || !['healthy', 'warning', 'critical', 'exhausted'].includes(snap.status)) return false
+  return snap.windows.some((win) => Number.isFinite(win.usedPercent) ||
+    (Number.isFinite(win.used) && Number.isFinite(win.limit) && win.limit > 0)) ||
+    snap.wallets.some((wallet) => Number.isFinite(wallet.balance))
+}
+
+function refreshSummary(providers) {
+  const total = providers.length
+  const succeededProviders = providers.filter(snapshotSucceeded).map((p) => p.provider)
+  const succeeded = succeededProviders.length
+  const stale = providers.filter((p) => p.stale || Boolean(p.error && (p.windows?.length || p.wallets?.length))).length
+  return {
+    total,
+    succeeded,
+    failed: total - succeeded,
+    stale,
+    succeededProviders,
+  }
+}
+
+function toRow(snap, previous, attemptedAt) {
+  const lastSuccessAt = snapshotSucceeded(snap) ? snap.fetchedAt ?? null : previous?.lastSuccessAt ?? null
   return {
     provider: snap.provider,
     snapshot_json: JSON.stringify(snap),
-    fetched_at: snap.fetchedAt ?? null,
+    fetched_at: snap.lastAttemptAt ?? attemptedAt ?? snap.fetchedAt ?? null,
     last_success_at: lastSuccessAt,
     last_error_code: snap.error?.code ?? null,
   }
@@ -153,19 +196,32 @@ function canManualRefresh(lastManualAt, now) {
   return now - (lastManualAt ?? 0) >= MANUAL_REFRESH_MIN_INTERVAL_MS
 }
 
-function markManualRefresh(now) {
-  defaultLastManualAt = now
+function markManualRefresh(now, provider = 'all') {
+  defaultLastManualAt.set(provider, now)
 }
 
-function getLastManualRefreshAt() {
-  return defaultLastManualAt
+function getLastManualRefreshAt(provider = 'all') {
+  return defaultLastManualAt.get(provider) ?? 0
+}
+
+/**
+ * 手动刷新成功后开始 30s 节流窗口。
+ * 单家重试只节流该供应商；只有「全部刷新」才设置全局 'all' 键，
+ * 否则点一次单家重试会把全局刷新按钮也锁住 30 秒。
+ * @param {string | undefined} requestedProvider 单家刷新时为供应商 id，全部刷新时为 undefined
+ * @param {string[]} succeededProviders 本次成功读取的供应商
+ */
+function markManualRefreshResult(requestedProvider, succeededProviders, now = Date.now()) {
+  if (!succeededProviders || succeededProviders.length === 0) return
+  if (!requestedProvider) markManualRefresh(now, 'all')
+  for (const id of succeededProviders) markManualRefresh(now, id)
 }
 
 /**
  * GET /api/quotas 语义：立即返回缓存；缓存过期则在后台发起去重刷新。
  * 首次无缓存时也触发后台刷新，本次返回 loading 快照。
  */
-async function getQuotas(deps) {
+async function getQuotas(deps, options = {}) {
   const now = deps.now()
   const rows = await deps.store.loadAll()
   const byProvider = rowsToSnapshots(rows, now)
@@ -185,9 +241,17 @@ async function getQuotas(deps) {
     }
   })
 
-  const staleProviders = providers.filter(
-    (p) => p.status === 'loading' || !isCacheFresh(p.fetchedAt, now)
-  )
+  const staleProviders = providers.filter((p) => {
+    if (p.status === 'loading') return true
+    const lastAttemptAt = p.lastAttemptAt ?? p.fetchedAt
+    if (p.error?.code === 'rate_limited') {
+      return now >= (p.retryAfterAt ?? (lastAttemptAt ?? 0) + 60_000)
+    }
+    if (['network', 'timeout', 'malformed'].includes(p.error?.code)) {
+      return now - (lastAttemptAt ?? 0) >= 30_000
+    }
+    return !isCacheFresh(lastAttemptAt, now)
+  })
 
   const { status, attention_count } = aggregateQuotaStatus(providers)
   const updated_at = providers.reduce((acc, p) => Math.max(acc ?? 0, p.fetchedAt ?? 0), null) || null
@@ -201,11 +265,11 @@ async function getQuotas(deps) {
   }
 
   // 缓存过期/缺失：后台去重刷新（不阻塞响应）
-  if (staleProviders.length > 0) {
+  if (staleProviders.length > 0 && options.backgroundRefresh !== false) {
     response.refreshing = true
     // 不 await：交给 Next 的请求生命周期之外的 waitUntil 不可用时，
     // 直接游离执行；服务常驻，进程不会退出。
-    void refreshAll(deps).catch(() => {})
+    void refreshAll(deps, { providers: staleProviders.map((p) => p.provider) }).catch(() => {})
   }
 
   return response
@@ -214,9 +278,11 @@ async function getQuotas(deps) {
 module.exports = {
   runAdapter,
   refreshAll,
+  refreshSummary,
   getQuotas,
   canManualRefresh,
   markManualRefresh,
+  markManualRefreshResult,
   getLastManualRefreshAt,
   effectiveSnapshotStatus,
 }

@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { refreshAll, getQuotas, canManualRefresh, runAdapter } from '../src/lib/quotas/refresh.js'
+import { refreshAll, getQuotas, canManualRefresh, getLastManualRefreshAt, markManualRefresh, runAdapter } from '../src/lib/quotas/refresh.js'
 import { rowsToSnapshots, withPreviousFallback } from '../src/lib/quotas/cache.js'
 import {
   aggregateQuotaStatus,
@@ -96,6 +96,66 @@ describe('quota orchestration (API semantics)', () => {
     assert.equal(depsA.counts.gemini + depsB.counts.gemini, 1)
   })
 
+  it('joins an overlapping full refresh without requesting the same provider twice', async () => {
+    const inflight = new Map()
+    const depsA = baseDeps({ inflight })
+    const depsB = baseDeps({ inflight })
+    const [all, one] = await Promise.all([
+      refreshAll(depsA),
+      refreshAll(depsB, { providers: ['codex'] }),
+    ])
+    assert.equal(all.providers.length, 5)
+    assert.deepEqual(one.providers.map((p) => p.provider), ['codex'])
+    assert.deepEqual(one.refresh.attempted, ['codex'])
+    assert.equal(one.deduped, true)
+    assert.equal(depsA.counts.codex + depsB.counts.codex, 1)
+  })
+
+  it('can refresh one provider without dropping the rest of the cache', async () => {
+    const codexRow = {
+      provider: 'codex',
+      snapshot_json: JSON.stringify({ provider: 'codex', status: 'healthy', windows: [{ id: '5h', label: '5h', unit: 'request', usedPercent: 6 }], wallets: [], source: 'local_session', stale: false, fetchedAt: NOW() - 2 * MIN }),
+      fetched_at: NOW() - 2 * MIN,
+      last_success_at: NOW() - 2 * MIN,
+      last_error_code: null,
+    }
+    const store = createFakeStore([codexRow])
+    const deps = baseDeps({ store })
+    const result = await refreshAll(deps, { providers: ['gemini'] })
+
+    assert.deepEqual(result.refresh.attempted, ['gemini'])
+    assert.equal(result.providers.length, 1)
+    assert.equal(result.providers[0].provider, 'gemini')
+    assert.equal(deps.counts.gemini, 1)
+    assert.equal(deps.counts.codex, 0)
+    assert.equal(store.rows.length, 2)
+    assert.ok(store.rows.find((row) => row.provider === 'codex'))
+    assert.ok(store.rows.find((row) => row.provider === 'gemini'))
+  })
+
+  it('keeps both results when two different providers refresh concurrently', async () => {
+    const store = createFakeStore()
+    const inflight = new Map()
+    const first = baseDeps({ store, inflight })
+    const second = baseDeps({ store, inflight })
+    await Promise.all([
+      refreshAll(first, { providers: ['codex'] }),
+      refreshAll(second, { providers: ['gemini'] }),
+    ])
+    assert.deepEqual(store.rows.map((row) => row.provider).sort(), ['codex', 'gemini'])
+  })
+
+  it('does not count unreadable or failed snapshots as a successful refresh', async () => {
+    const deps = baseDeps({ adapterOverrides: {
+      codex: async () => ({ provider: 'codex', status: 'healthy', windows: [], wallets: [], source: 'local_session' }),
+      gemini: async () => { throw Object.assign(new Error('unavailable'), { code: 'network' }) },
+    } })
+    const result = await refreshAll(deps, { providers: ['codex', 'gemini'] })
+    assert.equal(result.refresh.succeeded, 0)
+    assert.equal(result.refresh.failed, 2)
+    assert.deepEqual(result.refresh.succeededProviders, [])
+  })
+
   it('GET returns cache immediately when fresh, without touching providers', async () => {
     const freshRow = {
       provider: 'codex',
@@ -113,7 +173,26 @@ describe('quota orchestration (API semantics)', () => {
     assert.equal(res.attention_count, 0) // codex 健康绿色，其余四家尚未加载（灰色）
     // 无缓存的两家会在后台刷新
     await new Promise((r) => setTimeout(r, 0))
+    assert.equal(deps.counts.codex, 0)
+    assert.equal(deps.counts.gemini, 1)
     assert.equal(deps.counts.kimi, 1)
+  })
+
+  it('GET can return stale cache without background refresh for throttled manual requests', async () => {
+    const old = NOW() - 16 * MIN
+    const row = {
+      provider: 'codex',
+      snapshot_json: JSON.stringify({ provider: 'codex', status: 'healthy', windows: [{ id: '5h', label: '5h', unit: 'request', usedPercent: 6 }], wallets: [], source: 'local_session', stale: false, fetchedAt: old }),
+      fetched_at: old,
+      last_success_at: old,
+      last_error_code: null,
+    }
+    const deps = baseDeps({ store: createFakeStore([row]) })
+    const res = await getQuotas(deps, { backgroundRefresh: false })
+    assert.equal(res.refreshing, false)
+    await new Promise((r) => setTimeout(r, 0))
+    assert.equal(deps.counts.codex, 0)
+    assert.equal(deps.counts.gemini, 0)
   })
 
   it('marks data stale after 15 minutes and keeps it readable', async () => {
@@ -157,6 +236,8 @@ describe('quota orchestration (API semantics)', () => {
     const kept = withPreviousFallback(networkNext, previous, now)
     assert.equal(kept.windows.length, 1)
     assert.equal(kept.status, 'stale')
+    assert.equal(kept.fetchedAt, NOW() - 10 * MIN)
+    assert.equal(kept.lastAttemptAt, now)
     assert.equal(kept.lastSuccessAt, NOW() - 10 * MIN)
     assert.equal(kept.error.code, 'timeout')
 
@@ -164,6 +245,11 @@ describe('quota orchestration (API semantics)', () => {
     const authKept = withPreviousFallback(authNext, previous, now)
     assert.equal(authKept.status, 'auth_error')
     assert.equal(authKept.windows.length, 0)
+
+    const walletOnly = { ...previous, windows: [], wallets: [{ label: 'prepaid', balance: 12, currency: 'USD' }] }
+    const walletKept = withPreviousFallback(networkNext, walletOnly, now)
+    assert.equal(walletKept.wallets[0].balance, 12)
+    assert.equal(walletKept.error.code, 'timeout')
   })
 
   it('never persists credentials and never exposes stacks through the store', async () => {
@@ -192,6 +278,9 @@ describe('quota orchestration (API semantics)', () => {
     assert.equal(canManualRefresh(undefined, now), true)
     assert.equal(canManualRefresh(now - 29_000, now), false)
     assert.equal(canManualRefresh(now - 30_000, now), true)
+    markManualRefresh(now, 'codex')
+    assert.equal(canManualRefresh(getLastManualRefreshAt('codex'), now + 10_000), false)
+    assert.equal(canManualRefresh(getLastManualRefreshAt('gemini'), now + 10_000), true)
   })
 
   it('enforces per-adapter timeouts', async () => {

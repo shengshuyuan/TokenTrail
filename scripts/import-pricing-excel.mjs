@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import path from 'path';
-import xlsx from 'xlsx';
+import ExcelJS from 'exceljs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -12,17 +12,34 @@ const EXCEL_PATH = process.argv[2] || '/Users/shengshuyuan/Downloads/TokenTrail_
 const db = new Database(DB_PATH);
 
 console.log(`Reading Excel file from ${EXCEL_PATH}...`);
-let workbook;
+const workbook = new ExcelJS.Workbook();
 try {
-  workbook = xlsx.readFile(EXCEL_PATH);
+  await workbook.xlsx.readFile(EXCEL_PATH);
 } catch (error) {
   console.error(`Failed to read Excel file: ${error.message}`);
   process.exit(1);
 }
 
-const sheetName = workbook.SheetNames[0];
-const worksheet = workbook.Sheets[sheetName];
-const data = xlsx.utils.sheet_to_json(worksheet);
+const worksheet = workbook.worksheets[0];
+if (!worksheet) {
+  console.error('Excel file has no worksheets');
+  process.exit(1);
+}
+
+const header = [];
+const data = [];
+worksheet.eachRow((row, rowNumber) => {
+  const values = row.values.slice(1);
+  if (rowNumber === 1) {
+    for (const value of values) header.push(String(value ?? ''));
+    return;
+  }
+  const record = {};
+  header.forEach((key, index) => {
+    record[key] = values[index];
+  });
+  data.push(record);
+});
 
 console.log(`Found ${data.length} records. Updating database...`);
 

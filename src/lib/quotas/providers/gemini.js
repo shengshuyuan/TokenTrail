@@ -1,6 +1,6 @@
 const path = require('path')
 const { execFile } = require('child_process')
-const { codedError, readJsonIfExists, toEpochMs } = require('../http.js')
+const { codedError, readJsonIfExists, requestJson, toEpochMs } = require('../http.js')
 const { deriveProviderStatus } = require('../status.js')
 const { resolveCliBinary } = require('../cli-login.js')
 
@@ -260,7 +260,7 @@ async function fetchCloudCodeQuota(accessToken, deps) {
 
   for (const url of CLOUDCODE_QUOTA_URLS) {
     try {
-      const resp = await fetchImpl(url, {
+      const { json } = await requestJson(url, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -268,16 +268,17 @@ async function fetchCloudCodeQuota(accessToken, deps) {
           'User-Agent': 'Antigravity-CLI',
         },
         body: '{}',
+        rawBody: true,
+        timeoutMs: deps.timeoutMs,
+        fetchImpl,
       })
-      if (resp.status === 200) {
-        const json = await resp.json()
-        const parsed = parseUserQuotaSummary(json)
-        if (parsed.windows && parsed.windows.length > 0) {
-          return parsed
-        }
+      const parsed = parseUserQuotaSummary(json)
+      if (parsed.windows && parsed.windows.length > 0) {
+        return parsed
       }
-    } catch {
-      // 尝试下一个备用地址
+    } catch (err) {
+      if (err && ['rate_limited', 'timeout', 'auth'].includes(err.code)) throw err
+      // 结构或网络异常时尝试下一个备用地址
     }
   }
   return null
@@ -342,15 +343,14 @@ function runAgyPrint(slash, deps) {
 }
 
 async function fetchQuota(deps) {
-  if (!readAntigravityCliSession(deps.fs, deps.home).loggedIn) {
-    throw codedError('not_configured', 'Antigravity CLI is not logged in')
-  }
-
+  const fileCreds = readJsonIfExists(deps.fs, tokenPath(deps.home))
+  const fileExpiry = toEpochMs(fileCreds?.token?.expiry)
   let windows = null
   let hasUnreadable = false
+  let source = 'local_cli'
 
-  // 1. 如果没有强制注入 execFileImpl（生产环境或常规刷新），优先主动刷新 OAuth Token 并直连官方 Quota Summary API
-  if (!deps.execFileImpl) {
+  // 旧文件可能已过期，而 agy 在钥匙串中仍有有效登录；只有文件 token 明确有效时才直连。
+  if (!deps.execFileImpl && credsLookLoggedIn(fileCreds) && fileExpiry && fileExpiry - deps.now() > 5 * 60 * 1000) {
     try {
       const refreshed = await refreshAntigravityToken(deps)
       if (refreshed.ok && refreshed.access_token) {
@@ -358,17 +358,16 @@ async function fetchQuota(deps) {
         if (quotaData && quotaData.windows && quotaData.windows.length > 0) {
           windows = quotaData.windows
           hasUnreadable = quotaData.hasUnreadable
+          source = 'official_api'
         }
-      } else if (refreshed.reason === 'invalid_grant') {
-        throw codedError('auth', 'Antigravity OAuth refresh token expired')
       }
     } catch (e) {
-      if (e && e.code === 'auth') throw e
-      // 降级使用 agy CLI
+      if (e && (e.code === 'rate_limited' || e.code === 'timeout')) throw e
+      // 文件 token 失效时，仍让 agy 使用钥匙串中的当前登录态。
     }
   }
 
-  // 2. 如果直连 API 未获取到数据（或处于 execFileImpl 单测环境），回退到 agy CLI print 模式
+  // 以 agy 的非交互额度结果校验实际登录态，避免把旧文件当成当前授权。
   if (!windows || windows.length === 0) {
     if (!resolveCliBinary('agy', deps)) {
       throw codedError('not_configured', 'Antigravity CLI is not installed')
@@ -377,7 +376,7 @@ async function fetchQuota(deps) {
     const usage = await runAgyPrint('/usage', deps)
 
     if (looksLikeAuthFailure(usage.stderr, usage.stdout)) {
-      throw codedError('auth', 'Antigravity CLI login expired')
+      throw codedError(credsLookLoggedIn(fileCreds) ? 'auth' : 'not_configured', 'Antigravity CLI login unavailable')
     }
 
     const parsed = parseAgyUsageTsv(usage.stdout)
@@ -399,7 +398,7 @@ async function fetchQuota(deps) {
     planLabel: 'Antigravity',
     windows,
     wallets: [],
-    source: 'local_cli',
+    source,
     fetchedAt: now,
     lastSuccessAt: now,
     stale: false,

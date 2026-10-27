@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import type { StatsResponse, TimeRange } from '@/types'
 import { AppShell } from '@/components/layout/AppShell'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { usePreferences } from '@/lib/PreferencesContext'
 import { useLang } from '@/lib/LanguageContext'
+import { useLatestRequest, isAbortError } from '@/lib/useLatestRequest'
 
 export default function OverviewPage() {
   const { lang, t } = useLang()
@@ -26,22 +27,29 @@ export default function OverviewPage() {
   const [shareOpen, setShareOpen] = useState(false)
   const [lastUpdatedDate, setLastUpdatedDate] = useState<string>('')
 
+  const beginRequest = useLatestRequest()
+
+  // 只有最新一次请求能更新页面：快速切换时间范围时，旧范围的慢响应会被丢弃
   const fetchStats = useCallback(async () => {
+    const signal = beginRequest()
+    setLoading(true)
+    setError(null)
     try {
-      setLoading(true)
-      setError(null)
-      const res = await fetch(`/api/stats?days=${timeRange}`)
-      if (!res.ok) throw new Error('Failed to fetch stats')
+      const res = await fetch(`/api/stats?days=${timeRange}`, { signal, cache: 'no-store' })
+      if (!res.ok) throw new Error(`Failed to fetch stats (HTTP ${res.status})`)
       const data = await res.json()
+      if (signal.aborted) return
       const { available_sources, available_models, ...statsData } = data as Record<string, unknown>
       setStats(statsData as unknown as StatsResponse)
-      setLastUpdatedDate(new Date().toISOString().slice(0, 10))
+      setLastUpdatedDate(new Date().toLocaleString())
     } catch (err) {
+      if (signal.aborted || isAbortError(err)) return
+      console.error('[TokenTrail] overview: stats request failed', err)
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
-      setLoading(false)
+      if (!signal.aborted) setLoading(false)
     }
-  }, [timeRange])
+  }, [beginRequest, timeRange])
 
   useEffect(() => {
     fetchStats()
@@ -90,7 +98,20 @@ export default function OverviewPage() {
       />
 
       {/* Main Content Body */}
-      {error ? (
+      {error && stats && (
+        <div className="mb-6 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center justify-between gap-3">
+          <span>
+            {lang === 'zh'
+              ? `刷新失败，下面是 ${lastUpdatedDate} 的数据（${error}）`
+              : `Refresh failed; showing data from ${lastUpdatedDate} (${error})`}
+          </span>
+          <Button size="sm" variant="secondary" onClick={() => fetchStats()}>
+            {lang === 'zh' ? '重试' : 'Retry'}
+          </Button>
+        </div>
+      )}
+
+      {error && !stats ? (
         <EmptyState
           type="fetch_error"
           title={lang === 'zh' ? '加载总览失败' : 'Failed to load stats'}
@@ -100,11 +121,11 @@ export default function OverviewPage() {
       ) : isFirstLoadNoData ? (
         <EmptyState
           type="first_load_no_data"
-          title={lang === 'zh' ? '暂无用量记录' : 'No usage data yet'}
+          title={lang === 'zh' ? '所选时间范围内暂无用量记录' : 'No usage in this time range'}
           description={
             lang === 'zh'
-              ? '尚未捕获或同步到 AI 用量。前往数据接入配置工具并一键同步。'
-              : 'No AI usage recorded yet. Visit Data Connections to set up your tools.'
+              ? '可以切换到更长的时间范围，或点「同步」拉取最新用量；如果从未接入过工具，请前往数据接入。'
+              : 'Try a longer range or press Sync. If no tools are connected yet, visit Data Connections.'
           }
           actionLabel={lang === 'zh' ? '前往数据接入' : 'Go to Connections'}
           actionHref="/connections"

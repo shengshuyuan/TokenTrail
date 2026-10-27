@@ -106,6 +106,8 @@ npm run daemon-status
 
 > 旧命令 `npm run install-service`、`npm run uninstall-service`、`npm run restart`、`npm run doctor` 仍然可用，`daemon-*` 系列只是更易读的别名。
 
+`install-service` 只支持 macOS LaunchAgent，默认会做 production 构建。Linux / Windows 没有常驻安装器，在前台跑 `npm run dev` 或 `npm start`。日常改代码用项目目录里的 `npm run dev`。LaunchAgent 跑的是 `~/.tokentrail/runtime/TokenTrail` 里的副本，项目目录的修改不会自动生效；`npm run doctor` 会在两边不一致时警告。只有明确要 dev 模式常驻时才加 `--dev`。
+
 ## 数据来源
 
 TokenTrail 完全自包含，不依赖外部平台。
@@ -117,6 +119,8 @@ TokenTrail 完全自包含，不依赖外部平台。
 | Claude Code | `~/.claude/projects/*/sessions/*.jsonl` |
 | Codex | `~/.codex/sessions/**/*.jsonl` |
 | Kimi Code | `~/.kimi-code/sessions/**/wire.jsonl` 和 `~/.kimi/sessions/**/wire.jsonl` |
+| ZCode | `~/.zcode/usage/*.jsonl`（每次同步前自动从 ZCode 本地数据库增量导出；也可手动运行 `npm run export-zcode`） |
+| Cursor | 复用本机 Cursor 登录态，从 `cursor.com` 官方账单拉取逐次调用的模型、token 和真实费用（首次全量、之后增量） |
 
 ### 其他工具（需要接入）
 
@@ -218,6 +222,7 @@ Dashboard 顶部打开 **「账号额度」**。TokenTrail 不编造剩余额度
 | **Grok** | 可见终端运行 `grok login --oauth` | 复用 Grok CLI OAuth 读订阅 Credits / 月度用量 | Management Key + Team ID 是 xAI API 预付/账单，不是 Grok 网页订阅 |
 | **GLM** | Coding Plan Token / `ANTHROPIC_AUTH_TOKEN` | Coding Plan 5 小时窗口和官方 MCP 用量 | 只有能调 Coding Plan monitor 接口的 Token 才行 |
 | **Kimi** | 可见终端运行 `kimi login`，或填 **Kimi Code** 控制台 Key | Kimi Code `/coding/v1/usages` 窗口和加油包 | Moonshot 开放平台 Key 只读开放平台钱包，不能和 Kimi Code Key 混用 |
+| **Cursor** | 在本机 Cursor 里登录即可（复用 `state.vscdb` 里的登录态） | 官方 `cursor.com/api/usage-summary` 的本月 API 额度 / 总额度 / 按量付费 | 不需要任何 Key |
 
 如果 TokenTrail 没能打开授权窗口，自己在终端跑同一条官方命令，再回到额度中心刷新：
 
@@ -308,7 +313,7 @@ npm run restart     # 重启 macOS 常驻服务
 
 ## 技术栈
 
-- Next.js 14、React 18、Recharts、Tailwind CSS
+- Next.js 15、React 19、Recharts、Tailwind CSS
 - SQLite（better-sqlite3）
 - macOS LaunchAgent 可选常驻服务
 - Node.js CLI，无外部 CLI 框架依赖

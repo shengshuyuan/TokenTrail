@@ -146,6 +146,17 @@ const PROVIDER_INFO: Record<ProviderId, { name: string; desc: string; authUrl?: 
     authUrl: 'https://chatgpt.com',
     authDoc: '优先点击浏览器登录；若自动打开失败，可自行运行 codex login。',
   },
+  cursor: {
+    name: 'Cursor',
+    desc: '复用本机 Cursor 的登录态读取官方后台的本月套餐用量（API 额度 / 总额度 / 按量付费），无需填写任何 Key。',
+    authUrl: 'https://cursor.com/dashboard',
+    authDoc: '只要在本机 Cursor 中已登录账号，点击下方按钮即可验证并同步。若提示登录过期，打开 Cursor 重新登录一次即可。',
+  },
+  kiro: {
+    name: 'Kiro CLI',
+    desc: 'Kiro CLI 按 credits 计费，TokenTrail 直接读取本机 ~/.kiro/sessions 会话记录，汇总今日 / 近 7 天 / 本月已消耗的 credits，无需任何 Key 或登录。',
+    authDoc: '只要在本机使用过 Kiro CLI，点击「刷新额度」即可读取本地已消耗的 credits。Kiro 本地日志不含订阅上限，因此只展示已用量。',
+  },
 }
 
 export function QuotaManualModal({
@@ -177,8 +188,8 @@ export function QuotaManualModal({
 
   // 快捷手动录入
   const [accountLabel, setAccountLabel] = useState('')
-  const [h5Percent, setH5Percent] = useState('35')
-  const [weekPercent, setWeekPercent] = useState('60')
+  const [h5Percent, setH5Percent] = useState('')
+  const [weekPercent, setWeekPercent] = useState('')
   const [walletBalance, setWalletBalance] = useState('')
 
   // JSON 导入
@@ -304,7 +315,7 @@ export function QuotaManualModal({
     const res = await fetch('/api/quotas/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, method: 'oauth' }),
+      body: JSON.stringify({ provider, method: 'verify' }),
     })
     const data = await res.json()
     if (res.ok && data.success) {
@@ -313,14 +324,19 @@ export function QuotaManualModal({
       if (onSuccess) onSuccess()
       return true
     }
-    return false
+    return data.error || '登录凭证未通过额度校验'
   }
 
-  const startAuthPolling = (provider: ProviderId, initialMessage?: string) => {
+  const startAuthPolling = (provider: ProviderId, initialMessage?: string, credentialUpdatedAt = 0, loginRevision = -1) => {
+    if (grokPollRef.current) clearInterval(grokPollRef.current)
     setPendingProvider(provider)
     setMessage({ text: initialMessage || '已打开授权窗口，请按提示完成登录', type: 'success' })
     const deadline = Date.now() + 180_000
+    let checking = false
+    let checkedRevision = credentialUpdatedAt
+    let checkedLoginRevision = loginRevision
     grokPollRef.current = setInterval(async () => {
+      if (checking) return
       if (Date.now() > deadline) {
         stopAuthPoll()
         if (provider === 'grok') setGrokShowApiKey(true)
@@ -331,9 +347,23 @@ export function QuotaManualModal({
       try {
         const statusRes = await fetch(`/api/quotas/auth?provider=${provider}`)
         const status = await statusRes.json()
-        if (status.loggedIn) await finishCliAuth(provider)
+        if (provider === 'gemini') {
+          if (status.credentialUpdatedAt <= checkedRevision && status.loginRevision <= checkedLoginRevision) return
+          checkedRevision = Math.max(checkedRevision, status.credentialUpdatedAt || 0)
+          checkedLoginRevision = Math.max(checkedLoginRevision, status.loginRevision ?? -1)
+        }
+        if (provider === 'gemini' || status.loggedIn) {
+          checking = true
+          const result = await finishCliAuth(provider)
+          if (provider === 'gemini' && result !== true) {
+            stopAuthPoll()
+            setMessage({ text: `${result}；请检查终端登录结果后重新发起授权。`, type: 'error' })
+          }
+        }
       } catch {
         // keep polling
+      } finally {
+        checking = false
       }
     }, 2000)
   }
@@ -361,7 +391,7 @@ export function QuotaManualModal({
         return
       }
       if (res.ok && data.pending) {
-        startAuthPolling(provider, data.message)
+        startAuthPolling(provider, data.message, data.credentialUpdatedAt, data.loginRevision)
         return
       }
       if (provider === 'grok' && data.fallback === 'apikey') {
@@ -424,34 +454,43 @@ export function QuotaManualModal({
     setLoading(true)
     try {
       const now = Date.now()
-      const p5 = Math.max(0, Math.min(100, parseFloat(h5Percent) || 0))
-      const pW = Math.max(0, Math.min(100, parseFloat(weekPercent) || 0))
-      const bal = parseFloat(walletBalance)
+      const p5 = h5Percent.trim() === '' ? null : Number(h5Percent)
+      const pW = weekPercent.trim() === '' ? null : Number(weekPercent)
+      const bal = walletBalance.trim() === '' ? null : Number(walletBalance)
+      if ([p5, pW].some((value) => value !== null && (!Number.isFinite(value) || value < 0 || value > 100)) ||
+          (bal !== null && (!Number.isFinite(bal) || bal < 0))) {
+        setMessage({ text: '请输入 0–100 的额度百分比和非负余额', type: 'error' })
+        return
+      }
+      const windows = [
+        p5 === null ? null : {
+          id: selectedProvider === 'gemini' ? 'gemini-pro' : '5h',
+          label: selectedProvider === 'gemini' ? 'pro' : '5h',
+          unit: selectedProvider === 'glm' ? 'token' : 'request',
+          usedPercent: p5,
+          windowMinutes: 300,
+        },
+        pW === null ? null : {
+          id: selectedProvider === 'gemini' ? 'gemini-flash' : 'week',
+          label: selectedProvider === 'gemini' ? 'flash' : 'week',
+          unit: selectedProvider === 'glm' ? 'token' : 'request',
+          usedPercent: pW,
+          windowMinutes: 10080,
+        },
+      ].filter(Boolean) as ProviderQuotaSnapshot['windows']
+      const wallets = bal !== null ? [{ label: 'extra', balance: bal, currency: selectedProvider === 'kimi' ? 'CNY' : 'USD' }] : []
+      if (!windows.length && !wallets.length) {
+        setMessage({ text: '请至少填写一项额度或余额', type: 'error' })
+        return
+      }
 
       const payload: Partial<ProviderQuotaSnapshot> = {
         provider: selectedProvider,
         product: 'subscription',
         accountLabel: accountLabel.trim() || undefined,
         status: 'healthy',
-        windows: [
-          {
-            id: selectedProvider === 'gemini' ? 'gemini-pro' : '5h',
-            label: selectedProvider === 'gemini' ? 'pro' : '5h',
-            unit: selectedProvider === 'glm' ? 'token' : 'request',
-            usedPercent: p5,
-            windowMinutes: 300,
-            resetsAt: now + 2 * 3600_000 + 18 * 60_000,
-          },
-          {
-            id: selectedProvider === 'gemini' ? 'gemini-flash' : 'week',
-            label: selectedProvider === 'gemini' ? 'flash' : 'week',
-            unit: selectedProvider === 'glm' ? 'token' : 'request',
-            usedPercent: pW,
-            windowMinutes: 10080,
-            resetsAt: now + 4 * 86400_000,
-          },
-        ],
-        wallets: !isNaN(bal) && bal > 0 ? [{ label: 'extra', balance: bal, currency: selectedProvider === 'kimi' ? 'CNY' : 'USD' }] : [],
+        windows,
+        wallets,
         source: 'manual',
         fetchedAt: now,
         lastSuccessAt: now,
@@ -519,7 +558,7 @@ export function QuotaManualModal({
 
         {/* Provider Switcher Strip */}
         <div className="flex shrink-0 gap-2 overflow-x-auto border-b border-eva-border/60 bg-eva-panel/20 px-5 py-2.5">
-          {(['glm', 'codex', 'gemini', 'grok', 'kimi'] as const).map((p) => (
+          {(['glm', 'codex', 'gemini', 'grok', 'kimi', 'cursor'] as const).map((p) => (
             <button
               key={p}
               type="button"
@@ -869,6 +908,10 @@ export function QuotaManualModal({
 
           {tab === 'form' && (
             <div className="space-y-3.5">
+              <div className="rounded-lg border border-eva-border/60 bg-eva-panel/40 p-3 text-[11px] leading-relaxed text-eva-text-dim">
+                手动保存会标记为 <span className="font-mono text-eva-text">manual</span> 来源；未填写的百分比和重置时间不会被自动猜测。
+              </div>
+
               <div>
                 <label className="block mb-1 text-eva-text-dim">账号 / 套餐名称：</label>
                 <input
@@ -889,6 +932,7 @@ export function QuotaManualModal({
                     max="100"
                     value={h5Percent}
                     onChange={(e) => setH5Percent(e.target.value)}
+                    placeholder="留空表示未知"
                     className="w-full rounded-lg border border-eva-border bg-eva-panel p-2.5 font-mono text-xs text-eva-text"
                   />
                 </div>
@@ -900,6 +944,7 @@ export function QuotaManualModal({
                     max="100"
                     value={weekPercent}
                     onChange={(e) => setWeekPercent(e.target.value)}
+                    placeholder="留空表示未知"
                     className="w-full rounded-lg border border-eva-border bg-eva-panel p-2.5 font-mono text-xs text-eva-text"
                   />
                 </div>

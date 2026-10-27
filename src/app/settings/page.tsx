@@ -11,6 +11,8 @@ import { DataTable } from '@/components/ui/DataTable'
 import { THEME_DEFINITIONS } from '@/lib/themes'
 import { APP_VERSION } from '@/lib/version'
 import { usePreferences } from '@/lib/PreferencesContext'
+import { QUOTA_PROVIDER_IDS, QUOTA_PROVIDER_LABELS } from '@/lib/quotas/types'
+import { ProviderBrandIcon } from '@/components/dashboard/QuotaBrandIcons'
 import { useLang } from '@/lib/LanguageContext'
 
 const PRICING_PAGE_SIZE = 20
@@ -38,7 +40,22 @@ export default function SettingsPage() {
     setShowProjectNames,
     theme,
     setTheme,
+    quotaVisibleProviders,
+    setQuotaVisibleProviders,
   } = usePreferences()
+
+  // 账号额度显示开关：null = 全部显示（默认）。
+  const isQuotaProviderVisible = (id: string) =>
+    quotaVisibleProviders === null || quotaVisibleProviders.includes(id)
+
+  const toggleQuotaProvider = (id: string) => {
+    const current = quotaVisibleProviders === null ? [...QUOTA_PROVIDER_IDS] : [...quotaVisibleProviders]
+    const next = current.includes(id)
+      ? current.filter((p) => p !== id)
+      : [...current, id]
+    // 全选时存回 null，保持「默认全部显示」语义，避免新增 provider 被漏掉。
+    setQuotaVisibleProviders(next.length === QUOTA_PROVIDER_IDS.length ? null : next)
+  }
 
   // Pricing state
   const [pricingModels, setPricingModels] = useState<ModelPricing[]>([])
@@ -207,6 +224,10 @@ export default function SettingsPage() {
           </h2>
 
           <div className="space-y-6">
+            <p className="text-xs leading-relaxed text-workbench-text-muted border border-workbench-border/70 rounded-lg px-3 py-2">
+              {t('settings.credentialsBody')}
+            </p>
+
             {/* Language */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
@@ -327,7 +348,57 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* 2. Model Pricing Management */}
+        {/* 2. Account Quota Visibility */}
+        <section className="apple-glass-panel p-6">
+          <div className="mb-5 pb-3 border-b border-workbench-border/60">
+            <h2 className="text-base font-bold text-workbench-text tracking-tight">
+              {lang === 'zh' ? '账号额度设置' : 'Account Quota Settings'}
+            </h2>
+            <p className="text-xs text-workbench-text-muted mt-0.5">
+              {lang === 'zh'
+                ? '选择在「账号额度」页面显示并查询哪些产品。订阅过期的产品可在此关闭，关闭后将不查询、不显示。'
+                : 'Choose which products appear and are queried on the Account Quotas page. Turn off any expired subscription — it will no longer be queried or shown.'}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {QUOTA_PROVIDER_IDS.map((id) => {
+              const visible = isQuotaProviderVisible(id)
+              return (
+                <div
+                  key={id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-workbench-border/70 bg-workbench-sidebar px-3 py-2.5"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <ProviderBrandIcon provider={id} className="size-6 shrink-0" />
+                    <span className="text-sm font-medium text-workbench-text truncate">
+                      {QUOTA_PROVIDER_LABELS[id]}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={visible}
+                    aria-label={QUOTA_PROVIDER_LABELS[id]}
+                    onClick={() => toggleQuotaProvider(id)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      visible ? 'bg-workbench-accent' : 'bg-workbench-border'
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        visible ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
+        {/* 3. Model Pricing Management */}
         <section className="apple-glass-panel p-6">
           <div className="flex flex-col gap-3 mb-4 pb-3 border-b border-workbench-border/60">
             <div>

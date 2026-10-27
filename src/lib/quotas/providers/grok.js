@@ -24,6 +24,9 @@ const MANAGEMENT_BASE = 'https://management-api.x.ai/v1/billing/teams'
 const CLI_BILLING_BASE = 'https://cli-chat-proxy.grok.com/v1/billing'
 const OIDC_ISSUER = 'https://auth.x.ai'
 const OIDC_TOKEN_URL = 'https://auth.x.ai/oauth2/token'
+const GROK_CLI_CLIENT = 'grok-shell'
+/** cli-chat-proxy 在缺少 x-grok-client-version 时会省略 creditUsagePercent。 */
+const GROK_CLI_VERSION_FALLBACK = '1.0.46'
 /** 与 Grok CLI 默认 GROK_AUTH_EARLY_INVALIDATION_SECS=300 对齐：到期前 5 分钟静默续期。 */
 const TOKEN_SKEW_MS = 5 * 60 * 1000
 const DEFAULT_ACCESS_TTL_MS = 6 * 60 * 60 * 1000
@@ -55,6 +58,32 @@ function parseSessionExpiry(value) {
 
 function grokAuthPath(home) {
   return path.join(home, '.grok', 'auth.json')
+}
+
+/** 跟本机已安装的 Grok CLI 报同一个版本，否则 billing 会少返回周额度百分比。 */
+function resolveGrokCliVersion(fsMod, home) {
+  const parsed = home ? readJsonIfExists(fsMod, path.join(home, '.grok', 'version.json')) : null
+  const version = typeof parsed?.version === 'string' ? parsed.version.trim() : ''
+  if (/^\d+\.\d+\.\d+/.test(version)) return version
+  return GROK_CLI_VERSION_FALLBACK
+}
+
+/** 只读展示名，例如 “X Premium+”。读不到就保持空，不拿别的字段凑。 */
+function readGrokPlanLabel(fsMod, home) {
+  if (!fsMod || !home) return undefined
+  const cache = readJsonIfExists(fsMod, path.join(home, '.grok', 'settings_cache.json'))
+  let settings = cache && typeof cache.settings === 'object' ? cache.settings : null
+  if (!settings && typeof cache?.payload === 'string') {
+    try {
+      const payload = JSON.parse(cache.payload)
+      settings = payload && typeof payload.settings === 'object' ? payload.settings : null
+    } catch {
+      settings = null
+    }
+  }
+  const label = typeof settings?.subscription_tier_display === 'string' ? settings.subscription_tier_display.trim() : ''
+  if (!label || label.length > 40) return undefined
+  return label
 }
 
 function normalizeIssuer(value) {
@@ -298,9 +327,13 @@ async function fetchManagementJson(config, resourcePath, deps, opts = {}) {
 }
 
 async function fetchCliBillingJson(creds, pathSuffix, deps) {
+  const version = resolveGrokCliVersion(deps.fs, deps.home)
   const headers = {
     Authorization: `Bearer ${creds.token}`,
     'X-XAI-Token-Auth': 'xai-grok-cli',
+    'x-grok-client-version': version,
+    'x-grok-client-identifier': GROK_CLI_CLIENT,
+    'User-Agent': `${GROK_CLI_CLIENT}/${version}`,
   }
   if (creds.userId) headers['x-userid'] = creds.userId
   const { json } = await requestJson(`${CLI_BILLING_BASE}${pathSuffix}`, {
@@ -318,14 +351,33 @@ function normalizePercent(value) {
   return Math.round(percent * 10) / 10
 }
 
+/** 金额既可能是数字，也可能是 CLI 现在用的 { val }。单位跟接口一致，不做换算。 */
+function billingAmount(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    if (!Object.prototype.hasOwnProperty.call(value, 'val')) return null
+    return toFiniteNumber(value.val)
+  }
+  return toFiniteNumber(value)
+}
+
 function mapCliCreditsWindow(json) {
   const config = json?.config && typeof json.config === 'object' ? json.config : json
   const period = config?.currentPeriod && typeof config.currentPeriod === 'object' ? config.currentPeriod : null
-  if (period && period.type && period.type !== 'USAGE_PERIOD_TYPE_WEEKLY') return null
-  const rawPercent = config?.creditUsagePercent ?? config?.usagePercent ?? config?.usedPercent
-  const usedPercent = rawPercent === undefined && period ? 0 : normalizePercent(rawPercent)
-  const resetsAt = toEpochMs(period?.end ?? config?.resetAt ?? config?.resetsAt ?? config?.nextResetTime)
-  if (usedPercent === null && !resetsAt) return null
+  const periodType = typeof period?.type === 'string' ? period.type.toUpperCase() : ''
+  if (periodType && !periodType.includes('WEEK')) return null
+  let rawPercent = config?.creditUsagePercent ?? config?.usagePercent ?? config?.usedPercent
+  if (rawPercent == null && Array.isArray(config?.productUsage)) {
+    const percents = config.productUsage
+      .map((item) => normalizePercent(item?.usagePercent))
+      .filter((value) => value !== null)
+    if (percents.length > 0) rawPercent = Math.max(...percents)
+  }
+  const resetsAt = toEpochMs(
+    period?.end ?? config?.billingPeriodEnd ?? config?.resetAt ?? config?.resetsAt ?? config?.nextResetTime
+  )
+  // 当周周期存在时，若接口未返回 creditUsagePercent（proto3 默认值 0 在序列化时被省略，常见于新周期刚开始或统一计费 0 用量），百分比缺省为 0
+  const usedPercent = rawPercent != null ? normalizePercent(rawPercent) : (period ? 0 : null)
+  if (usedPercent === null) return null
   const windowEntry = {
     id: 'credits',
     label: 'week',
@@ -337,11 +389,31 @@ function mapCliCreditsWindow(json) {
   return windowEntry
 }
 
+function creditsConfig(json) {
+  return json?.config && typeof json.config === 'object' ? json.config : json
+}
+
+/** 周额度响应到了，但百分比字段这次没带上。这种响应需要再读一次。 */
+function creditsLookWeekly(json) {
+  const config = creditsConfig(json)
+  if (!config || typeof config !== 'object') return false
+  const periodType = typeof config.currentPeriod?.type === 'string' ? config.currentPeriod.type.toUpperCase() : ''
+  return periodType.includes('WEEK') || config.isUnifiedBillingUser === true
+}
+
+async function fetchCliCredits(creds, deps) {
+  const first = await fetchCliBillingJson(creds, '?format=credits', deps)
+  if (mapCliCreditsWindow(first) || !creditsLookWeekly(first)) return first
+  return fetchCliBillingJson(creds, '?format=credits', deps)
+}
+
 function mapCliMonthlyWindow(json) {
   const config = json?.config && typeof json.config === 'object' ? json.config : json
-  const used = toFiniteNumber(config?.used ?? config?.monthlyUsed ?? config?.monthly_used ?? config?.currentUsage)
-  const limit = toFiniteNumber(config?.monthlyLimit ?? config?.monthly_limit ?? config?.limit)
-  if (used === null && limit === null) return null
+  const used = billingAmount(config?.used ?? config?.monthlyUsed ?? config?.monthly_used ?? config?.currentUsage)
+  const limit = billingAmount(config?.monthlyLimit ?? config?.monthly_limit ?? config?.limit)
+  // 统一计费账号的月度上限经常是 { val: 0 }，那是“没有月度金额帽”，不是 0% 额度。
+  // 有花费但没有上限时也不造窗口，避免界面显示成 79/0。
+  if (limit === null || limit <= 0) return null
   const windowEntry = {
     id: 'monthly',
     label: 'month',
@@ -358,18 +430,25 @@ function mapCliMonthlyWindow(json) {
 
 async function fetchCliSubscriptionQuota(creds, deps) {
   const [credits, billing] = await Promise.all([
-    fetchCliBillingJson(creds, '?format=credits', deps),
+    fetchCliCredits(creds, deps),
     fetchCliBillingJson(creds, '', deps),
   ])
-  const windows = [mapCliCreditsWindow(credits), mapCliMonthlyWindow(billing)].filter(Boolean)
+  const creditsWindow = mapCliCreditsWindow(credits)
+  // 周周期已经确认，但两次都没有百分比。不要用「已用 79 / 上限 0」覆盖上一次成功的周额度。
+  if (!creditsWindow && creditsLookWeekly(credits)) {
+    throw codedError('malformed', 'grok credits percent missing')
+  }
+  const windows = [creditsWindow, mapCliMonthlyWindow(billing)].filter(Boolean)
   if (windows.length === 0) {
     throw codedError('unsupported_version', 'unexpected grok cli billing response')
   }
   const now = deps.now()
+  const planLabel = readGrokPlanLabel(deps.fs, deps.home)
   const snapshot = {
     provider: 'grok',
     product: 'subscription',
     accountLabel: 'Grok CLI',
+    ...(planLabel ? { planLabel } : {}),
     windows,
     wallets: [],
     source: 'local_cli',
@@ -460,6 +539,7 @@ module.exports = {
   USAGE_URLS,
   MANAGEMENT_BASE,
   CLI_BILLING_BASE,
+  GROK_CLI_VERSION_FALLBACK,
   OIDC_TOKEN_URL,
   TOKEN_SKEW_MS,
   subscriptionNotice,
@@ -472,8 +552,12 @@ module.exports = {
   readGrokCliCredentials,
   grokCliSessionIsFresh,
   accessTokenIsUsable,
+  resolveGrokCliVersion,
+  readGrokPlanLabel,
+  billingAmount,
   mapCliCreditsWindow,
   mapCliMonthlyWindow,
+  creditsLookWeekly,
   resolveGrokBinary,
   resetGrokLoginState,
   isGrokLoginRunning,

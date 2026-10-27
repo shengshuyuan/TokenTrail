@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react'
+import React, { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import type { StatsResponse, UsageRecord, TimeRange, Currency } from '@/types'
 import { SOURCE_DISPLAY_NAMES } from '@/types'
@@ -11,9 +11,10 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { DataTable } from '@/components/ui/DataTable'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ProviderBrandIcon } from '@/components/dashboard/QuotaBrandIcons'
-import { formatCost, formatNumber, formatTokens } from '@/lib/format'
+import { formatCost, formatNumber, formatTokens, formatCredits } from '@/lib/format'
 import { usePreferences } from '@/lib/PreferencesContext'
 import { useLang } from '@/lib/LanguageContext'
+import { useLatestRequest, isAbortError } from '@/lib/useLatestRequest'
 
 export default function UsagePage() {
   return (
@@ -35,6 +36,7 @@ function UsagePageSkeleton() {
 
 type GroupTab = 'source' | 'model' | 'project'
 type MetricMode = 'tokens' | 'cost'
+type RecordKind = 'measured' | 'estimated' | 'all'
 
 function UsagePageInner() {
   const router = useRouter()
@@ -65,6 +67,8 @@ function UsagePageInner() {
   const [availableSources, setAvailableSources] = useState<string[]>([])
   const [availableModels, setAvailableModels] = useState<{ id: string; name: string }[]>([])
   const [statsLoading, setStatsLoading] = useState(true)
+  const [statsError, setStatsError] = useState<string | null>(null)
+  const beginStatsRequest = useLatestRequest()
 
   // Raw records states
   const [rawRecords, setRawRecords] = useState<UsageRecord[]>([])
@@ -72,6 +76,10 @@ function UsagePageInner() {
   const [totalRecords, setTotalRecords] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [recordsLoading, setRecordsLoading] = useState(false)
+  const [recordsError, setRecordsError] = useState<string | null>(null)
+  // 默认只看实测，与上方汇总口径一致；估算记录需要主动切换查看
+  const [recordKind, setRecordKind] = useState<RecordKind>('measured')
+  const beginRecordsRequest = useLatestRequest()
 
   // Synchronize state with URL search params
   const updateUrlParams = useCallback(
@@ -85,49 +93,62 @@ function UsagePageInner() {
     [router]
   )
 
-  // Fetch Stats Data
+  // Fetch Stats Data（只有最新一次请求可以更新页面，避免慢响应覆盖新筛选）
   const fetchStats = useCallback(async () => {
+    const signal = beginStatsRequest()
+    setStatsLoading(true)
+    setStatsError(null)
     try {
-      setStatsLoading(true)
       const params = new URLSearchParams()
       params.set('days', timeRange.toString())
       if (selectedSources.length > 0) params.set('source', selectedSources.join(','))
       if (selectedModels.length > 0) params.set('model', selectedModels.join(','))
 
-      const res = await fetch(`/api/stats?${params.toString()}`)
-      if (res.ok) {
-        const data = await res.json()
-        const { available_sources, available_models, ...statsData } = data
-        if (Array.isArray(available_sources)) setAvailableSources(available_sources)
-        if (Array.isArray(available_models)) setAvailableModels(available_models)
-        setStats(statsData as StatsResponse)
-      }
+      const res = await fetch(`/api/stats?${params.toString()}`, { signal, cache: 'no-store' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      if (signal.aborted) return
+      const { available_sources, available_models, ...statsData } = data
+      if (Array.isArray(available_sources)) setAvailableSources(available_sources)
+      if (Array.isArray(available_models)) setAvailableModels(available_models)
+      setStats(statsData as StatsResponse)
+    } catch (err) {
+      if (signal.aborted || isAbortError(err)) return
+      console.error('[TokenTrail] usage page: stats request failed', err)
+      setStatsError(err instanceof Error ? err.message : String(err))
     } finally {
-      setStatsLoading(false)
+      if (!signal.aborted) setStatsLoading(false)
     }
-  }, [timeRange, selectedSources, selectedModels])
+  }, [beginStatsRequest, timeRange, selectedSources, selectedModels])
 
   // Fetch Raw Paginated Usage Records
   const fetchRawRecords = useCallback(async () => {
+    const signal = beginRecordsRequest()
+    setRecordsLoading(true)
+    setRecordsError(null)
     try {
-      setRecordsLoading(true)
       const params = new URLSearchParams()
       params.set('days', timeRange.toString())
       params.set('page', page.toString())
+      params.set('kind', recordKind)
       if (selectedSources.length > 0) params.set('source', selectedSources.join(','))
       if (selectedModels.length > 0) params.set('model', selectedModels.join(','))
 
-      const res = await fetch(`/api/usage?${params.toString()}`)
-      if (res.ok) {
-        const data = await res.json()
-        setRawRecords(Array.isArray(data.records) ? data.records : [])
-        setTotalRecords(typeof data.total === 'number' ? data.total : 0)
-        setTotalPages(typeof data.total_pages === 'number' ? data.total_pages : 1)
-      }
+      const res = await fetch(`/api/usage?${params.toString()}`, { signal, cache: 'no-store' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      if (signal.aborted) return
+      setRawRecords(Array.isArray(data.records) ? data.records : [])
+      setTotalRecords(typeof data.total === 'number' ? data.total : 0)
+      setTotalPages(typeof data.total_pages === 'number' ? data.total_pages : 1)
+    } catch (err) {
+      if (signal.aborted || isAbortError(err)) return
+      console.error('[TokenTrail] usage page: records request failed', err)
+      setRecordsError(err instanceof Error ? err.message : String(err))
     } finally {
-      setRecordsLoading(false)
+      if (!signal.aborted) setRecordsLoading(false)
     }
-  }, [timeRange, selectedSources, selectedModels, page])
+  }, [beginRecordsRequest, timeRange, selectedSources, selectedModels, page, recordKind])
 
   useEffect(() => {
     fetchStats()
@@ -332,8 +353,25 @@ function UsagePageInner() {
         )}
       </div>
 
+      {statsError && (
+        <div className="mb-6 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center justify-between gap-3">
+          <span>
+            {stats
+              ? lang === 'zh'
+                ? `汇总加载失败，下面显示的是上一次的结果（${statsError}）`
+                : `Failed to load summary; showing previous result (${statsError})`
+              : lang === 'zh'
+                ? `汇总加载失败（${statsError}）`
+                : `Failed to load summary (${statsError})`}
+          </span>
+          <Button size="sm" variant="secondary" onClick={() => fetchStats()}>
+            {lang === 'zh' ? '重试' : 'Retry'}
+          </Button>
+        </div>
+      )}
+
       {/* Summary Strip for Filtered Data */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-5 mb-8 apple-glass-panel">
+      <div className={`grid grid-cols-2 sm:grid-cols-4 gap-4 p-5 apple-glass-panel ${(stats?.estimated_requests ?? 0) > 0 ? 'mb-3' : 'mb-8'} ${statsLoading && stats ? 'opacity-60' : ''}`}>
         <div>
           <div className="text-xs font-medium text-workbench-text-muted mb-1">
             {lang === 'zh' ? '当前消耗' : 'Filtered Tokens'}
@@ -368,6 +406,35 @@ function UsagePageInner() {
         </div>
       </div>
 
+      {stats && stats.estimated_requests > 0 && (
+        <p className="mb-8 px-1 text-xs text-workbench-text-muted">
+          {lang === 'zh'
+            ? `以上只统计实测数据。另有 ${formatNumber(stats.estimated_requests)} 条估算记录（约 ${formatTokens(stats.estimated_tokens)} tokens）未计入，可在下方明细切换到「估算」查看。`
+            : `Totals above are measured only. ${formatNumber(stats.estimated_requests)} estimated record(s) (~${formatTokens(stats.estimated_tokens)} tokens) are excluded; switch the records table to "Estimated" to inspect them.`}
+        </p>
+      )}
+
+      {(stats?.cursor_groups && (stats.cursor_groups.named.count + stats.cursor_groups.own.count + stats.cursor_groups.grok.count) > 0) && (
+        <div className="apple-glass-panel p-5 mb-8">
+          <h2 className="text-sm font-bold text-workbench-text mb-3">{t('stats.cursorGroups')}</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {([
+              ['named', t('stats.cursorNamed'), stats.cursor_groups.named],
+              ['own', t('stats.cursorOwn'), stats.cursor_groups.own],
+              ['grok', t('stats.cursorGrok'), stats.cursor_groups.grok],
+            ] as const).map(([key, label, group]) => (
+              <div key={key} className="rounded-lg border border-workbench-border/70 px-3 py-2">
+                <div className="text-[11px] text-workbench-text-muted">{label}</div>
+                <div className="font-mono text-lg font-semibold tabular-nums text-workbench-text">
+                  {metricMode === 'tokens' ? formatTokens(group.total_tokens) : formatCost(group.cost_usd, currency, exchangeRate)}
+                </div>
+                <div className="text-[11px] text-workbench-text-muted font-mono">{formatNumber(group.count)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Section 1: Grouped Breakdown Table */}
       <div className="apple-glass-panel p-5 sm:p-7 mb-8">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
@@ -389,6 +456,10 @@ function UsagePageInner() {
         {statsLoading ? (
           <div className="py-12 text-center text-sm text-workbench-text-muted animate-pulse">
             加载构成数据...
+          </div>
+        ) : statsError && !stats ? (
+          <div className="py-12 text-center text-sm text-workbench-text-muted">
+            {lang === 'zh' ? '构成数据加载失败，请点上方「重试」' : 'Failed to load breakdown. Use Retry above.'}
           </div>
         ) : groupItems.length === 0 ? (
           <EmptyState
@@ -469,13 +540,26 @@ function UsagePageInner() {
             </h2>
             <p className="text-xs text-workbench-text-muted mt-0.5">
               {lang === 'zh'
-                ? `共 ${totalRecords} 条明细记录，每页 10 条`
-                : `${totalRecords} total record(s), 10 per page`}
+                ? `共 ${totalRecords} 条${recordKind === 'measured' ? '实测' : recordKind === 'estimated' ? '估算' : ''}明细记录，每页 10 条`
+                : `${totalRecords} ${recordKind === 'all' ? '' : recordKind + ' '}record(s), 10 per page`}
             </p>
           </div>
 
           {/* Pagination buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <SegmentedControl
+              size="sm"
+              options={[
+                { value: 'measured', label: lang === 'zh' ? '实测' : 'Measured' },
+                { value: 'estimated', label: lang === 'zh' ? '估算' : 'Estimated' },
+                { value: 'all', label: lang === 'zh' ? '全部' : 'All' },
+              ]}
+              value={recordKind}
+              onChange={(v) => {
+                setRecordKind(v as RecordKind)
+                setPage(1)
+              }}
+            />
             <Button
               size="sm"
               variant="secondary"
@@ -498,6 +582,23 @@ function UsagePageInner() {
           </div>
         </div>
 
+        {recordsError && (
+          <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center justify-between gap-3">
+            <span>
+              {rawRecords.length > 0
+                ? lang === 'zh'
+                  ? `明细加载失败，下面是上一次的结果（${recordsError}）`
+                  : `Failed to load records; showing previous result (${recordsError})`
+                : lang === 'zh'
+                  ? `明细加载失败（${recordsError}）`
+                  : `Failed to load records (${recordsError})`}
+            </span>
+            <Button size="sm" variant="secondary" onClick={() => fetchRawRecords()}>
+              {lang === 'zh' ? '重试' : 'Retry'}
+            </Button>
+          </div>
+        )}
+
         <DataTable loading={recordsLoading}>
           <thead>
             <tr className="border-b border-workbench-border bg-workbench-sidebar text-xs font-medium text-workbench-text-muted">
@@ -509,14 +610,15 @@ function UsagePageInner() {
               <th className="py-2.5 px-3 text-right">缓存</th>
               <th className="py-2.5 px-3 text-right">输出</th>
               <th className="py-2.5 px-3 text-right">思考</th>
+              <th className="py-2.5 px-3 text-right">Credits</th>
               <th className="py-2.5 px-3 text-right">估算费用</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-workbench-border/60">
             {rawRecords.length === 0 ? (
               <tr>
-                <td colSpan={9} className="py-10 text-center text-sm text-workbench-text-muted">
-                  {recordsLoading ? '加载中...' : '暂无明细记录'}
+                <td colSpan={10} className="py-10 text-center text-sm text-workbench-text-muted">
+                  {recordsLoading ? '加载中...' : recordsError ? '加载失败' : '暂无明细记录'}
                 </td>
               </tr>
             ) : (
@@ -550,6 +652,14 @@ function UsagePageInner() {
                     </td>
                     <td className="py-2.5 px-3 text-workbench-text font-bold whitespace-nowrap">
                       {r.model}
+                      {r.estimated === 1 && (
+                        <span
+                          className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[10px] font-sans font-medium"
+                          title={lang === 'zh' ? 'token 数为估算值，不计入汇总' : 'Estimated tokens, excluded from totals'}
+                        >
+                          {lang === 'zh' ? '估算' : 'Est.'}
+                        </span>
+                      )}
                     </td>
                     <td className="py-2.5 px-3 text-workbench-text-muted whitespace-nowrap font-sans">
                       {projectName}
@@ -561,10 +671,14 @@ function UsagePageInner() {
                       {r.cached_input_tokens > 0 ? formatNumber(r.cached_input_tokens) : '—'}
                     </td>
                     <td className="py-2.5 px-3 text-right text-workbench-accent tabular-nums font-semibold">
-                      {formatNumber(r.output_tokens)}
+                      {/* Credit-billed sources (Kiro) never record output tokens: show unknown, not 0 */}
+                      {(r.credits ?? 0) > 0 && r.output_tokens === 0 ? '—' : formatNumber(r.output_tokens)}
                     </td>
                     <td className="py-2.5 px-3 text-right text-workbench-text-muted tabular-nums">
                       {r.reasoning_tokens > 0 ? formatNumber(r.reasoning_tokens) : '—'}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-workbench-text tabular-nums">
+                      {(r.credits ?? 0) > 0 ? formatCredits(r.credits as number) : '—'}
                     </td>
                     <td className="py-2.5 px-3 text-right text-workbench-text tabular-nums font-semibold">
                       {formatCost(r.cost_usd, currency, exchangeRate)}

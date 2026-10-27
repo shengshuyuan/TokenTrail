@@ -1,8 +1,10 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React from 'react'
 import Link from 'next/link'
-import type { QuotasResponse, ProviderQuotaSnapshot, QuotaWindow } from '@/lib/quotas/types'
+import type { ProviderQuotaSnapshot, QuotaWindow } from '@/lib/quotas/types'
+import { useQuotas } from '@/lib/quotas/useQuotas'
+import { useLang } from '@/lib/LanguageContext'
 import { ProviderBrandIcon } from './QuotaBrandIcons'
 
 const PROVIDER_NAMES: Record<string, string> = {
@@ -11,32 +13,32 @@ const PROVIDER_NAMES: Record<string, string> = {
   grok: 'Grok',
   glm: 'GLM',
   kimi: 'Kimi Code',
+  cursor: 'Cursor',
+}
+
+function sourceLabel(source: string): string {
+  if (source === 'official_api') return '官方接口'
+  if (source === 'local_session') return '本地会话'
+  if (source === 'local_cli') return '本地 CLI'
+  if (source === 'manual') return '手动录入'
+  return '未读取'
+}
+
+const READ_ISSUE_ERRORS = new Set(['rate_limited', 'timeout', 'network', 'malformed'])
+
+function hasReadIssue(provider: ProviderQuotaSnapshot): boolean {
+  return (
+    provider.stale ||
+    provider.status === 'stale' ||
+    provider.status === 'partial' ||
+    provider.status === 'network_error' ||
+    Boolean(provider.error && READ_ISSUE_ERRORS.has(provider.error.code))
+  )
 }
 
 export function QuotaPreviewCard({ className = '' }: { className?: string }) {
-  const [data, setData] = useState<QuotasResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let mounted = true
-    const fetchQuotas = async () => {
-      try {
-        const res = await fetch('/api/quotas', { cache: 'no-store' })
-        if (res.ok && mounted) {
-          const json: QuotasResponse = await res.json()
-          setData(json)
-        }
-      } catch {
-        // silent fail - keep previous snapshot
-      } finally {
-        if (mounted) setLoading(false)
-      }
-    }
-    fetchQuotas()
-    return () => {
-      mounted = false
-    }
-  }, [])
+  const { lang } = useLang()
+  const { data, loading, loadError, fetchQuotas, backgroundRefreshing } = useQuotas()
 
   // Providers list: Codex, Kimi, Gemini, Grok, GLM
   const providers = data?.providers || []
@@ -54,6 +56,12 @@ export function QuotaPreviewCard({ className = '' }: { className?: string }) {
         </Link>
       </div>
 
+      {backgroundRefreshing && (
+        <p className="mb-3 text-xs text-workbench-text-muted">
+          {lang === 'zh' ? '正在后台更新额度…' : 'Updating quotas in the background…'}
+        </p>
+      )}
+
       {loading && !data ? (
         <div className="space-y-3 animate-pulse py-4">
           {[1, 2, 3].map((i) => (
@@ -66,6 +74,13 @@ export function QuotaPreviewCard({ className = '' }: { className?: string }) {
               <div className="w-16 h-3.5 bg-gray-200 rounded" />
             </div>
           ))}
+        </div>
+      ) : loadError && !data ? (
+        <div className="py-6 text-center text-sm text-amber-700">
+          <p>{lang === 'zh' ? `读取额度失败（${loadError}）` : `Failed to load quotas (${loadError})`}</p>
+          <button type="button" onClick={() => fetchQuotas()} className="mt-2 text-xs font-medium text-workbench-accent hover:underline">
+            {lang === 'zh' ? '重试' : 'Retry'}
+          </button>
         </div>
       ) : providers.length === 0 ? (
         <div className="py-8 text-center text-sm text-workbench-text-muted">
@@ -87,7 +102,10 @@ export function QuotaPreviewCard({ className = '' }: { className?: string }) {
 
             // Window label
             const windowName = primaryWin?.label || primaryWin?.id || ''
-            const windowTag = windowName.includes('5') || windowName.includes('300')
+            const readIssue = hasReadIssue(p)
+            const windowTag = readIssue && remainingPercent !== null
+              ? '上次成功'
+              : windowName.includes('5') || windowName.includes('300')
               ? '5小时窗口'
               : windowName.includes('week') || windowName.includes('10080')
               ? '周窗口'
@@ -97,7 +115,17 @@ export function QuotaPreviewCard({ className = '' }: { className?: string }) {
 
             // Status label & color
             let statusBadge = null
-            if (p.status === 'not_configured') {
+            if (readIssue && remainingPercent !== null) {
+              statusBadge = (
+                <span className="text-xs font-semibold text-amber-600 font-mono">
+                  旧值 · 剩余 {remainingPercent}%
+                </span>
+              )
+            } else if (p.stale || p.status === 'stale') {
+              statusBadge = <span className="text-xs text-amber-600 font-medium">沿用旧值</span>
+            } else if (p.status === 'partial') {
+              statusBadge = <span className="text-xs text-amber-600 font-medium">部分可读</span>
+            } else if (p.status === 'not_configured') {
               statusBadge = <span className="text-xs text-gray-500 font-medium">待登录</span>
             } else if (p.status === 'auth_error') {
               statusBadge = <span className="text-xs text-red-600 font-medium">授权失效</span>
@@ -118,7 +146,7 @@ export function QuotaPreviewCard({ className = '' }: { className?: string }) {
                 </span>
               )
             } else {
-              statusBadge = <span className="text-xs text-emerald-700 font-medium">已连接</span>
+              statusBadge = <span className="text-xs text-gray-500 font-medium">{sourceLabel(p.source)}</span>
             }
 
             return (
@@ -135,7 +163,12 @@ export function QuotaPreviewCard({ className = '' }: { className?: string }) {
                     <div className="text-sm font-medium text-workbench-text truncate group-hover:text-workbench-accent transition-colors">
                       {PROVIDER_NAMES[p.provider] || p.provider}
                     </div>
-                    <div>{statusBadge}</div>
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                      {statusBadge}
+                      {!readIssue && (p.source === 'manual' || p.error) && (
+                        <span className="text-[11px] text-workbench-text-muted">{p.error ? '读取失败' : sourceLabel(p.source)}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -146,7 +179,9 @@ export function QuotaPreviewCard({ className = '' }: { className?: string }) {
                     <div className="w-full h-1.5 bg-workbench-border/80 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-300 ${
-                          remainingPercent <= 10
+                          readIssue
+                            ? 'bg-amber-500'
+                            : remainingPercent <= 10
                             ? 'bg-red-500'
                             : remainingPercent <= 30
                             ? 'bg-amber-500'
@@ -163,6 +198,11 @@ export function QuotaPreviewCard({ className = '' }: { className?: string }) {
             )
           })}
         </div>
+      )}
+      {loadError && data && (
+        <p className="mt-3 text-xs text-amber-700">
+          {lang === 'zh' ? `读取失败，显示的是上一次的数据（${loadError}）` : `Failed to refresh; showing the previous snapshot (${loadError})`}
+        </p>
       )}
     </div>
   )

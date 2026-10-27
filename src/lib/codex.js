@@ -1,3 +1,10 @@
+/**
+ * Codex session JSONL helpers.
+ * extractCodexModel reads the declared model; createCodexSessionUsageParser
+ * turns token_count events into mutually exclusive buckets. Plain JS, imported
+ * from the TypeScript sync sources with a typed require().
+ */
+
 function pickString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }

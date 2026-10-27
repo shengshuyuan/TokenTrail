@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDb, getAggregatedStats } from '@/lib/db'
+import { getDb, getAggregatedStats, localDayWindow } from '@/lib/db'
 import { ensureInit } from '@/lib/init'
 import { InvalidQueryParameterError, parseBoundedInteger, parseFilterList } from '@/lib/api-params'
+import { readStatsCache, writeStatsCache } from '@/lib/stats-cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,8 +15,13 @@ export async function GET(request: NextRequest) {
     const sourceParam = searchParams.get('source')
     const modelParam = searchParams.get('model')
 
-    const now = Date.now()
-    const startDate = now - days * 24 * 60 * 60 * 1000
+    // "今天" = since local midnight; "N 天" = today plus the previous N-1 local days.
+    const { startDate, endDate: now } = localDayWindow(days)
+
+    // startDate in the key: after midnight the window moves, so old entries must miss.
+    const cacheKey = `${startDate}|${request.nextUrl.searchParams.toString()}`
+    const cached = readStatsCache(cacheKey)
+    if (cached) return NextResponse.json(cached)
 
     const stats = getAggregatedStats({
       startDate,
@@ -36,11 +42,13 @@ export async function GET(request: NextRequest) {
        ORDER BY u.model`
     ).all(startDate, now) as { model: string; display_name: string }[]
 
-    return NextResponse.json({
+    const body = {
       ...stats,
       available_sources: availableSources.map(s => s.source),
       available_models: availableModels.map(m => ({ id: m.model, name: m.display_name })),
-    })
+    }
+    writeStatsCache(cacheKey, body)
+    return NextResponse.json(body)
   } catch (error) {
     if (error instanceof InvalidQueryParameterError) {
       return NextResponse.json(

@@ -5,7 +5,20 @@ import { getDb } from './db'
  * Bump when a scanner's parse or attribution rules change. Checkpoints from
  * an older epoch are ignored, so the next sync rereads every file once.
  */
-export const SYNC_SCAN_EPOCH = 1
+export const SYNC_SCAN_EPOCH = 2
+
+/**
+ * Per-source epoch overrides. Bump one source here when only that scanner's
+ * parse rules change, so other sources' checkpoints stay valid.
+ */
+export const SOURCE_SCAN_EPOCH: Record<string, number> = {
+  // kiro: per-turn model from the request log + context tokens + credit cost
+  kiro: 3,
+}
+
+function scanEpochFor(source: string): number {
+  return SOURCE_SCAN_EPOCH[source] ?? SYNC_SCAN_EPOCH
+}
 
 export function ensureSyncCheckpointTable(): void {
   getDb().exec(`
@@ -41,7 +54,7 @@ export function isUnchangedSyncedFile(source: string, filePath: string): boolean
   ).get(source, filePath) as { size: number; mtime_ms: number; epoch: number } | undefined
 
   return !!row
-    && row.epoch === SYNC_SCAN_EPOCH
+    && row.epoch === scanEpochFor(source)
     && row.size === stat.size
     && row.mtime_ms === stat.mtimeMs
 }
@@ -59,5 +72,5 @@ export function markSyncedFile(source: string, filePath: string): void {
       size = excluded.size,
       mtime_ms = excluded.mtime_ms,
       epoch = excluded.epoch
-  `).run(source, filePath, stat.size, stat.mtimeMs, SYNC_SCAN_EPOCH)
+  `).run(source, filePath, stat.size, stat.mtimeMs, scanEpochFor(source))
 }

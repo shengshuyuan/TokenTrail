@@ -4,6 +4,21 @@
 
 Usage-accounting credibility and local-access hardening.
 
+- **Measured totals exclude estimates.** Dashboard and chart totals count `estimated = 0` only. The token card says “另有估算 N（来源）” and a high Antigravity/TraeWork share shows a short note. The earlier changelog line that already described this behavior now matches the query.
+- **Sync is split by source** under `src/lib/sync/sources/`. `syncAll` starts Cursor and VibeCafé first, then local scanners, each with a time budget. `POST /api/sync` accepts `{ "sources": ["cursor"] }`.
+- **VibeCafé** skips a daily bucket when that source, model, and local day already has a raw row.
+- **Cursor pagination** records a warning on the connections page when the import stops before `totalUsageEventsCount`.
+- **Stats** responses are cached in memory for about two minutes and cleared after sync.
+- **Daily buckets** follow the machine timezone. Set `TOKENTRAIL_TZ_OFFSET_MINUTES` to override.
+- **Proxy GET** uses the same local-origin check as POST. With `TOKENTRAIL_ALLOW_REMOTE=1`, a GET still cannot borrow the stored API key.
+- **`install-service` builds production by default.** Pass `--dev` to keep Next dev mode. `doctor` warns when the project tree is newer than `~/.tokentrail/runtime/TokenTrail`.
+- **LaunchAgent is macOS-only.** Linux and Windows run `npm run dev` or `npm start` in the foreground.
+- **Quota preview polls with the quotas page.** Both use one request sequence, so a late poll cannot overwrite a newer manual refresh, and a failed read keeps the previous snapshot.
+- **Single-source sync** scans only the named local usage directory. `openclaw` and `hermes` no longer skip the scanner, and `zcode` no longer scans the other usage directories. ZCode export runs only when that source is included.
+- **Dependencies.** Next.js is 15.5.27 (patched 15.5 line, with React 19). Pricing spreadsheets use ExcelJS instead of SheetJS `xlsx` 0.18.5.
+- **Model prices** follow the current OpenRouter list price (USD per 1M tokens). Historical `usage_records.cost_usd` was recalculated with the existing formula. Models with no public rate, including Grok Bot and Grok Build, were left unchanged.
+- **Grok quota refresh** reads the weekly credits payload again when `creditUsagePercent` is missing. A percent-less response no longer replaces the last good weekly window with a monthly `used / 0` row.
+
 ### Fixed
 
 - **Token double-counting**: cached input and reasoning output were stored as
@@ -42,8 +57,8 @@ Usage-accounting credibility and local-access hardening.
   - Full backward compatibility for existing retro themes, privacy mode, and custom model pricing.
 - **Estimated vs measured usage separated**: new `estimated` column marks
   Antigravity session rows and TraeWork scan rows (char-based estimates).
-  Dashboard totals, charts, and source/model/project breakdowns exclude
-  estimated rows; the totals card shows "另有估算 +N" alongside.
+  Headline totals count measured rows only. The token card shows the
+  excluded estimate beside them (“另有估算 N”).
 - **`npm start` binds `127.0.0.1`** (`-H ${HOST:-127.0.0.1}`), matching
   `scripts/serve.js` and the documented local-only boundary; docs now state
   both launch paths explicitly.

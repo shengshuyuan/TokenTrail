@@ -10,7 +10,7 @@ import { QuotaManualModal } from './QuotaManualModal'
 
 // ─── 常量 ────────────────────────────────────────────────────
 
-const PROVIDER_IDS = ['codex', 'gemini', 'grok', 'glm', 'kimi'] as const
+const PROVIDER_IDS = ['codex', 'gemini', 'grok', 'glm', 'kimi', 'cursor'] as const
 const POLL_INTERVAL_MS = 10 * 60 * 1000 // 页面可见时每 10 分钟检查一次
 const LOADING_RETRY_MS = 2000 // 弹窗打开且有 loading 时快速轮询
 const LOADING_RETRY_MAX = 15
