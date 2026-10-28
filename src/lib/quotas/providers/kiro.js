@@ -22,7 +22,7 @@ const DEFAULT_REGION = 'us-east-1'
 /** Kiro 的「无上限」哨兵值（与 Kiro CLI 一致：limit ≥ 999999 视为不限）。 */
 const UNLIMITED_SENTINEL = 999999
 const TOKEN_SKEW_MS = 60 * 1000
-const CLI_TIMEOUT_MS = 15000
+const CLI_TIMEOUT_MS = 10000
 
 function round2(value) {
   return Math.round(value * 100) / 100
@@ -87,13 +87,21 @@ function readStoredKiroToken({ home, now, fsMod = fs, env = process.env } = {}) 
   }
 }
 
-/** 让 Kiro CLI 自己续期并返回 token（与 Kiro TUI 取 token 的方式一致）。 */
+/**
+ * 让 Kiro CLI 自己续期并返回 token（与 Kiro TUI 取 token 的方式一致）。
+ * 返回 null = 本机没有 Kiro CLI；失败时带 failure 区分超时 / 未登录 / 输出异常。
+ */
 function tokenFromKiroCli({ home, fsMod = fs, env = process.env, execFileImpl = execFile } = {}) {
   const bin = kiroCliCandidates(home, env).find((p) => fsMod.existsSync(p))
   if (!bin) return Promise.resolve(null)
   return new Promise((resolve) => {
     execFileImpl(bin, ['chat', '_', 'get-kas-token'], { timeout: CLI_TIMEOUT_MS, maxBuffer: 1024 * 1024 }, (err, stdout) => {
-      if (err) return resolve({ failed: true })
+      if (err) {
+        if (err.killed || err.signal === 'SIGTERM' || err.code === 'ETIMEDOUT') return resolve({ failure: 'timeout' })
+        if (err.code === 'ENOENT' || err.code === 'EACCES') return resolve({ failure: 'not_configured' })
+        // Non-zero exit: the CLI could not produce a token (signed out / refresh rejected).
+        return resolve({ failure: 'auth' })
+      }
       try {
         const parsed = JSON.parse(String(stdout).trim())
         const data = parsed?.data
@@ -103,19 +111,31 @@ function tokenFromKiroCli({ home, fsMod = fs, env = process.env, execFileImpl = 
       } catch {
         // fall through
       }
-      resolve({ failed: true })
+      resolve({ failure: 'malformed' })
     })
   })
 }
 
+const CLI_FAILURE_MESSAGES = {
+  timeout: 'Kiro CLI token helper timed out',
+  not_configured: 'Kiro CLI could not be started',
+  auth: 'Kiro CLI login expired',
+  malformed: 'unexpected Kiro CLI token output',
+}
+
+/** Token via the Kiro CLI; throws a coded error describing why it failed. */
+async function cliTokenOrThrow(deps) {
+  const fromCli = await (deps.kiroCliToken || tokenFromKiroCli)({ home: deps.home })
+  if (!fromCli) throw codedError('not_configured', 'Kiro CLI is not installed or not logged in')
+  if (fromCli.failure) throw codedError(fromCli.failure, CLI_FAILURE_MESSAGES[fromCli.failure])
+  return fromCli
+}
+
+/** 优先用凭证库里未过期的 token；没有则让 Kiro CLI 续期。stored 标记来源，便于 401 时重试。 */
 async function resolveKiroAuth(deps) {
-  const now = deps.now()
-  const stored = readStoredKiroToken({ home: deps.home, now })
-  if (stored) return stored
-  const fromCli = await tokenFromKiroCli({ home: deps.home })
-  if (fromCli && !fromCli.failed) return fromCli
-  if (fromCli && fromCli.failed) throw codedError('auth', 'Kiro CLI login expired')
-  throw codedError('not_configured', 'Kiro CLI is not installed or not logged in')
+  const stored = (deps.kiroStoredToken || readStoredKiroToken)({ home: deps.home, now: deps.now() })
+  if (stored) return { ...stored, stored: true }
+  return cliTokenOrThrow(deps)
 }
 
 function regionFromProfileArn(arn) {
@@ -215,20 +235,33 @@ function localCreditsToday(deps) {
   return seen ? round2(today) : null
 }
 
-async function fetchQuota(deps) {
-  const auth = await (deps.kiroResolveAuth || resolveKiroAuth)(deps)
-  if (!auth || !auth.accessToken) throw codedError('not_configured', 'Kiro CLI is not logged in')
-
-  const region = regionFromProfileArn(auth.profileArn)
-  const url = `https://management.${region}.kiro.dev/Get-Usage-Limits?${queryString({
+function usageLimitsUrl(profileArn) {
+  return `https://management.${regionFromProfileArn(profileArn)}.kiro.dev/Get-Usage-Limits?${queryString({
     origin: 'KIRO_CLI',
-    profileArn: auth.profileArn,
+    profileArn,
   })}`
-  const { json } = await requestJson(url, {
+}
+
+function requestUsageLimits(auth, deps) {
+  return requestJson(usageLimitsUrl(auth.profileArn), {
     headers: { Authorization: `Bearer ${auth.accessToken}` },
     timeoutMs: deps.timeoutMs,
     fetchImpl: deps.fetchImpl,
   })
+}
+
+async function fetchQuota(deps) {
+  const auth = await (deps.kiroResolveAuth || resolveKiroAuth)(deps)
+  if (!auth || !auth.accessToken) throw codedError('not_configured', 'Kiro CLI is not logged in')
+
+  let json
+  try {
+    ;({ json } = await requestUsageLimits(auth, deps))
+  } catch (err) {
+    // A stored token can be revoked before its local expiry: let the CLI refresh once.
+    if (!(err && err.code === 'auth' && auth.stored)) throw err
+    ;({ json } = await requestUsageLimits(await cliTokenOrThrow(deps), deps))
+  }
 
   const now = deps.now()
   const snapshot = mapUsageLimits(json, now)
@@ -245,8 +278,8 @@ async function fetchQuota(deps) {
   }
   return snapshot
 }
-// Token refresh through the Kiro CLI takes ~5–6s; give the adapter room.
-fetchQuota.timeoutMs = 25000
+// Worst case: CLI token refresh (≤10s) + HTTP (≤5.5s), plus one 401 retry.
+fetchQuota.timeoutMs = 20000
 
 module.exports = {
   DAY_MS,
@@ -254,6 +287,7 @@ module.exports = {
   regionFromProfileArn,
   readStoredKiroToken,
   tokenFromKiroCli,
+  cliTokenOrThrow,
   resolveKiroAuth,
   mapUsageLimits,
   localCreditsToday,

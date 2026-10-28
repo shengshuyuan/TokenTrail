@@ -16,7 +16,6 @@ const refreshModule = require('../../lib/quotas/refresh.js') as {
 }
 import { deleteConfig, getConfig } from '@/lib/db'
 import { getQuotaSecret, QUOTA_SECRET_KEYS, setQuotaSecret } from '@/lib/quotas/secret-store'
-import { QUOTA_PROVIDER_IDS, type ProviderId } from '@/lib/quotas/types'
 
 const DB_CONFIG_KEYS = [
   'XAI_TEAM_ID',
@@ -66,17 +65,7 @@ function buildQuotaDeps(visibleProviders?: string[]): Record<string, unknown> {
   return { ...deps, adapters: scoped, store: createDbQuotaStore() }
 }
 
-/**
- * Parse a `providers` filter (comma list or array) against the known ids.
- * undefined = no filter (all products); [] = every product switched off.
- */
-export function parseVisibleProviders(raw: unknown): string[] | undefined {
-  if (raw === undefined || raw === null) return undefined
-  const list = Array.isArray(raw) ? raw : String(raw).split(',')
-  return list
-    .map((id) => (typeof id === 'string' ? id.trim() : ''))
-    .filter((id): id is ProviderId => (QUOTA_PROVIDER_IDS as string[]).includes(id))
-}
+export { parseVisibleProviders } from '@/lib/quotas/visibility'
 
 /** GET /api/quotas：立即返回缓存；过期则后台去重刷新。 */
 export function getQuotasForServer(options?: Record<string, unknown>, visibleProviders?: string[]): Promise<unknown> {

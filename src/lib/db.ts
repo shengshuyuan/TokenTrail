@@ -437,6 +437,12 @@ export function insertUsageRecord(record: {
   return { success: true, cost_usd, id: result.lastInsertRowid as number, duplicate: false, project_backfilled: false }
 }
 
+/** Model already stored for a request_id, or undefined when the row does not exist. */
+export function getStoredUsageModel(requestId: string): string | undefined {
+  const row = getDb().prepare('SELECT model FROM usage_records WHERE request_id = ?').get(requestId) as { model: string } | undefined
+  return row?.model
+}
+
 /**
  * Replaces a locally-derived record when its stable source position is read
  * again. Parser upgrades can then correct historical rows without duplicates.

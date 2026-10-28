@@ -52,7 +52,8 @@ export async function POST(req: Request) {
 
     saveQuotaSnapshotRows([row])
 
-    const quotas = await getQuotasForServer()
+    // No background refresh: it would also query products hidden in Settings.
+    const quotas = await getQuotasForServer({ backgroundRefresh: false })
     return NextResponse.json({ success: true, snapshot, quotas })
   } catch (err) {
     return NextResponse.json(

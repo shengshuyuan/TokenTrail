@@ -61,6 +61,8 @@ export function useQuotas() {
   }, [isHydrated, visibleKey])
 
   const refresh = useCallback(async (provider?: ProviderId): Promise<QuotaRefreshOutcome | null> => {
+    // Until saved preferences load we don't know which products are hidden.
+    if (!isHydrated) return null
     const requestId = beginQuotaRefresh(gateRef.current)
     if (requestId == null) return null
     setRefreshing(true)
@@ -105,7 +107,7 @@ export function useQuotas() {
       finishQuotaRefresh(gateRef.current, requestId)
       if (acceptQuotaResponse(requestId, gateRef.current.latestId)) setRefreshing(false)
     }
-  }, [visibleKey])
+  }, [isHydrated, visibleKey])
 
   useEffect(() => {
     fetchQuotas()

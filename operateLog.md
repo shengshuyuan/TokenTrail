@@ -2,6 +2,16 @@
 
 用量数据在本机 SQLite（本地数据库），不进 git。下面历史条目里出现的 `data/token-trail.db` 都是指这份本地数据库。
 
+- **[2026-10-28 11:05:00 CST]** 🟡修复
+- **影响范围**：`scripts/sync-openrouter-pricing.mjs`、`scripts/import-pricing-excel.mjs`、`src/app/api/quotas/{auth,manual,refresh}/route.ts`、`src/lib/quotas/{visibility.ts,server.ts,useQuotas.ts}`、`src/lib/quotas/providers/kiro.js`、`src/lib/kiro.js`、`src/lib/sync/sources/kiro.ts`、`src/lib/db.ts`、`tests/kiro-usage.test.mjs`、`tests/kiro-sync.test.mjs`（新）、`~/.tokentrail/runtime/TokenTrail`
+- **变更摘要**：修复 Kiro 接入复查发现的问题：
+  1. 两个改价脚本重算费用时跳过带 credits 的记录（`credits = 0` 条件），Kiro 按 credits 计的费用不再被 token × 单价覆盖；在数据库副本上实跑 Excel 导入验证，Kiro 费用前后一致（$23.86）。
+  2. 登录验证 / 手动录入接口不再触发不分开关的后台刷新；前端在设置加载完成前不发刷新，关闭的产品彻底不查询。
+  3. 请求日志里查不到某一轮时（旧运行日志被清理），保留已存的模型，不降级为会话级猜测。
+  4. Kiro 额度：CLI 失败按真实原因上报（超时 / 未安装 / 未登录 / 输出异常），本地 token 被拒（401）时经 CLI 续期重试一次；CLI 超时 15s→10s，Adapter 预算 25s→20s。
+  5. 验收：全量 264 项测试（新增 10 项）、tsc、lint 通过；部署前备份 `~/.tokentrail/backups/token-trail-2026-10-28T03-02-25-555Z.db`；线上额度页 KIRO PRO 已用 667/1000，Kiro 39 条实测记录。
+- **回滚指南**：`git revert` 本次提交后 `npm run install-service`。本地数据库不用动。
+
 - **[2026-10-28 00:05:00 CST]** 🟢新增
 - **影响范围**：`src/lib/kiro.js`、`src/lib/sync/sources/kiro.ts`、`src/lib/sync-checkpoint.ts`、`src/lib/db.ts`、`src/lib/quotas/providers/kiro.js`、`src/lib/quotas/{server.ts,useQuotas.ts}`、`src/app/api/quotas/{route.ts,refresh/route.ts}`、`src/app/usage/page.tsx`、`src/components/dashboard/QuotaProviderRow.tsx`、`src/lib/i18n.ts`、`src/types/index.ts`、`src/lib/format.ts`、`tests/kiro-usage.test.mjs`、`data/token-trail.db`、`~/.tokentrail/runtime/TokenTrail`
 - **变更摘要**：Kiro CLI 用量上报与额度查询：

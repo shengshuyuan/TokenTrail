@@ -316,14 +316,19 @@ function parseKiroTranscript(fsMod, transcriptPath, options = {}) {
 
     const window = maxInputTokensFor(model)
     const percents = parsed.executionId ? contextByExecution.get(parsed.executionId) || [] : []
-    const contextTokens = percents.reduce((sum, pct) => sum + Math.round((pct / 100) * window), 0)
+    const contextTokens = contextTokensFor(percents, model)
 
     records.push({
       ...parsed,
       requestId: parsed.turnId ? `kiro:${parsed.turnId}` : `kiro:${transcriptPath}:L${line}`,
       project: meta.project,
       model,
+      // true = taken from the request log for this exact turn. Callers keep an
+      // already-stored model when this is false (old run logs may be pruned).
+      modelFromLog: Boolean(logged),
+      contextPercents: percents,
       contextTokens,
+      contextWindow: window,
       contextRequests: percents.length,
       costUsd: Math.round(parsed.credits * KIRO_CREDIT_USD * 1e6) / 1e6,
     })
@@ -331,11 +336,18 @@ function parseKiroTranscript(fsMod, transcriptPath, options = {}) {
   return records
 }
 
+/** Σ server-reported context percentages × the model's context window. */
+function contextTokensFor(percents, model) {
+  const window = maxInputTokensFor(model)
+  return percents.reduce((sum, pct) => sum + Math.round((pct / 100) * window), 0)
+}
+
 module.exports = {
   KIRO_MODEL,
   KIRO_CREDIT_USD,
   KIRO_DEFAULT_MAX_INPUT_TOKENS,
   maxInputTokensFor,
+  contextTokensFor,
   normalizeKiroModel,
   kiroHomeDir,
   kiroSessionsDir,

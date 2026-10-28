@@ -247,3 +247,77 @@ describe('kiro quota adapter', () => {
     )
   })
 })
+
+describe('kiro quota adapter · credentials', () => {
+  const okResponse = {
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ usageBreakdownList: [{ resourceType: 'CREDIT', currentUsage: 1, usageLimit: 10 }] }),
+    headers: { get: () => null },
+  }
+  const unauthorized = { ok: false, status: 401, text: async () => '{}', headers: { get: () => null } }
+  const arn = 'arn:aws:codewhisperer:us-east-1:1:profile/P'
+  const baseDeps = { fs: mockFs({}), home: '/home/u', now: () => 1, timeoutMs: 1000 }
+
+  it('retries once through the Kiro CLI when the stored token is rejected', async () => {
+    const tokens = []
+    let cliCalls = 0
+    const snap = await kiroQuota.fetchQuota({
+      ...baseDeps,
+      kiroStoredToken: () => ({ accessToken: 'stale', profileArn: arn }),
+      kiroCliToken: async () => { cliCalls++; return { accessToken: 'fresh', profileArn: arn } },
+      fetchImpl: async (_url, opts) => {
+        tokens.push(opts.headers.Authorization)
+        return opts.headers.Authorization === 'Bearer stale' ? unauthorized : okResponse
+      },
+    })
+    assert.deepEqual(tokens, ['Bearer stale', 'Bearer fresh'])
+    assert.equal(cliCalls, 1)
+    assert.equal(snap.windows[0].limit, 10)
+  })
+
+  it('does not loop when a CLI-issued token is rejected', async () => {
+    let calls = 0
+    await assert.rejects(
+      () => kiroQuota.fetchQuota({
+        ...baseDeps,
+        kiroStoredToken: () => null,
+        kiroCliToken: async () => ({ accessToken: 'fresh', profileArn: arn }),
+        fetchImpl: async () => { calls++; return unauthorized },
+      }),
+      (e) => e.code === 'auth',
+    )
+    assert.equal(calls, 1)
+  })
+
+  it('reports CLI failures with their real cause, not always "login expired"', async () => {
+    for (const failure of ['timeout', 'malformed', 'auth', 'not_configured']) {
+      await assert.rejects(
+        () => kiroQuota.fetchQuota({ ...baseDeps, kiroStoredToken: () => null, kiroCliToken: async () => ({ failure }) }),
+        (e) => e.code === failure,
+      )
+    }
+    await assert.rejects(
+      () => kiroQuota.fetchQuota({ ...baseDeps, kiroStoredToken: () => null, kiroCliToken: async () => null }),
+      (e) => e.code === 'not_configured',
+    )
+  })
+
+  it('maps execFile errors from the token helper', async () => {
+    const run = (err, stdout = '') =>
+      kiroQuota.tokenFromKiroCli({
+        home: '/home/u',
+        fsMod: { existsSync: () => true },
+        env: {},
+        execFileImpl: (_bin, _args, _opts, cb) => cb(err, stdout),
+      })
+    assert.deepEqual(await run(Object.assign(new Error('t'), { killed: true, signal: 'SIGTERM' })), { failure: 'timeout' })
+    assert.deepEqual(await run(Object.assign(new Error('x'), { code: 'ENOENT' })), { failure: 'not_configured' })
+    assert.deepEqual(await run(Object.assign(new Error('exit'), { code: 1 })), { failure: 'auth' })
+    assert.deepEqual(await run(null, 'not json'), { failure: 'malformed' })
+    assert.deepEqual(
+      await run(null, JSON.stringify({ kind: 'getKasToken', data: { accessToken: 'a', profileArn: arn } })),
+      { accessToken: 'a', profileArn: arn },
+    )
+  })
+})

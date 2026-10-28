@@ -428,6 +428,9 @@ async function main() {
   `)
 
   // 正常模型重算费用
+  // Credit-billed rows (Kiro CLI) store credits × official credit price; their
+  // token counts are context totals, so token × list price would be wrong.
+  const hasCreditsColumn = db.prepare('PRAGMA table_info(usage_records)').all().some((c) => c.name === 'credits')
   const recalculate = db.prepare(`
     UPDATE usage_records
     SET cost_usd = (
@@ -442,6 +445,7 @@ async function main() {
     )
     WHERE EXISTS (SELECT 1 FROM model_pricing p WHERE p.model_id = usage_records.model)
       AND NOT (source = 'cursor' AND is_aggregate = 0)
+      ${hasCreditsColumn ? 'AND credits = 0' : ''}
       AND NOT (model IN (${[...JUNK_MODELS].map(() => '?').join(', ')}) OR model LIKE 'test-%' OR model LIKE 'test_%' OR model LIKE 'verify-%')
   `)
 

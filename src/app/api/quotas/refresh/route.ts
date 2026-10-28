@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'invalid providers' }, { status: 400 })
     }
     const visible = parseVisibleProviders(body?.providers)
-    if (provider && visible && !visible.includes(provider)) {
+    if (provider && visible && !(visible as string[]).includes(provider)) {
       return NextResponse.json({ success: false, error: 'provider is hidden in settings' }, { status: 400 })
     }
 

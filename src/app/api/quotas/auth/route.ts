@@ -86,7 +86,9 @@ async function persistVerifiedSnapshot(provider: string, snapshot: any) {
     last_error_code: null,
   }
   saveQuotaSnapshotRows([row])
-  const quotas = await getQuotasForServer()
+  // No background refresh here: it would query every provider, including
+  // ones switched off in Settings. The page re-reads with its own scope.
+  const quotas = await getQuotasForServer({ backgroundRefresh: false })
   const readable = (snapshot.windows?.length ?? 0) > 0 || (snapshot.wallets?.length ?? 0) > 0
   return {
     success: true,

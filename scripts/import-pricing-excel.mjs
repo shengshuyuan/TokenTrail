@@ -76,6 +76,9 @@ updateTransaction(data);
 console.log('✅ Model pricing updated successfully.');
 
 console.log('Recalculating costs for all usage records...');
+// Credit-billed rows (Kiro CLI) store credits × official credit price; never
+// reprice them from tokens.
+const hasCreditsColumn = db.prepare('PRAGMA table_info(usage_records)').all().some((c) => c.name === 'credits');
 const recalculateStmt = db.prepare(`
   UPDATE usage_records
   SET cost_usd = (
@@ -92,6 +95,7 @@ const recalculateStmt = db.prepare(`
   WHERE EXISTS (
     SELECT 1 FROM model_pricing WHERE model_pricing.model_id = usage_records.model
   )
+  ${hasCreditsColumn ? 'AND credits = 0' : ''}
 `);
 
 const result = recalculateStmt.run();

@@ -1,6 +1,6 @@
 import fs from 'fs'
 import { createRequire } from 'node:module'
-import { replaceUsageRecordByRequestId } from '../../db'
+import { getStoredUsageModel, replaceUsageRecordByRequestId } from '../../db'
 import { isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
 import {
   budgetExceeded,
@@ -12,10 +12,11 @@ import type { SyncResult, SyncRunOptions } from '../types'
 
 const require = createRequire(import.meta.url)
 
-const { kiroSessionsDir, findKiroTranscripts, readKiroTurnModels, parseKiroTranscript } = require('../../kiro.js') as {
+const { kiroSessionsDir, findKiroTranscripts, readKiroTurnModels, parseKiroTranscript, contextTokensFor } = require('../../kiro.js') as {
   kiroSessionsDir: (home?: string) => string
   findKiroTranscripts: (fsMod: typeof fs, sessionsDir: string) => string[]
   readKiroTurnModels: (fsMod: typeof fs, home?: string) => Map<string, string>
+  contextTokensFor: (percents: number[], model: string) => number
   parseKiroTranscript: (
     fsMod: typeof fs,
     transcriptPath: string,
@@ -27,6 +28,8 @@ const { kiroSessionsDir, findKiroTranscripts, readKiroTurnModels, parseKiroTrans
     requestId: string
     project?: string
     model: string
+    modelFromLog: boolean
+    contextPercents: number[]
     contextTokens: number
     costUsd: number
   }>
@@ -88,13 +91,25 @@ export function syncKiro(_options?: SyncRunOptions): SyncResult {
     let retryFile = false
     for (const rec of records) {
       try {
+        // The request log is the only per-turn source of truth. When it no
+        // longer has this turn (older run logs pruned), keep the model already
+        // stored instead of downgrading to a session-level guess.
+        let model = rec.model
+        let inputTokens = rec.contextTokens
+        if (!rec.modelFromLog) {
+          const stored = getStoredUsageModel(rec.requestId)
+          if (stored && stored !== model) {
+            model = stored
+            inputTokens = contextTokensFor(rec.contextPercents, stored)
+          }
+        }
         // Replace so a re-read corrects older rows (model / tokens / cost) in place.
         const insertResult = replaceUsageRecordByRequestId({
           source: 'kiro',
           provider: 'kiro',
           project: normalizeProjectName(rec.project || 'unknown'),
-          model: rec.model,
-          input_tokens: rec.contextTokens,
+          model,
+          input_tokens: inputTokens,
           cached_input_tokens: 0,
           output_tokens: 0,
           reasoning_tokens: 0,
