@@ -14,9 +14,9 @@
  *   - ~/.kiro/logs/<run>/kiro.log `q.create_response.request` → the concrete model
  *     each request was sent to, keyed by turnId (resolves sessions started on "auto")
  *
- * Kiro never writes raw input/output token counts. Input (context) tokens are
- * derived from the server-reported percentage × the model's official context
- * window (List-Available-Models). Output tokens are unknown and stay 0.
+ * Kiro never writes raw input/output token counts. Context estimates below are
+ * percentage × model window; they are diagnostic metadata, excluded from the
+ * measured token buckets by the sync source.
  * Cost uses the official per-credit price (GetUsageLimits overageRate).
  *
  * Plain JS so both the TypeScript sync source and the quota adapter can

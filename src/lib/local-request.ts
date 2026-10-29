@@ -1,10 +1,12 @@
-const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1'])
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]'])
 
 function hostnameFromHeader(value: string | null): string | null {
   if (!value) return null
 
   try {
-    return new URL(`http://${value}`).hostname
+    const url = new URL(`http://${value}`)
+    if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) return null
+    return url.hostname
   } catch {
     return null
   }
@@ -27,6 +29,14 @@ export function rejectUnsafeLocalMutation(request: Request): Response | null {
     return jsonResponse({ success: false, error: 'Cross-site requests are not allowed' }, 403)
   }
 
+  const host = request.headers.get('host')
+  const requestHostname = host === null
+    ? new URL(request.url).hostname
+    : hostnameFromHeader(host)
+  if (!requestHostname || !LOCAL_HOSTNAMES.has(requestHostname)) {
+    return jsonResponse({ success: false, error: 'TokenTrail requests require a local Host' }, 403)
+  }
+
   const origin = request.headers.get('origin')
   if (!origin) return null
 
@@ -37,12 +47,7 @@ export function rejectUnsafeLocalMutation(request: Request): Response | null {
     return jsonResponse({ success: false, error: 'Invalid request origin' }, 403)
   }
 
-  const requestHostname = hostnameFromHeader(request.headers.get('host'))
-  if (
-    requestHostname
-    && LOCAL_HOSTNAMES.has(requestHostname)
-    && LOCAL_HOSTNAMES.has(originHostname)
-  ) {
+  if (LOCAL_HOSTNAMES.has(originHostname)) {
     return null
   }
 

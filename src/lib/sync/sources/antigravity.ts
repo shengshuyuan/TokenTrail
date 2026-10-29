@@ -15,7 +15,7 @@ import {
   synthesizeRequestId,
 } from '../../db'
 import { calculateCost } from '../../pricing'
-import { isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
+import { getSyncFileStat, isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
 import {
   budgetExceeded,
   emptySyncResult,
@@ -82,6 +82,7 @@ export function syncAntigravityTranscripts(_options?: SyncRunOptions): SyncResul
       }
 
       try {
+        const fileStat = getSyncFileStat(transcriptPath)
         const lines = fs.readFileSync(transcriptPath, 'utf-8').split('\n').filter(Boolean)
         const project = detectAntigravityProject(lines)
         // 逐事件入库：每个 entry 带自己的时间戳与当时的模型，会话跨天或
@@ -135,7 +136,7 @@ export function syncAntigravityTranscripts(_options?: SyncRunOptions): SyncResul
         if (events.length > 0 && !failed) {
           deleteAntigravityConversationRow(convId)
         }
-        if (!failed) markSyncedFile('antigravity', transcriptPath)
+        if (!failed) markSyncedFile('antigravity', transcriptPath, fileStat)
       } catch (err) {
         recordSyncError(result, err)
       }

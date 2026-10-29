@@ -20,6 +20,23 @@ async function statusOf(result) {
 
 describe('rejectUnsafeLocalMutation', () => {
   describe('cross-site browser requests are rejected', () => {
+    it('rejects a non-local Host without Origin, including same-origin proxy GETs', () => {
+      assert.equal(rejectUnsafeLocalMutation(localRequest({ host: 'rebind.example:3820' }))?.status, 403)
+      assert.equal(rejectUnsafeProxyGet(new Request('http://rebind.example:3820/proxy/openai/models', {
+        headers: { host: 'rebind.example:3820', 'sec-fetch-site': 'same-origin' },
+      }))?.status, 403)
+    })
+
+    it('rejects a non-local URL when no Host header is present', () => {
+      assert.equal(rejectUnsafeLocalMutation(new Request('http://rebind.example:3820/api/report'))?.status, 403)
+    })
+
+    it('rejects a malformed Host instead of falling back to the local URL', () => {
+      for (const host of ['[', '', 'rebind.example@localhost', 'localhost/path']) {
+        assert.equal(rejectUnsafeLocalMutation(localRequest({ host }))?.status, 403)
+      }
+    })
+
     it('rejects a foreign Origin header', async () => {
       const res = rejectUnsafeLocalMutation(
         localRequest({ origin: 'https://evil.example', host: 'localhost:3820' })
@@ -50,6 +67,14 @@ describe('rejectUnsafeLocalMutation', () => {
   })
 
   describe('CLI and same-origin requests pass', () => {
+    it('allows IPv6 loopback with and without Origin', () => {
+      for (const origin of [undefined, 'http://[::1]:3820']) {
+        const headers = { host: '[::1]:3820' }
+        if (origin) headers.origin = origin
+        assert.equal(rejectUnsafeLocalMutation(new Request('http://[::1]:3820/api/report', { headers })), null)
+      }
+    })
+
     it('allows requests without Origin (CLI / curl / SDK)', () => {
       assert.equal(rejectUnsafeLocalMutation(localRequest()), null)
     })

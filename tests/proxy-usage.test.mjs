@@ -19,6 +19,18 @@ function track(...chunks) {
 }
 
 describe('proxy SSE usage extraction', () => {
+  it('extracts Responses API usage from a nested response.completed event', () => {
+    const result = track(
+      'event: response.created\ndata: {"type":"response.created","response":{"id":"resp-1","model":"o3","usage":null}}\n\n',
+      'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp-1","model":"o3","usage":{"input_tokens":100,"output_tokens":20,"input_tokens_details":{"cached_tokens":60},"output_tokens_details":{"reasoning_tokens":8}}}}\n\n',
+    )
+    assert.equal(result?.model, 'o3')
+    assert.equal(result?.id, 'resp-1')
+    assert.deepEqual(normalizeOpenAIUsage(result?.usage), {
+      input_tokens: 40, cached_input_tokens: 60, output_tokens: 12, reasoning_tokens: 8,
+    })
+  })
+
   it('prefers the last usage event (cumulative)', () => {
     const result = track(
       'data: {"id":"chatcmpl-1","model":"gpt-4.1","choices":[{"delta":{"content":"hi"}}]}\n',
@@ -96,6 +108,15 @@ describe('proxy SSE usage extraction', () => {
 })
 
 describe('normalizeOpenAIUsage (mutually exclusive buckets)', () => {
+  it('normalizes Responses API input/output usage and its subsets', () => {
+    assert.deepEqual(normalizeOpenAIUsage({
+      input_tokens: 100,
+      output_tokens: 20,
+      input_tokens_details: { cached_tokens: 60 },
+      output_tokens_details: { reasoning_tokens: 8 },
+    }), { input_tokens: 40, cached_input_tokens: 60, output_tokens: 12, reasoning_tokens: 8 })
+  })
+
   it('subtracts cached and reasoning subsets from their totals', () => {
     assert.deepEqual(
       normalizeOpenAIUsage({

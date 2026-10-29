@@ -1,5 +1,6 @@
 import { getDb, getConfig, setConfig, deleteJunkTestPricing, zeroCursorGrokBotCosts } from './db'
 import { calculateCost } from './pricing'
+import { invalidateStatsCache } from './stats-cache'
 
 /**
  * One-time data migrations, run from ensureInit() after schema creation and
@@ -137,9 +138,27 @@ function zeroCursorGrokBotUsageCosts(): void {
   }
 }
 
+/** Remove context-window estimates from scanner rows without changing billed credits. */
+function correctKiroContextTokens(): void {
+  const marker = 'migration.kiro_credit_only_v1'
+  if (getConfig(marker)) return
+  const db = getDb()
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE usage_records SET input_tokens = 0
+      WHERE source = 'kiro' AND provider = 'kiro' AND request_id LIKE 'kiro:%'
+        AND credits > 0 AND input_tokens > 0
+        AND cached_input_tokens = 0 AND output_tokens = 0 AND reasoning_tokens = 0
+    `).run()
+    setConfig(marker, new Date().toISOString())
+  })()
+  invalidateStatsCache()
+}
+
 export function runMigrations(): void {
   normalizeInclusiveUsageRows()
   deleteJunkTestPricingRows()
   renameCursorDefaultModel()
   zeroCursorGrokBotUsageCosts()
+  correctKiroContextTokens()
 }

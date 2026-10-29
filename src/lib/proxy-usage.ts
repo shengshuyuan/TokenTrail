@@ -3,10 +3,14 @@
  */
 
 export interface OpenAIUsageShape {
-  prompt_tokens: number
-  completion_tokens: number
+  prompt_tokens?: number
+  completion_tokens?: number
   prompt_tokens_details?: { cached_tokens?: number }
   completion_tokens_details?: { reasoning_tokens?: number }
+  input_tokens?: number
+  output_tokens?: number
+  input_tokens_details?: { cached_tokens?: number }
+  output_tokens_details?: { reasoning_tokens?: number }
 }
 
 export interface ExtractedStreamUsage {
@@ -41,10 +45,10 @@ export interface NormalizedTokenBuckets {
  * and pricing do not count either category twice (same rule as codex.js).
  */
 export function normalizeOpenAIUsage(usage: Partial<OpenAIUsageShape> | undefined): NormalizedTokenBuckets {
-  const prompt = toTokenCount(usage?.prompt_tokens)
-  const completion = toTokenCount(usage?.completion_tokens)
-  const cached = Math.min(toTokenCount(usage?.prompt_tokens_details?.cached_tokens), prompt)
-  const reasoning = Math.min(toTokenCount(usage?.completion_tokens_details?.reasoning_tokens), completion)
+  const prompt = toTokenCount(usage?.prompt_tokens ?? usage?.input_tokens)
+  const completion = toTokenCount(usage?.completion_tokens ?? usage?.output_tokens)
+  const cached = Math.min(toTokenCount(usage?.prompt_tokens_details?.cached_tokens ?? usage?.input_tokens_details?.cached_tokens), prompt)
+  const reasoning = Math.min(toTokenCount(usage?.completion_tokens_details?.reasoning_tokens ?? usage?.output_tokens_details?.reasoning_tokens), completion)
   return {
     input_tokens: prompt - cached,
     cached_input_tokens: cached,
@@ -95,11 +99,13 @@ export class SseUsageTracker {
   private consumeLine(line: string): void {
     if (!line.startsWith('data: ') || line.includes('[DONE]')) return
     try {
-      const obj = JSON.parse(line.slice(6)) as {
+      const event = JSON.parse(line.slice(6)) as {
         model?: string
         id?: string
         usage?: OpenAIUsageShape
+        response?: { model?: string; id?: string; usage?: OpenAIUsageShape }
       }
+      const obj = event.response ?? event
       if (typeof obj.model === 'string' && obj.model.trim()) {
         this.lastModel = obj.model.trim()
       }

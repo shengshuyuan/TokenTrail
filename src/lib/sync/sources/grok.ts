@@ -15,7 +15,7 @@ import {
   synthesizeRequestId,
 } from '../../db'
 import { calculateCost } from '../../pricing'
-import { isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
+import { getSyncFileStat, isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
 import {
   budgetExceeded,
   emptySyncResult,
@@ -257,6 +257,7 @@ export function syncGrok(_options?: SyncRunOptions): SyncResult {
   // workspace 级 prompt_history：按 session_id 过滤补时间线
   const workspacePromptTimelines = loadGrokWorkspacePromptTimelines()
 
+  const fileStat = getSyncFileStat(GROK_LOG_FILE)
   let content: string
   try {
     content = fs.readFileSync(GROK_LOG_FILE, 'utf-8')
@@ -362,7 +363,7 @@ export function syncGrok(_options?: SyncRunOptions): SyncResult {
     }
   }
 
-  if (!retryFile) markSyncedFile('grok', GROK_LOG_FILE)
+  if (!retryFile) markSyncedFile('grok', GROK_LOG_FILE, fileStat)
   result.duration_ms = Date.now() - start
   return result
 }

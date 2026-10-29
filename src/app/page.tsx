@@ -56,7 +56,7 @@ export default function OverviewPage() {
   }, [fetchStats, refreshKey])
 
   const totalTokens = stats?.total_tokens ?? 0
-  const isFirstLoadNoData = !loading && !error && (!stats || totalTokens === 0)
+  const isFirstLoadNoData = !loading && !error && (!stats || stats.total_requests === 0)
 
   return (
     <AppShell>

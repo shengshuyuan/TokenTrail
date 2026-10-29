@@ -15,7 +15,7 @@ import {
   synthesizeRequestId,
 } from '../../db'
 import { calculateCost } from '../../pricing'
-import { isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
+import { getSyncFileStat, isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
 import {
   budgetExceeded,
   emptySyncResult,
@@ -99,6 +99,7 @@ export function syncKimiCode(_options?: SyncRunOptions): SyncResult {
       const wireContext = resolveKimiWireContext(context, filePath)
       let currentProject = normalizeProjectName(wireContext.project)
 
+      const fileStat = getSyncFileStat(filePath)
       let lines: string[]
       try {
         lines = fs.readFileSync(filePath, 'utf-8').split('\n')
@@ -155,7 +156,7 @@ export function syncKimiCode(_options?: SyncRunOptions): SyncResult {
           if (recordLineError(result, err).retryFile) retryFile = true
         }
       }
-      if (!retryFile) markSyncedFile('kimi-code', filePath)
+      if (!retryFile) markSyncedFile('kimi-code', filePath, fileStat)
     }
   }
 

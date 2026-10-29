@@ -15,7 +15,7 @@ import {
   synthesizeRequestId,
 } from '../../db'
 import { calculateCost } from '../../pricing'
-import { isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
+import { getSyncFileStat, isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
 import {
   budgetExceeded,
   emptySyncResult,
@@ -80,6 +80,7 @@ export function syncTraeWork(_options?: SyncRunOptions): SyncResult {
       continue
     }
     try {
+      const fileStat = getSyncFileStat(filePath)
       const records = parseTraeHistoryFile(filePath)
       let retryFile = false
       for (const record of records) {
@@ -120,7 +121,7 @@ export function syncTraeWork(_options?: SyncRunOptions): SyncResult {
           if (recordLineError(result, err).retryFile) retryFile = true
         }
       }
-      if (!retryFile) markSyncedFile('traework', filePath)
+      if (!retryFile) markSyncedFile('traework', filePath, fileStat)
     } catch (err) {
       recordSyncError(result, err)
     }

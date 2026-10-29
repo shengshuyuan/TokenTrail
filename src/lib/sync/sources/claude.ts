@@ -15,7 +15,7 @@ import {
   synthesizeRequestId,
 } from '../../db'
 import { calculateCost } from '../../pricing'
-import { isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
+import { getSyncFileStat, isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
 import {
   budgetExceeded,
   emptySyncResult,
@@ -74,6 +74,7 @@ export function syncClaudeCode(_options?: SyncRunOptions): SyncResult {
       }
 
       try {
+        const fileStat = getSyncFileStat(filePath)
         const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean)
         let retryFile = false
 
@@ -123,7 +124,7 @@ export function syncClaudeCode(_options?: SyncRunOptions): SyncResult {
             if (recordLineError(result, err).retryFile) retryFile = true
           }
         }
-        if (!retryFile) markSyncedFile('claude-code', filePath)
+        if (!retryFile) markSyncedFile('claude-code', filePath, fileStat)
       } catch (err) {
         recordSyncError(result, err)
       }

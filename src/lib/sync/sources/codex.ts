@@ -15,7 +15,7 @@ import {
   synthesizeRequestId,
 } from '../../db'
 import { calculateCost } from '../../pricing'
-import { isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
+import { getSyncFileStat, isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
 import {
   budgetExceeded,
   emptySyncResult,
@@ -81,6 +81,7 @@ export function syncCodex(_options?: SyncRunOptions): SyncResult {
     }
 
     try {
+      const fileStat = getSyncFileStat(filePath)
       const lines = fs.readFileSync(filePath, 'utf-8').split('\n')
       let currentProject: string | undefined
       const parser = createCodexSessionUsageParser()
@@ -137,7 +138,7 @@ export function syncCodex(_options?: SyncRunOptions): SyncResult {
           if (recordLineError(result, err).retryFile) retryFile = true
         }
       }
-      if (!retryFile) markSyncedFile('codex', filePath)
+      if (!retryFile) markSyncedFile('codex', filePath, fileStat)
     } catch (err) {
       recordSyncError(result, err)
     }

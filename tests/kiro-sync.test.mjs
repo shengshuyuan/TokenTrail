@@ -10,7 +10,7 @@ process.env.HOME = home
 
 const { syncKiro } = await import('../src/lib/sync/sources/kiro.ts')
 const { getDb } = await import('../src/lib/db.ts')
-const { isUnchangedSyncedFile, markSyncedFile, SYNC_SCAN_EPOCH, SOURCE_SCAN_EPOCH } = await import('../src/lib/sync-checkpoint.ts')
+const { getSyncFileStat, isUnchangedSyncedFile, markSyncedFile, SYNC_SCAN_EPOCH, SOURCE_SCAN_EPOCH } = await import('../src/lib/sync-checkpoint.ts')
 const { parseVisibleProviders } = await import('../src/lib/quotas/visibility.ts')
 
 const sessionDir = path.join(home, '.kiro', 'sessions', 'h', 'sess_a')
@@ -38,7 +38,7 @@ function touchLater(file, seconds) {
 }
 
 describe('syncKiro end to end', () => {
-  it('writes a measured row with the logged model, context tokens, credits and credit cost', () => {
+  it('writes a measured row with the logged model, credits and credit cost without invented tokens', () => {
     fs.mkdirSync(sessionDir, { recursive: true })
     fs.mkdirSync(logDir, { recursive: true })
     fs.writeFileSync(path.join(sessionDir, 'session.json'), JSON.stringify({ workspacePaths: ['/work/Proj'], modelId: 'auto' }))
@@ -49,7 +49,7 @@ describe('syncKiro end to end', () => {
     assert.equal(result.errors, 0)
     const r = row('t1')
     assert.equal(r.model, 'claude-opus-5.5')
-    assert.equal(r.input_tokens, 50_000) // 5% of the 1M context window
+    assert.equal(r.input_tokens, 0) // Context occupancy is not measured token usage.
     assert.equal(r.output_tokens, 0)
     assert.equal(r.credits, 10)
     assert.equal(r.cost_usd, 0.4)
@@ -64,7 +64,7 @@ describe('syncKiro end to end', () => {
 
     syncKiro()
     assert.equal(row('t1').model, 'claude-opus-5.5') // not downgraded to the session's "auto"
-    assert.equal(row('t1').input_tokens, 50_000)
+    assert.equal(row('t1').input_tokens, 0)
     assert.equal(row('t2').model, 'kiro-auto') // new turn, nothing better known
   })
 
@@ -80,7 +80,7 @@ describe('per-source scan epoch', () => {
     assert.notEqual(SOURCE_SCAN_EPOCH.kiro, SYNC_SCAN_EPOCH)
     const other = path.join(home, 'codex.jsonl')
     fs.writeFileSync(other, '{}\n')
-    markSyncedFile('codex', other)
+    markSyncedFile('codex', other, getSyncFileStat(other))
     assert.equal(isUnchangedSyncedFile('codex', other), true)
     const epoch = getDb().prepare("SELECT epoch FROM sync_file_checkpoints WHERE source = 'codex' AND path = ?").get(other).epoch
     assert.equal(epoch, SYNC_SCAN_EPOCH)

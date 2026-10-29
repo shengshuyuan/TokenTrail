@@ -216,3 +216,28 @@ describe('estimated backfill on boot', () => {
     assert.equal(byId['codex:real-1'], 0, 'codex row is not estimated')
   })
 })
+
+
+describe('Kiro context token correction', () => {
+  it('clears only scanner-derived input tokens and preserves billed credits and costs', () => {
+    const db = getDb()
+    db.prepare('DELETE FROM app_config WHERE key = ?').run('migration.kiro_credit_only_v1')
+    insert('kiro', 'kiro-auto', { input: 50_000, output: 0 }, {
+      provider: 'kiro', request_id: 'kiro:migration-context', credits: 10, cost_usd: 0.4,
+    })
+    insert('kiro', 'test-real-model', { input: 120, output: 20 }, {
+      provider: 'custom', request_id: 'reported-kiro-real', credits: 1, cost_usd: 0.1,
+    })
+    const before = rowByRequestId('kiro:migration-context')
+    runMigrations()
+    const after = rowByRequestId('kiro:migration-context')
+    assert.deepEqual(after, { ...before, input_tokens: 0 })
+    assert.equal(rowByRequestId('reported-kiro-real').input_tokens, 120)
+    const stats = getAggregatedStats({ startDate: before.timestamp, endDate: before.timestamp, sources: ['kiro'] })
+    assert.equal(stats.total_tokens, 0)
+    assert.equal(stats.total_requests, 1)
+    assert.equal(stats.total_cost_usd, 0.4)
+    runMigrations()
+    assert.deepEqual(rowByRequestId('kiro:migration-context'), after)
+  })
+})

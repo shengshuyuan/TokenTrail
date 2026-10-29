@@ -2,6 +2,17 @@
 
 用量数据在本机 SQLite（本地数据库），不进 git。下面历史条目里出现的 `data/token-trail.db` 都是指这份本地数据库。
 
+- **[2026-10-29 22:25:00 CST]** 🟡修复
+- **影响范围**：`src/lib/sync-checkpoint.ts`、`src/lib/sync/sources/*.ts`（8 个扫描来源）、`src/lib/sync/sources/kiro.ts`、`src/lib/kiro.js`、`src/lib/migrations.ts`、`src/lib/proxy-usage.ts`、`src/lib/local-request.ts`、`src/app/page.tsx`、对应测试与新增 `tests/proxy-responses.test.mjs`、`~/.tokentrail/runtime/TokenTrail`
+- **变更摘要**：修复审核提出的 5 项问题：
+  1. [P1] 同步检查点改为保存读取前的文件指纹（大小 + mtime）；读取期间文件被追加则不写检查点，下次同步重扫。全局扫描 epoch 2→3，所有来源重扫一次。
+  2. [P2] Kiro 不再把“上下文百分比 × 模型窗口”写进 token，token 记 0，credits 与费用保持实测；迁移 `migration.kiro_credit_only_v1` 清掉历史行里的推算 token，Kiro epoch 3→4。
+  3. [P2] 代理同时识别 Chat Completions 与 Responses 两种用量字段（`input_tokens` / `output_tokens` 及其 details），流式时识别嵌套在 `response.completed` 里的 usage。
+  4. [P2] 无 Origin 的请求也校验 Host 必须是 localhost / 127.0.0.1 / [::1]，畸形 Host 直接拒绝，防 DNS rebinding 借用本机密钥。
+  5. [P2] 首页空态按请求数判断，纯 credit 用量（有请求、有费用、无 token）不再显示“暂无记录”。
+  6. 验收：全量 277 项测试（新增 13 项）、tsc、lint、生产构建通过；部署前备份 `~/.tokentrail/backups/token-trail-2026-10-29T14-21-52-234Z.db`。
+- **回滚指南**：`git revert` 本次提交后 `npm run install-service`；如需恢复 Kiro 旧 token 数据，用上面的备份库。
+
 - **[2026-10-28 11:05:00 CST]** 🟡修复
 - **影响范围**：`scripts/sync-openrouter-pricing.mjs`、`scripts/import-pricing-excel.mjs`、`src/app/api/quotas/{auth,manual,refresh}/route.ts`、`src/lib/quotas/{visibility.ts,server.ts,useQuotas.ts}`、`src/lib/quotas/providers/kiro.js`、`src/lib/kiro.js`、`src/lib/sync/sources/kiro.ts`、`src/lib/db.ts`、`tests/kiro-usage.test.mjs`、`tests/kiro-sync.test.mjs`（新）、`~/.tokentrail/runtime/TokenTrail`
 - **变更摘要**：修复 Kiro 接入复查发现的问题：

@@ -1,7 +1,7 @@
 import fs from 'fs'
 import { createRequire } from 'node:module'
 import { getStoredUsageModel, replaceUsageRecordByRequestId } from '../../db'
-import { isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
+import { getSyncFileStat, isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
 import {
   budgetExceeded,
   normalizeProjectName,
@@ -12,11 +12,10 @@ import type { SyncResult, SyncRunOptions } from '../types'
 
 const require = createRequire(import.meta.url)
 
-const { kiroSessionsDir, findKiroTranscripts, readKiroTurnModels, parseKiroTranscript, contextTokensFor } = require('../../kiro.js') as {
+const { kiroSessionsDir, findKiroTranscripts, readKiroTurnModels, parseKiroTranscript } = require('../../kiro.js') as {
   kiroSessionsDir: (home?: string) => string
   findKiroTranscripts: (fsMod: typeof fs, sessionsDir: string) => string[]
   readKiroTurnModels: (fsMod: typeof fs, home?: string) => Map<string, string>
-  contextTokensFor: (percents: number[], model: string) => number
   parseKiroTranscript: (
     fsMod: typeof fs,
     transcriptPath: string,
@@ -29,8 +28,6 @@ const { kiroSessionsDir, findKiroTranscripts, readKiroTurnModels, parseKiroTrans
     project?: string
     model: string
     modelFromLog: boolean
-    contextPercents: number[]
-    contextTokens: number
     costUsd: number
   }>
 }
@@ -40,11 +37,9 @@ const USER_HOME = process.env.HOME || '/root'
 /**
  * Scan ~/.kiro/sessions for Kiro CLI usage, one record per prompt turn:
  *   - model: the concrete model the turn was sent to (request log → session context)
- *   - input_tokens: context tokens derived from Kiro's server-reported context usage
- *   - output_tokens: 0 — Kiro does not record output token counts
+ *   - token counts: 0 — context occupancy is not measured input/output usage
  *   - credits / cost_usd: billed credits × official per-credit price
- * Rows are measured (not estimated) so they show in the raw records table and
- * by-source totals like every other agent.
+ * Credits and their cost are measured; unavailable token counts stay zero.
  */
 export function syncKiro(_options?: SyncRunOptions): SyncResult {
   const start = Date.now()
@@ -80,6 +75,7 @@ export function syncKiro(_options?: SyncRunOptions): SyncResult {
     // Read the request log once per sync, only when some transcript changed.
     turnModels ??= readKiroTurnModels(fs, USER_HOME)
 
+    const fileStat = getSyncFileStat(filePath)
     let records: ReturnType<typeof parseKiroTranscript>
     try {
       records = parseKiroTranscript(fs, filePath, { turnModels })
@@ -95,12 +91,10 @@ export function syncKiro(_options?: SyncRunOptions): SyncResult {
         // longer has this turn (older run logs pruned), keep the model already
         // stored instead of downgrading to a session-level guess.
         let model = rec.model
-        let inputTokens = rec.contextTokens
         if (!rec.modelFromLog) {
           const stored = getStoredUsageModel(rec.requestId)
           if (stored && stored !== model) {
             model = stored
-            inputTokens = contextTokensFor(rec.contextPercents, stored)
           }
         }
         // Replace so a re-read corrects older rows (model / tokens / cost) in place.
@@ -109,7 +103,7 @@ export function syncKiro(_options?: SyncRunOptions): SyncResult {
           provider: 'kiro',
           project: normalizeProjectName(rec.project || 'unknown'),
           model,
-          input_tokens: inputTokens,
+          input_tokens: 0,
           cached_input_tokens: 0,
           output_tokens: 0,
           reasoning_tokens: 0,
@@ -127,7 +121,7 @@ export function syncKiro(_options?: SyncRunOptions): SyncResult {
         if (recordLineError(result, err).retryFile) retryFile = true
       }
     }
-    if (!retryFile) markSyncedFile('kiro', filePath)
+    if (!retryFile) markSyncedFile('kiro', filePath, fileStat)
   }
 
   result.duration_ms = Date.now() - start
