@@ -1,5 +1,11 @@
 # TokenTrail
 
+
+TokenTrail 帮使用多个 AI 编程工具的人分清两件事：**已经用了多少 Token、估算花了多少钱**，以及**订阅账号还剩多少可读取额度**。先同步本地记录，再查看来源健康和项目趋势，最后按需配置各供应商账号。
+
+当前额度适配器包括 Codex、Gemini、Grok、GLM、Kimi、Cursor、Kiro；字段是否可读取决于供应商与账号。费用为基于定价表的估算，不等同于账单。额度查询会访问供应商服务，可选代理会转发请求；请在可信本机使用。
+
+
 <div align="center">
 
 **本地优先的 AI 编程用量面板：既统计 token 花费，也跟踪 Codex、Gemini、Grok、GLM、Kimi 的账号额度。**
@@ -16,6 +22,8 @@ TokenTrail 是跑在你电脑上的 AI 编程用量面板，不需要云账号�
 2. **账号额度**：查看 Codex、Gemini、Grok、GLM Coding Plan、Kimi Code 的官方剩余额度（5 小时 / 每周窗口、加油包、重置倒计时）。授权优先走各家官方 CLI 的可见终端登录；API Key 只作兜底，且不同产品的 Key 不会混用。
 
 ![TokenTrail Dashboard](./docs/assets/tokentrail-dashboard.png)
+
+*既有历史演示截图，数值为样例，不代表当前账号余额或实际节省金额。*
 
 ## 0.3.0 更新了什么
 

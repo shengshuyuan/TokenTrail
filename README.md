@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Local-first AI coding usage dashboard: token spend, plus live account quotas for Codex, Gemini, Grok, GLM, and Kimi.**
+**Local-first AI coding usage dashboard: token spend, plus account quota tracking for supported coding tools.**
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
@@ -16,6 +16,16 @@ TokenTrail is a local dashboard for AI coding work. It does two jobs on your mac
 2. **Account quotas** — show official remaining limits (5-hour / weekly windows, booster packs, reset countdowns) for Codex, Gemini, Grok, GLM Coding Plan, and Kimi Code. Login prefers each provider’s official CLI in a visible Terminal window; API keys are a fallback and are never mixed across products.
 
 ![TokenTrail dashboard](./docs/assets/tokentrail-dashboard.png)
+
+*Existing demo screenshot from an earlier UI version; the figures are sample data, not measured savings or current account balances.*
+
+## Who it helps
+
+For developers using several AI coding tools who need to answer two different questions: **where did my tokens and estimated cost go?** and **how much subscription quota is left?**
+
+Start with local usage sync, review source health if numbers look wrong, and configure each provider separately in Account Quotas. The current adapter registry includes Codex, Gemini, Grok, GLM, Kimi, Cursor, and Kiro; available fields depend on the provider, account, and readable official response.
+
+Cost estimates use the pricing table and reported token data; they are not a provider invoice. Quota reads can contact provider services, and the optional proxy forwards requests to your configured provider. Run this local dashboard on a trusted machine; it is not a hosted multi-user billing service.
 
 ## What's new in 0.3.0
 
