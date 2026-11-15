@@ -2,12 +2,7 @@ import fs from 'fs'
 import { createRequire } from 'node:module'
 import { getStoredUsageModel, replaceUsageRecordByRequestId } from '../../db'
 import { getSyncFileStat, isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
-import {
-  budgetExceeded,
-  normalizeProjectName,
-  recordLineError,
-  recordSyncError,
-} from '../shared'
+import { budgetExceeded, normalizeProjectName, recordLineError, recordSyncError } from '../shared'
 import type { SyncResult, SyncRunOptions } from '../types'
 
 const require = createRequire(import.meta.url)

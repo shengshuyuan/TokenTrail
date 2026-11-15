@@ -121,6 +121,12 @@ describe('Kimi Code quota adapter', () => {
     assert.equal(windows[1].usedPercent, 0)
     assert.equal(wallet, null)
 
+    const remainingOnly = directUsageResponse()
+    delete remainingOnly.usage.used
+    const derived = mapDirectUsage(remainingOnly)
+    assert.equal(derived.windows[0].used, 39)
+    assert.equal(derived.windows[0].usedPercent, 39)
+
     const json = JSON.stringify(windows)
     assert.ok(!json.includes('cm5naag3qff45op1n9n0'), 'userId must not leak')
     assert.ok(!json.includes('REGION_CN'), 'region must not leak')

@@ -7,11 +7,12 @@ import { SOURCE_DISPLAY_NAMES } from '@/types'
 import { AppShell } from '@/components/layout/AppShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
+import { Notice } from '@/components/ui/Notice'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { DataTable } from '@/components/ui/DataTable'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ProviderBrandIcon } from '@/components/dashboard/QuotaBrandIcons'
-import { formatCost, formatNumber, formatTokens, formatCredits } from '@/lib/format'
+import { formatCost, formatNumber, formatTokens, formatCredits, modelFamily } from '@/lib/format'
 import { usePreferences } from '@/lib/PreferencesContext'
 import { useLang } from '@/lib/LanguageContext'
 import { useLatestRequest, isAbortError } from '@/lib/useLatestRequest'
@@ -38,6 +39,17 @@ type GroupTab = 'source' | 'model' | 'project'
 type MetricMode = 'tokens' | 'cost'
 type RecordKind = 'measured' | 'estimated' | 'all'
 
+/**
+ * Cursor Auto 模式的记录靠 request_id 识别（cursor:<ts>:<对话>:default 或 …:default/<模型>）：
+ * 模型名已被同步改成本机对话记录里的底层模型，明细里补一个「Auto」标签说明来历。
+ * 模型仍是 "auto" 说明本机没有这段对话，底层模型未知。
+ */
+function cursorAutoTag(record: Pick<UsageRecord, 'request_id' | 'model'>): 'resolved' | 'unresolved' | null {
+  const id = record.request_id || ''
+  if (!id.startsWith('cursor:') || !(id.endsWith(':default') || id.includes(':default/'))) return null
+  return record.model === 'auto' ? 'unresolved' : 'resolved'
+}
+
 function UsagePageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -61,6 +73,8 @@ function UsagePageInner() {
   )
   const [metricMode, setMetricMode] = useState<MetricMode>('tokens')
   const [activeGroupTab, setActiveGroupTab] = useState<GroupTab>('source')
+  // 「按模型」时把 medium / fast / high 这类变体合并成一个家族（见 modelFamily）
+  const [mergeVariants, setMergeVariants] = useState(false)
 
   // Data states
   const [stats, setStats] = useState<StatsResponse | null>(null)
@@ -79,6 +93,8 @@ function UsagePageInner() {
   const [recordsError, setRecordsError] = useState<string | null>(null)
   // 默认只看实测，与上方汇总口径一致；估算记录需要主动切换查看
   const [recordKind, setRecordKind] = useState<RecordKind>('measured')
+  const [modelQuery, setModelQuery] = useState('')
+  const [modelsExpanded, setModelsExpanded] = useState(false)
   const beginRecordsRequest = useLatestRequest()
 
   // Synchronize state with URL search params
@@ -183,6 +199,22 @@ function UsagePageInner() {
     updateUrlParams(timeRange, selectedSources, next)
   }
 
+  /** 一组模型（家族的全部变体）整体加入 / 移出筛选：已全部选中则移出，否则补齐。 */
+  const toggleModels = (models: string[]) => {
+    const allSelected = models.every((m) => selectedModels.includes(m))
+    const next = allSelected
+      ? selectedModels.filter((m) => !models.includes(m))
+      : Array.from(new Set([...selectedModels, ...models]))
+    setSelectedModels(next)
+    setPage(1)
+    updateUrlParams(timeRange, selectedSources, next)
+  }
+
+  /** 从明细 / 构成表点一行加筛选后，把视线带回顶部的筛选栏和汇总。 */
+  const scrollToFilters = () => {
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const clearAllFilters = () => {
     setSelectedSources([])
     setSelectedModels([])
@@ -191,9 +223,81 @@ function UsagePageInner() {
   }
 
   const hasActiveFilters = selectedSources.length > 0 || selectedModels.length > 0
+  const MODEL_PREVIEW = 8
+  const modelQueryText = modelQuery.trim().toLowerCase()
+  const matchedModels = availableModels.filter((model) => {
+    if (!modelQueryText) return true
+    return model.name.toLowerCase().includes(modelQueryText) || model.id.toLowerCase().includes(modelQueryText)
+  })
+  const visibleModels = (() => {
+    if (modelsExpanded || modelQueryText) return matchedModels
+    const head = matchedModels.slice(0, MODEL_PREVIEW)
+    const headIds = new Set(head.map((model) => model.id))
+    const selectedExtra = matchedModels.filter((model) => selectedModels.includes(model.id) && !headIds.has(model.id))
+    return [...head, ...selectedExtra]
+  })()
+  const hiddenModelCount = Math.max(0, matchedModels.length - visibleModels.length)
+  const chipClass = (selected: boolean) =>
+    `inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40 ${
+      selected
+        ? 'bg-workbench-accent text-white'
+        : 'border border-workbench-border/70 bg-workbench-sidebar text-workbench-text hover:bg-workbench-surface'
+    }`
 
   // Grouping items to display
-  const groupItems =
+  interface GroupItem {
+    key: string
+    name: string
+    provider: string
+    tokens: number
+    cost: number
+    count: number
+    /** 点击这一行要切换的筛选：来源 id、模型 id 列表；项目没有筛选，留空 */
+    filter?: { sources?: string[]; models?: string[] }
+    /** 合并变体时，这个家族包含的具体模型名 */
+    variants?: string[]
+  }
+
+  const modelGroupItems = (): GroupItem[] => {
+    const rows = stats?.by_model || []
+    if (!mergeVariants) {
+      return rows.map((m) => ({
+        key: m.model,
+        name: m.display_name || m.model,
+        provider: 'model',
+        tokens: m.total_tokens,
+        cost: m.cost_usd,
+        count: m.count,
+        filter: { models: [m.model] },
+      }))
+    }
+    const families = new Map<string, GroupItem>()
+    for (const m of rows) {
+      const family = modelFamily(m.model) || m.model
+      const existing = families.get(family)
+      if (existing) {
+        existing.tokens += m.total_tokens
+        existing.cost += m.cost_usd
+        existing.count += m.count
+        existing.variants!.push(m.model)
+        existing.filter!.models!.push(m.model)
+      } else {
+        families.set(family, {
+          key: `family:${family}`,
+          name: family,
+          provider: 'model',
+          tokens: m.total_tokens,
+          cost: m.cost_usd,
+          count: m.count,
+          variants: [m.model],
+          filter: { models: [m.model] },
+        })
+      }
+    }
+    return Array.from(families.values()).sort((a, b) => b.tokens - a.tokens)
+  }
+
+  const groupItems: GroupItem[] =
     activeGroupTab === 'source'
       ? (stats?.by_source || []).map((s) => ({
           key: s.source,
@@ -202,16 +306,10 @@ function UsagePageInner() {
           tokens: s.total_tokens,
           cost: s.cost_usd,
           count: s.count,
+          filter: { sources: [s.source] },
         }))
       : activeGroupTab === 'model'
-      ? (stats?.by_model || []).map((m) => ({
-          key: m.model,
-          name: m.display_name || m.model,
-          provider: 'model',
-          tokens: m.total_tokens,
-          cost: m.cost_usd,
-          count: m.count,
-        }))
+      ? modelGroupItems()
       : (stats?.by_project || []).map((p) => ({
           key: p.project || 'default',
           name: !p.project
@@ -224,6 +322,20 @@ function UsagePageInner() {
           cost: p.cost_usd,
           count: p.count,
         }))
+
+  /** 这一行对应的筛选当前是否已全部选中（用于高亮和 aria-pressed）。 */
+  const isGroupItemSelected = (item: GroupItem) => {
+    if (item.filter?.sources) return item.filter.sources.every((s) => selectedSources.includes(s))
+    if (item.filter?.models) return item.filter.models.every((m) => selectedModels.includes(m))
+    return false
+  }
+
+  const applyGroupItemFilter = (item: GroupItem) => {
+    if (item.filter?.sources) toggleSource(item.filter.sources[0])
+    else if (item.filter?.models) toggleModels(item.filter.models)
+    else return
+    scrollToFilters()
+  }
 
   const totalTokens = stats?.total_tokens ?? 0
   const totalCostUsd = stats?.total_cost_usd ?? 0
@@ -289,12 +401,9 @@ function UsagePageInner() {
                   <button
                     key={source}
                     type="button"
+                    aria-pressed={isSelected}
                     onClick={() => toggleSource(source)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
-                      isSelected
-                        ? 'bg-workbench-accent text-white shadow-2xs'
-                        : 'bg-workbench-sidebar text-workbench-text hover:bg-workbench-surface border border-workbench-border/60'
-                    }`}
+                    className={chipClass(isSelected)}
                   >
                     <span>{name}</span>
                     {isSelected && <span>×</span>}
@@ -307,29 +416,63 @@ function UsagePageInner() {
 
         {/* Model Pills Filter */}
         {availableModels.length > 0 && (
-          <div className="pt-2 border-t border-workbench-border/60 flex items-start gap-2">
-            <span className="text-xs font-semibold text-workbench-text-muted uppercase tracking-wider pt-1 shrink-0">
+          <div className="pt-3 border-t border-workbench-border/60 flex flex-col gap-2 sm:flex-row sm:items-start">
+            <span className="text-xs font-semibold text-workbench-text-muted uppercase tracking-wider pt-2 shrink-0">
               {lang === 'zh' ? '模型' : 'Model'}
             </span>
-            <div className="flex flex-wrap gap-1.5 flex-1">
-              {availableModels.map((model) => {
-                const isSelected = selectedModels.includes(model.id)
-                return (
+            <div className="min-w-0 flex-1">
+              {availableModels.length > MODEL_PREVIEW && (
+                <input
+                  type="search"
+                  value={modelQuery}
+                  onChange={(event) => setModelQuery(event.target.value)}
+                  placeholder={lang === 'zh' ? '搜索模型' : 'Search models'}
+                  className="mb-2 h-8 w-full rounded-lg border border-workbench-border bg-workbench-sidebar px-3 text-xs text-workbench-text placeholder:text-workbench-text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40 sm:w-56"
+                />
+              )}
+              <div className="flex flex-wrap gap-1.5">
+                {visibleModels.map((model) => {
+                  const isSelected = selectedModels.includes(model.id)
+                  return (
+                    <button
+                      key={model.id}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => toggleModel(model.id)}
+                      className={`${chipClass(isSelected)} font-mono`}
+                    >
+                      <span>{model.name}</span>
+                      {isSelected && <span>×</span>}
+                    </button>
+                  )
+                })}
+                {hiddenModelCount > 0 && (
                   <button
-                    key={model.id}
                     type="button"
-                    onClick={() => toggleModel(model.id)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono transition-all ${
-                      isSelected
-                        ? 'bg-workbench-accent text-white shadow-2xs font-bold'
-                        : 'bg-workbench-sidebar text-workbench-text hover:bg-workbench-surface border border-workbench-border/60'
-                    }`}
+                    onClick={() => setModelsExpanded(true)}
+                    className="inline-flex min-h-8 items-center rounded-lg px-2.5 text-xs font-medium text-workbench-accent hover:bg-workbench-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40"
                   >
-                    <span>{model.name}</span>
-                    {isSelected && <span>×</span>}
+                    {lang === 'zh' ? `还有 ${hiddenModelCount} 个` : `${hiddenModelCount} more`}
                   </button>
-                )
-              })}
+                )}
+                {(modelsExpanded || modelQueryText) && availableModels.length > MODEL_PREVIEW && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModelsExpanded(false)
+                      setModelQuery('')
+                    }}
+                    className="inline-flex min-h-8 items-center rounded-lg px-2.5 text-xs font-medium text-workbench-text-muted hover:text-workbench-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40"
+                  >
+                    {lang === 'zh' ? '收起' : 'Show less'}
+                  </button>
+                )}
+              </div>
+              {modelQueryText && visibleModels.length === 0 && (
+                <p className="mt-1 text-xs text-workbench-text-muted">
+                  {lang === 'zh' ? '没有匹配的模型' : 'No matching models'}
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -354,20 +497,21 @@ function UsagePageInner() {
       </div>
 
       {statsError && (
-        <div className="mb-6 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center justify-between gap-3">
-          <span>
-            {stats
-              ? lang === 'zh'
-                ? `汇总加载失败，下面显示的是上一次的结果（${statsError}）`
-                : `Failed to load summary; showing previous result (${statsError})`
-              : lang === 'zh'
-                ? `汇总加载失败（${statsError}）`
-                : `Failed to load summary (${statsError})`}
-          </span>
-          <Button size="sm" variant="secondary" onClick={() => fetchStats()}>
-            {lang === 'zh' ? '重试' : 'Retry'}
-          </Button>
-        </div>
+        <Notice
+          action={
+            <Button size="sm" variant="secondary" onClick={() => fetchStats()}>
+              {lang === 'zh' ? '重试' : 'Retry'}
+            </Button>
+          }
+        >
+          {stats
+            ? lang === 'zh'
+              ? `汇总加载失败，下面显示的是上一次的结果（${statsError}）`
+              : `Failed to load summary; showing previous result (${statsError})`
+            : lang === 'zh'
+              ? `汇总加载失败（${statsError}）`
+              : `Failed to load summary (${statsError})`}
+        </Notice>
       )}
 
       {/* Summary Strip for Filtered Data */}
@@ -411,6 +555,14 @@ function UsagePageInner() {
           {lang === 'zh'
             ? `以上只统计实测数据。另有 ${formatNumber(stats.estimated_requests)} 条估算记录（约 ${formatTokens(stats.estimated_tokens)} tokens）未计入，可在下方明细切换到「估算」查看。`
             : `Totals above are measured only. ${formatNumber(stats.estimated_requests)} estimated record(s) (~${formatTokens(stats.estimated_tokens)} tokens) are excluded; switch the records table to "Estimated" to inspect them.`}
+          {stats.estimated_by_model && stats.estimated_by_model.length > 0 && (
+            <span className="block mt-1">
+              {lang === 'zh' ? '估算按模型：' : 'Estimated by model: '}
+              {stats.estimated_by_model
+                .map((m) => `${m.model} ≈${formatTokens(m.total_tokens)}${m.cost_usd > 0 ? ` · ≈$${m.cost_usd.toFixed(2)}` : ''}`)
+                .join(lang === 'zh' ? '；' : '; ')}
+            </span>
+          )}
         </p>
       )}
 
@@ -419,16 +571,17 @@ function UsagePageInner() {
           <h2 className="text-sm font-bold text-workbench-text mb-3">{t('stats.cursorGroups')}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {([
-              ['named', t('stats.cursorNamed'), stats.cursor_groups.named],
-              ['own', t('stats.cursorOwn'), stats.cursor_groups.own],
-              ['grok', t('stats.cursorGrok'), stats.cursor_groups.grok],
-            ] as const).map(([key, label, group]) => (
-              <div key={key} className="rounded-lg border border-workbench-border/70 px-3 py-2">
+              ['named', t('stats.cursorNamed'), undefined, stats.cursor_groups.named],
+              ['own', t('stats.cursorOwn'), t('stats.cursorOwnHint'), stats.cursor_groups.own],
+              ['grok', t('stats.cursorGrok'), t('stats.cursorGrokHint'), stats.cursor_groups.grok],
+            ] as const).map(([key, label, hint, group]) => (
+              <div key={key} className="rounded-lg border border-workbench-border/70 px-3 py-2" title={hint}>
                 <div className="text-[11px] text-workbench-text-muted">{label}</div>
                 <div className="font-mono text-lg font-semibold tabular-nums text-workbench-text">
                   {metricMode === 'tokens' ? formatTokens(group.total_tokens) : formatCost(group.cost_usd, currency, exchangeRate)}
                 </div>
                 <div className="text-[11px] text-workbench-text-muted font-mono">{formatNumber(group.count)}</div>
+                {hint && <div className="mt-1 text-[11px] leading-snug text-workbench-text-muted/80">{hint}</div>}
               </div>
             ))}
           </div>
@@ -438,24 +591,46 @@ function UsagePageInner() {
       {/* Section 1: Grouped Breakdown Table */}
       <div className="apple-glass-panel p-5 sm:p-7 mb-8">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-          <h2 className="text-lg font-bold text-workbench-text tracking-tight">
-            {lang === 'zh' ? '分组构成' : 'Group Breakdown'}
-          </h2>
-          <SegmentedControl
-            size="sm"
-            options={[
-              { value: 'source', label: lang === 'zh' ? '按来源' : 'By Source' },
-              { value: 'model', label: lang === 'zh' ? '按模型' : 'By Model' },
-              { value: 'project', label: lang === 'zh' ? '按项目' : 'By Project' },
-            ]}
-            value={activeGroupTab}
-            onChange={(v) => setActiveGroupTab(v as GroupTab)}
-          />
+          <div>
+            <h2 className="text-lg font-bold text-workbench-text tracking-tight">
+              {lang === 'zh' ? '分组构成' : 'Group Breakdown'}
+            </h2>
+            {activeGroupTab !== 'project' && (
+              <p className="text-xs text-workbench-text-muted mt-0.5">
+                {lang === 'zh' ? '点一行即可按它筛选，再点一次取消' : 'Click a row to filter by it; click again to remove'}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {activeGroupTab === 'model' && (
+              <button
+                type="button"
+                aria-pressed={mergeVariants}
+                onClick={() => setMergeVariants((v) => !v)}
+                title={lang === 'zh'
+                  ? '把 medium / fast / high 等变体合并成一个模型家族；大小写、provider 前缀也一并合并'
+                  : 'Merge medium / fast / high variants into one model family; also merges case and provider prefixes'}
+                className={chipClass(mergeVariants)}
+              >
+                {lang === 'zh' ? '合并变体' : 'Merge variants'}
+              </button>
+            )}
+            <SegmentedControl
+              size="sm"
+              options={[
+                { value: 'source', label: lang === 'zh' ? '按来源' : 'By Source' },
+                { value: 'model', label: lang === 'zh' ? '按模型' : 'By Model' },
+                { value: 'project', label: lang === 'zh' ? '按项目' : 'By Project' },
+              ]}
+              value={activeGroupTab}
+              onChange={(v) => setActiveGroupTab(v as GroupTab)}
+            />
+          </div>
         </div>
 
         {statsLoading ? (
           <div className="py-12 text-center text-sm text-workbench-text-muted animate-pulse">
-            加载构成数据...
+            {lang === 'zh' ? '加载构成数据...' : 'Loading breakdown...'}
           </div>
         ) : statsError && !stats ? (
           <div className="py-12 text-center text-sm text-workbench-text-muted">
@@ -471,13 +646,17 @@ function UsagePageInner() {
           <div className="space-y-3">
             <div className="grid grid-cols-12 text-xs font-medium text-workbench-text-muted pb-2 border-b border-workbench-border">
               <span className="col-span-5 sm:col-span-4">
-                {activeGroupTab === 'source' ? '来源' : activeGroupTab === 'model' ? '模型' : '项目'}
+                {activeGroupTab === 'source'
+                  ? lang === 'zh' ? '来源' : 'Source'
+                  : activeGroupTab === 'model'
+                  ? lang === 'zh' ? '模型' : 'Model'
+                  : lang === 'zh' ? '项目' : 'Project'}
               </span>
               <span className="col-span-4 sm:col-span-4 text-right pr-4">
-                {metricMode === 'tokens' ? 'Tokens' : '估算费用'}
+                {metricMode === 'tokens' ? 'Tokens' : lang === 'zh' ? '估算费用' : 'Cost'}
               </span>
-              <span className="hidden sm:block sm:col-span-2 text-right pr-2">请求数</span>
-              <span className="col-span-3 sm:col-span-2 text-right">占比</span>
+              <span className="hidden sm:block sm:col-span-2 text-right pr-2">{lang === 'zh' ? '请求数' : 'Calls'}</span>
+              <span className="col-span-3 sm:col-span-2 text-right">{lang === 'zh' ? '占比' : 'Share'}</span>
             </div>
 
             {groupItems.map((item) => {
@@ -485,18 +664,42 @@ function UsagePageInner() {
               const totalVal = metricMode === 'tokens' ? totalTokens : totalCostUsd
               const pct = totalVal > 0 ? (val / totalVal) * 100 : 0
 
+              const clickable = Boolean(item.filter)
+              const selected = clickable && isGroupItemSelected(item)
+              const Row = clickable ? 'button' : 'div'
+
               return (
-                <div
+                <Row
                   key={item.key}
-                  className="grid grid-cols-12 items-center py-2.5 px-2 rounded-lg hover:bg-black/[0.02] transition-colors"
+                  {...(clickable
+                    ? {
+                        type: 'button' as const,
+                        'aria-pressed': selected,
+                        onClick: () => applyGroupItemFilter(item),
+                        title: lang === 'zh'
+                          ? selected ? '点击取消这个筛选' : '点击只看这一项'
+                          : selected ? 'Click to remove this filter' : 'Click to filter by this item',
+                      }
+                    : {})}
+                  className={`surface-row grid w-full grid-cols-12 items-center py-2.5 px-2 rounded-lg text-left transition-colors ${
+                    clickable ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40' : ''
+                  } ${selected ? 'ring-1 ring-workbench-accent/50 bg-workbench-accent/5' : ''}`}
                 >
                   <div className="col-span-5 sm:col-span-4 flex items-center gap-2.5 min-w-0 pr-2">
                     {activeGroupTab === 'source' && (
                       <ProviderBrandIcon provider={item.provider} className="size-6 shrink-0" />
                     )}
-                    <span className="text-sm font-medium text-workbench-text truncate">
+                    <span
+                      className={`text-sm font-medium text-workbench-text truncate ${activeGroupTab === 'model' ? 'font-mono' : ''}`}
+                      title={item.variants && item.variants.length > 1 ? item.variants.join('\n') : undefined}
+                    >
                       {item.name}
                     </span>
+                    {item.variants && item.variants.length > 1 && (
+                      <span className="shrink-0 rounded border border-workbench-border bg-workbench-sidebar px-1.5 py-0.5 text-[10px] font-sans font-medium text-workbench-text-muted">
+                        {lang === 'zh' ? `${item.variants.length} 个变体` : `${item.variants.length} variants`}
+                      </span>
+                    )}
                   </div>
 
                   <div className="col-span-4 sm:col-span-4 flex items-center gap-3 justify-end pr-4">
@@ -524,7 +727,7 @@ function UsagePageInner() {
                       {pct.toFixed(1)}%
                     </span>
                   </div>
-                </div>
+                </Row>
               )
             })}
           </div>
@@ -583,42 +786,44 @@ function UsagePageInner() {
         </div>
 
         {recordsError && (
-          <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center justify-between gap-3">
-            <span>
-              {rawRecords.length > 0
-                ? lang === 'zh'
-                  ? `明细加载失败，下面是上一次的结果（${recordsError}）`
-                  : `Failed to load records; showing previous result (${recordsError})`
-                : lang === 'zh'
-                  ? `明细加载失败（${recordsError}）`
-                  : `Failed to load records (${recordsError})`}
-            </span>
-            <Button size="sm" variant="secondary" onClick={() => fetchRawRecords()}>
-              {lang === 'zh' ? '重试' : 'Retry'}
-            </Button>
-          </div>
+          <Notice
+            className="mb-3"
+            action={
+              <Button size="sm" variant="secondary" onClick={() => fetchRawRecords()}>
+                {lang === 'zh' ? '重试' : 'Retry'}
+              </Button>
+            }
+          >
+            {rawRecords.length > 0
+              ? lang === 'zh'
+                ? `明细加载失败，下面是上一次的结果（${recordsError}）`
+                : `Failed to load records; showing previous result (${recordsError})`
+              : lang === 'zh'
+                ? `明细加载失败（${recordsError}）`
+                : `Failed to load records (${recordsError})`}
+          </Notice>
         )}
 
         <DataTable loading={recordsLoading}>
           <thead>
             <tr className="border-b border-workbench-border bg-workbench-sidebar text-xs font-medium text-workbench-text-muted">
-              <th className="py-2.5 px-3">时间</th>
-              <th className="py-2.5 px-3">来源</th>
-              <th className="py-2.5 px-3">模型</th>
-              <th className="py-2.5 px-3">项目</th>
-              <th className="py-2.5 px-3 text-right">输入</th>
-              <th className="py-2.5 px-3 text-right">缓存</th>
-              <th className="py-2.5 px-3 text-right">输出</th>
-              <th className="py-2.5 px-3 text-right">思考</th>
-              <th className="py-2.5 px-3 text-right">Credits</th>
-              <th className="py-2.5 px-3 text-right">估算费用</th>
+              <th className="py-2.5 px-3">{lang === 'zh' ? '时间' : 'Time'}</th>
+              <th className="py-2.5 px-3">{lang === 'zh' ? '来源' : 'Source'}</th>
+              <th className="py-2.5 px-3">{lang === 'zh' ? '模型' : 'Model'}</th>
+              <th className="hidden py-2.5 px-3 md:table-cell">{lang === 'zh' ? '项目' : 'Project'}</th>
+              <th className="hidden py-2.5 px-3 text-right sm:table-cell">{lang === 'zh' ? '输入' : 'Input'}</th>
+              <th className="hidden py-2.5 px-3 text-right lg:table-cell">{lang === 'zh' ? '缓存' : 'Cached'}</th>
+              <th className="hidden py-2.5 px-3 text-right sm:table-cell">{lang === 'zh' ? '输出' : 'Output'}</th>
+              <th className="hidden py-2.5 px-3 text-right lg:table-cell">{lang === 'zh' ? '思考' : 'Reasoning'}</th>
+              <th className="hidden py-2.5 px-3 text-right sm:table-cell">Credits</th>
+              <th className="py-2.5 px-3 text-right">{lang === 'zh' ? '估算费用' : 'Cost'}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-workbench-border/60">
             {rawRecords.length === 0 ? (
               <tr>
                 <td colSpan={10} className="py-10 text-center text-sm text-workbench-text-muted">
-                  {recordsLoading ? '加载中...' : recordsError ? '加载失败' : '暂无明细记录'}
+                  {recordsLoading ? (lang === 'zh' ? '加载中...' : 'Loading...') : recordsError ? (lang === 'zh' ? '加载失败' : 'Failed to load') : (lang === 'zh' ? '暂无明细记录' : 'No records yet')}
                 </td>
               </tr>
             ) : (
@@ -638,46 +843,72 @@ function UsagePageInner() {
                   : '••••••'
 
                 return (
-                  <tr key={r.id} className="hover:bg-black/[0.02] transition-colors text-xs font-mono">
+                  <tr key={r.id} className="surface-row transition-colors text-xs font-mono">
                     <td className="py-2.5 px-3 text-workbench-text-muted whitespace-nowrap">
                       {dateStr}
                     </td>
                     <td className="py-2.5 px-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => { toggleSource(r.source); scrollToFilters() }}
+                        aria-pressed={selectedSources.includes(r.source)}
+                        title={lang === 'zh' ? `只看来源 ${SOURCE_DISPLAY_NAMES[r.source] || r.source}` : `Filter by source ${SOURCE_DISPLAY_NAMES[r.source] || r.source}`}
+                        className="flex items-center gap-1.5 rounded px-1 -mx-1 hover:bg-workbench-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40"
+                      >
                         <ProviderBrandIcon provider={r.source} className="size-4 shrink-0" />
                         <span className="font-sans font-medium text-workbench-text">
                           {SOURCE_DISPLAY_NAMES[r.source] || r.source}
                         </span>
-                      </div>
+                      </button>
                     </td>
                     <td className="py-2.5 px-3 text-workbench-text font-bold whitespace-nowrap">
-                      {r.model}
+                      <button
+                        type="button"
+                        onClick={() => { toggleModel(r.model); scrollToFilters() }}
+                        aria-pressed={selectedModels.includes(r.model)}
+                        title={lang === 'zh' ? `只看模型 ${r.model}` : `Filter by model ${r.model}`}
+                        className="rounded px-1 -mx-1 font-mono font-bold hover:bg-workbench-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40"
+                      >
+                        {r.model}
+                      </button>
+                      {(() => {
+                        const tag = cursorAutoTag(r)
+                        if (!tag) return null
+                        return (
+                          <span
+                            className="ml-1.5 rounded border border-workbench-border bg-workbench-sidebar px-1.5 py-0.5 text-[10px] font-sans font-medium text-workbench-text-muted"
+                            title={t(tag === 'resolved' ? 'records.autoTagTitle' : 'records.autoUnresolvedTitle')}
+                          >
+                            {t('records.autoTag')}
+                          </span>
+                        )
+                      })()}
                       {r.estimated === 1 && (
                         <span
-                          className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[10px] font-sans font-medium"
+                          className="ml-1.5 rounded border border-status-warning/30 bg-status-warning/15 px-1.5 py-0.5 text-[10px] font-sans font-medium text-status-warning"
                           title={lang === 'zh' ? 'token 数为估算值，不计入汇总' : 'Estimated tokens, excluded from totals'}
                         >
                           {lang === 'zh' ? '估算' : 'Est.'}
                         </span>
                       )}
                     </td>
-                    <td className="py-2.5 px-3 text-workbench-text-muted whitespace-nowrap font-sans">
+                    <td className="hidden py-2.5 px-3 text-workbench-text-muted whitespace-nowrap font-sans md:table-cell">
                       {projectName}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-workbench-text tabular-nums">
+                    <td className="hidden py-2.5 px-3 text-right text-workbench-text tabular-nums sm:table-cell">
                       {formatNumber(r.input_tokens)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-workbench-text-muted tabular-nums">
+                    <td className="hidden py-2.5 px-3 text-right text-workbench-text-muted tabular-nums lg:table-cell">
                       {r.cached_input_tokens > 0 ? formatNumber(r.cached_input_tokens) : '—'}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-workbench-accent tabular-nums font-semibold">
+                    <td className="hidden py-2.5 px-3 text-right text-workbench-accent tabular-nums font-semibold sm:table-cell">
                       {/* Credit-billed sources (Kiro) never record output tokens: show unknown, not 0 */}
                       {(r.credits ?? 0) > 0 && r.output_tokens === 0 ? '—' : formatNumber(r.output_tokens)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-workbench-text-muted tabular-nums">
+                    <td className="hidden py-2.5 px-3 text-right text-workbench-text-muted tabular-nums lg:table-cell">
                       {r.reasoning_tokens > 0 ? formatNumber(r.reasoning_tokens) : '—'}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-workbench-text tabular-nums">
+                    <td className="hidden py-2.5 px-3 text-right text-workbench-text tabular-nums sm:table-cell">
                       {(r.credits ?? 0) > 0 ? formatCredits(r.credits as number) : '—'}
                     </td>
                     <td className="py-2.5 px-3 text-right text-workbench-text tabular-nums font-semibold">

@@ -1,4 +1,4 @@
-import { getDb, getConfig, setConfig, deleteJunkTestPricing, zeroCursorGrokBotCosts } from './db'
+import { getDb, getConfig, setConfig, deleteJunkTestPricing, zeroCursorGrokBotCosts, CURSOR_GROK_BOT_SOURCE } from './db'
 import { calculateCost } from './pricing'
 import { invalidateStatsCache } from './stats-cache'
 
@@ -138,6 +138,31 @@ function zeroCursorGrokBotUsageCosts(): void {
   }
 }
 
+const CURSOR_GROK_BOT_SOURCE_MARKER = 'migration.cursor_grok_bot_source_v1'
+
+/**
+ * grok-bot-* 记录（含 VibeCafé 的按天汇总）从 cursor 来源挪到 cursor-grok-bot：
+ * Grok Bot 不是 IDE / 命令行对话，底层模型看不到，单独成一个来源才不会把
+ * Cursor 里真正用的模型淹没。request_id 不变，重新同步仍按原 id 去重。
+ */
+function moveCursorGrokBotToOwnSource(): void {
+  if (getConfig(CURSOR_GROK_BOT_SOURCE_MARKER)) return
+  const db = getDb()
+  const moved = db.transaction(() => {
+    const result = db.prepare(`
+      UPDATE usage_records
+      SET source = '${CURSOR_GROK_BOT_SOURCE}'
+      WHERE source = 'cursor' AND lower(model) LIKE 'grok-bot%'
+    `).run()
+    setConfig(CURSOR_GROK_BOT_SOURCE_MARKER, `${result.changes} usage@${new Date().toISOString()}`)
+    return result.changes
+  })()
+  if (moved > 0) {
+    invalidateStatsCache()
+    console.log(`[TokenTrail] migration ${CURSOR_GROK_BOT_SOURCE_MARKER}: moved ${moved} grok-bot rows to ${CURSOR_GROK_BOT_SOURCE}`)
+  }
+}
+
 /** Remove context-window estimates from scanner rows without changing billed credits. */
 function correctKiroContextTokens(): void {
   const marker = 'migration.kiro_credit_only_v1'
@@ -160,5 +185,6 @@ export function runMigrations(): void {
   deleteJunkTestPricingRows()
   renameCursorDefaultModel()
   zeroCursorGrokBotUsageCosts()
+  moveCursorGrokBotToOwnSource()
   correctKiroContextTokens()
 }

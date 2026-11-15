@@ -116,6 +116,8 @@ The service creates a runtime copy under `~/.tokentrail/runtime/TokenTrail`, kee
 
 > Legacy commands `npm run install-service`, `npm run uninstall-service`, `npm run restart`, and `npm run doctor` still work; the `daemon-*` aliases are the recommended, more readable form.
 
+After the runtime copy exists, ship code changes with `npm run deploy`: it rsyncs sources into `~/.tokentrail/runtime/TokenTrail` without deleting `node_modules`, `.next`, or `data/*.db`, rebuilds only when a source file is newer than `.next/BUILD_ID`, then restarts the service and checks `/api/health` plus the WorkBuddy quota card. `--force` rebuilds anyway, `--no-restart` stops before the restart.
+
 `install-service` is macOS LaunchAgent only, and it builds a production copy by default. Linux and Windows can run `npm run dev` or `npm start` in the foreground; there is no background service installer for those systems. Day-to-day development should use `npm run dev` in this project directory. The LaunchAgent serves `~/.tokentrail/runtime/TokenTrail`, so edits here do not affect it until you install again. `npm run doctor` reports when those two trees differ. Pass `--dev` only when you explicitly want the service in Next dev mode.
 
 ## Data Sources
@@ -131,6 +133,7 @@ TokenTrail is self-contained. No external platform dependency.
 | Kimi Code | `~/.kimi-code/sessions/**/wire.jsonl` and `~/.kimi/sessions/**/wire.jsonl` |
 | ZCode | `~/.zcode/usage/*.jsonl` (incrementally exported from ZCode's local DB before each sync; run `npm run export-zcode` manually anytime) |
 | Cursor | Per-call model, tokens and billed cost from the official `cursor.com` usage events, using the local Cursor login (full history first, incremental afterwards) |
+| WorkBuddy | `~/.workbuddy/traces/**` generation spans (official `usage` per model call) plus `~/.workbuddy/workbuddy.db` `session_usage` (official credits charged per request) |
 
 ### Other tools (must integrate)
 
@@ -233,6 +236,7 @@ Open **Account Quotas** in the dashboard header. TokenTrail never fabricates rem
 | **GLM** | Coding Plan token / `ANTHROPIC_AUTH_TOKEN` | Coding Plan 5h window and official MCP usage | Only a token that can call the Coding Plan monitor API works |
 | **Kimi** | Visible Terminal: `kimi login`, or a **Kimi Code** console key | Kimi Code `/coding/v1/usages` windows and booster pack | Moonshot Open Platform keys only read the open-platform wallet — do not mix the two |
 | **Cursor** | Just stay signed in to the Cursor app (reuses the session in `state.vscdb`) | Monthly API / total / on-demand usage from the official `cursor.com/api/usage-summary` | No key needed |
+| **WorkBuddy** | Nothing to sign in | Credits already spent today / 7 days / this month, from the local `session_usage` charge records | WorkBuddy has no local balance API. Remaining credits are web-only; run `npm run calibrate 8848.89` to write the number you see there, and the card shows it as a confirmed wallet |
 
 If TokenTrail cannot open the login window, run the same official command yourself, then refresh:
 
@@ -263,6 +267,8 @@ Full operator notes: [docs/QUOTA_MANUAL_GUIDE.md](./docs/QUOTA_MANUAL_GUIDE.md).
 | --- | --- |
 | `npm run setup` | Configure CLI and test server connection |
 | `npm run sync` | Sync all data sources now |
+| `npm run calibrate` | Set the WorkBuddy remaining-credit balance from the official page (`npm run calibrate 8848.89`; no argument prints the current value) |
+| `npm run deploy` | Sync source changes into the LaunchAgent runtime copy, rebuild if needed, restart the service, and verify health |
 | `npm run status` | Show server status and data statistics |
 | `npm run doctor` | Run full local health diagnosis |
 | `npm run open` | Open the dashboard in your browser |

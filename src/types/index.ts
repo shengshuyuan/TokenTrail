@@ -75,6 +75,7 @@ export interface StatsResponse {
   estimated_requests: number
   /** 估算 token 按来源拆开，供「另有估算」标签点名 */
   estimated_by_source?: { source: string; total_tokens: number }[]
+  estimated_by_model?: { model: string; total_tokens: number; cost_usd: number }[]
   /** Cursor 实测用量的三类分组；其他来源不计入 */
   cursor_groups?: {
     named: { total_tokens: number; cost_usd: number; count: number }
@@ -138,8 +139,11 @@ export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   'hermes': 'Hermes',
   'lobster': 'Lobster',
   'traework': 'TraeWork',
+  'workbuddy': 'WorkBuddy',
   'antigravity': 'Antigravity',
   'grok': 'Grok',
   'cursor': 'Cursor',
+  /** Cursor 套餐附带的 Grok Bot：官方账单里的 grok-bot-*，底层模型不可见，单独成来源 */
+  'cursor-grok-bot': 'Cursor Grok Bot',
   'vibecafe': 'VibeCafé',
 }

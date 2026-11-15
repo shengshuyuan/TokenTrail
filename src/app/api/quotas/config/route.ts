@@ -11,6 +11,8 @@ const ALLOWED_CONFIG_KEYS = [
   'XAI_TEAM_ID',
   'ANTHROPIC_BASE_URL',
   'GOOGLE_CLOUD_PROJECT',
+  'WORKBUDDY_CREDITS_BALANCE',
+  'WORKBUDDY_CREDITS_BALANCE_AT',
 ] as const
 
 /** GET /api/quotas/config — 查询本地凭证是否已配置（不返回明文 Key） */

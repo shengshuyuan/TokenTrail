@@ -4,6 +4,7 @@ import React from 'react'
 import type { ProviderQuotaSnapshot, QuotaWindow, ProviderId } from '@/lib/quotas/types'
 import { useLang } from '@/lib/LanguageContext'
 import { t as translate, type Lang } from '@/lib/i18n'
+import { Button } from '@/components/ui/Button'
 import { ProviderBrandIcon } from './QuotaBrandIcons'
 
 // ─── Provider 显示名 ─────────────────────────────────────────
@@ -16,6 +17,7 @@ const PROVIDER_NAMES: Record<string, { zh: string; en: string }> = {
   kimi: { zh: 'Kimi', en: 'Kimi' },
   cursor: { zh: 'Cursor', en: 'Cursor' },
   kiro: { zh: 'Kiro CLI', en: 'Kiro CLI' },
+  workbuddy: { zh: 'WorkBuddy', en: 'WorkBuddy' },
 }
 
 const DEFAULT_ACCOUNTS: Record<string, { zh: string; en: string }> = {
@@ -26,6 +28,7 @@ const DEFAULT_ACCOUNTS: Record<string, { zh: string; en: string }> = {
   kimi: { zh: 'Kimi 账号', en: 'Kimi Account' },
   cursor: { zh: 'Cursor 账号', en: 'Cursor Account' },
   kiro: { zh: 'Kiro 账号', en: 'Kiro Account' },
+  workbuddy: { zh: 'WorkBuddy 账号', en: 'WorkBuddy Account' },
 }
 
 // ─── 时间格式化 ──────────────────────────────────────────────
@@ -87,6 +90,11 @@ function windowLabel(win: QuotaWindow, lang: Lang): string {
   if (rawId.startsWith('kiro-credit-bonus')) return win.label || (lang === 'zh' ? '赠送额度' : 'Bonus')
   if (rawId === 'kiro-today') return lang === 'zh' ? '今日消耗' : 'Today'
 
+  // WorkBuddy：只有已消耗（官方余额在网页里，本地读不到）
+  if (rawId === 'workbuddy-today') return lang === 'zh' ? '今日消耗' : 'Today'
+  if (rawId === 'workbuddy-week') return lang === 'zh' ? '近 7 天' : 'Last 7 days'
+  if (rawId === 'workbuddy-month') return lang === 'zh' ? '本月消耗' : 'This month'
+
   // Cursor 月度计费周期
   if (rawId === 'cursor-api') return translate('quota.window.cursorApi', lang)
   if (rawId === 'cursor-auto') return translate('quota.window.cursorAuto', lang)
@@ -143,11 +151,39 @@ function percentColor(percent: number | undefined): { bar: string; text: string 
   return { bar: 'bg-status-success', text: 'text-eva-text' }
 }
 
+function formatCreditNumber(amount: number): string {
+  const rounded = Math.round(Math.abs(amount) * 100) / 100
+  const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2)
+  return `${amount < 0 ? '-' : ''}${text}`
+}
+
+/** 已消耗积分不是官方额度窗口：近 7 天滚动统计，今天和本月到点重新计。 */
+function spendHint(win: QuotaWindow, now: number, lang: Lang): string {
+  if (win.id === 'workbuddy-week') return translate('quota.spend.rolling7', lang)
+  if (!win.resetsAt || win.resetsAt <= now) return translate('quota.spend.recounted', lang)
+  const diff = win.resetsAt - now
+  if (diff < 48 * 3600_000) {
+    const hours = Math.floor(diff / 3600_000)
+    const minutes = Math.floor((diff % 3600_000) / 60_000)
+    const d = hours > 0
+      ? lang === 'zh' ? `${hours} 小时 ${minutes} 分` : `${hours}h ${minutes}m`
+      : lang === 'zh' ? `${minutes} 分钟` : `${minutes}m`
+    return translate('quota.spend.recountIn', lang, { d })
+  }
+  const date = new Date(win.resetsAt)
+  const day = diff >= 7 * 86400_000
+    ? lang === 'zh'
+      ? `${date.getMonth() + 1}/${date.getDate()}`
+      : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : lang === 'zh'
+      ? WEEKDAYS_ZH[date.getDay()]
+      : date.toLocaleDateString('en-US', { weekday: 'short' })
+  return translate('quota.spend.recountAt', lang, { d: day, time: formatClock(win.resetsAt) })
+}
+
 function formatAmount(amount: number, currency: string): string {
   if (currency === 'credits' || currency === 'credit') {
-    const abs = Math.abs(amount)
-    const text = abs >= 100 ? abs.toFixed(0) : abs.toFixed(2)
-    return `${amount < 0 ? '-' : ''}${text} cr`
+    return `${formatCreditNumber(amount)} cr`
   }
   const symbol = currency === 'USD' ? '$' : currency === 'CNY' ? '¥' : `${currency} `
   const abs = Math.abs(amount)
@@ -193,6 +229,7 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
   const isGrokUnsupported = provider === 'grok' && snapshot.status === 'unsupported' && snapshot.windows.length === 0
   const isGrokCliLoggedIn = isGrokUnsupported && snapshot.source === 'local_cli'
   const isCodexLoggedInNoData = provider === 'codex' && snapshot.error?.code === 'no_data' && snapshot.windows.length === 0
+  const isWorkbuddyNoData = provider === 'workbuddy' && snapshot.error?.code === 'no_data' && snapshot.windows.length === 0
   const isGeminiLoggedInNoQuota = provider === 'gemini' && snapshot.status === 'unsupported' && snapshot.windows.length === 0
 
   const hasWindows = snapshot.windows.length > 0
@@ -203,240 +240,184 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
   ]
   const err = errorText(snapshot, lang)
 
+  const calmStatus =
+    snapshot.status === 'healthy' || isCodexLoggedInNoData || isWorkbuddyNoData || isGeminiLoggedInNoQuota || isGrokCliLoggedIn
+  // 完全没读到窗口时，优先显示「去连接」，不要再叠一条「数据过期」。
+  const staleWithData = Boolean(snapshot.stale && hasWindows)
+  const statusTone = staleWithData
+    ? 'warn'
+    : snapshot.status === 'exhausted' || snapshot.status === 'critical' || snapshot.status === 'auth_error'
+    ? 'bad'
+    : snapshot.status === 'not_configured'
+    ? 'neutral'
+    : calmStatus
+    ? 'ok'
+    : 'warn'
+  const statusLabel = staleWithData
+    ? t('quota.status.stale')
+    : isCodexLoggedInNoData
+    ? t('quota.status.codexNoData')
+    : isWorkbuddyNoData
+    ? t('quota.error.no_data')
+    : isGeminiLoggedInNoQuota
+    ? t('quota.status.geminiNoQuota')
+    : isGrokCliLoggedIn
+    ? t('quota.status.grokLoggedIn')
+    : isGrokUnsupported
+    ? t('quota.status.grokUnsupported')
+    : snapshot.status === 'healthy'
+    ? t('quota.status.connected')
+    : snapshot.status === 'auth_error'
+    ? `${t('quota.status.auth_error')} · ${t('quota.action.reauth')}`
+    : snapshot.status === 'not_configured'
+    ? t('quota.action.connect')
+    : t(`quota.status.${snapshot.status}` as never)
+  const statusClass = {
+    ok: 'border-status-success/35 bg-status-success/10 text-status-success',
+    warn: 'border-status-warning/40 bg-status-warning/10 text-status-warning',
+    bad: 'border-status-danger/40 bg-status-danger/10 text-status-danger',
+    neutral: 'border-workbench-border bg-workbench-sidebar text-workbench-text-muted',
+  }[statusTone]
+
   return (
     <div
-      className="py-3.5 px-4 sm:px-6 transition-colors hover:bg-eva-panel/20"
+      className="surface-row px-4 py-4 transition-colors sm:px-6"
       data-provider={snapshot.provider}
     >
-      {/* 桌面端 4 列布局 */}
-      <div className="grid grid-cols-1 gap-y-3 sm:grid-cols-[130px_150px_160px_1fr] sm:items-center sm:gap-x-4">
-        {/* Column 1: 服务 (Service) */}
-        <div className="flex items-center gap-2.5 min-w-0">
-          <ProviderBrandIcon provider={provider} className="size-7 shrink-0" />
-          <span className="text-sm font-semibold text-eva-text truncate">{name}</span>
-        </div>
-
-        {/* Column 2: 账号 / 产品 (Account / Product) */}
-        <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-          <span className="text-xs font-mono text-eva-text truncate">{accountText}</span>
-          {wallet && (
-            <span className="inline-flex items-center gap-1 rounded border border-eva-border/60 bg-eva-panel/60 px-1.5 py-0.5 text-[10px] font-mono text-status-success shrink-0">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-3">
-                <rect x="2" y="5" width="20" height="14" rx="2" />
-                <line x1="2" y1="10" x2="22" y2="10" />
-              </svg>
-              {translate(`quota.wallet.${wallet.label}` as never, lang) || '钱包'} {formatAmount(wallet.balance, wallet.currency)}
-            </span>
-          )}
-        </div>
-
-        {/* Column 3: 连接状态 (Connection Status) */}
-        <div className="flex flex-col gap-1 min-w-0">
-          {snapshot.stale ? (
-            <button
-              type="button"
-              onClick={() => onManualClick && onManualClick(provider)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-status-warning/40 bg-status-warning/10 px-2.5 py-0.5 text-xs font-mono text-status-warning hover:border-status-warning/70 transition-colors w-fit"
-            >
-              <span className="size-1.5 rounded-full bg-status-warning" />
-              {t('quota.status.stale')}
-            </button>
-          ) : snapshot.status === 'exhausted' ? (
-            <button
-              type="button"
-              onClick={() => onManualClick && onManualClick(provider)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-status-danger/40 bg-status-danger/10 px-2.5 py-0.5 text-xs font-mono text-status-danger hover:border-status-danger/70 transition-colors w-fit"
-            >
-              <span className="size-1.5 rounded-full bg-status-danger" />
-              {t('quota.status.exhausted')}
-            </button>
-          ) : snapshot.status === 'critical' ? (
-            <button
-              type="button"
-              onClick={() => onManualClick && onManualClick(provider)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-status-danger/30 bg-status-danger/10 px-2.5 py-0.5 text-xs font-mono text-status-danger hover:border-status-danger/60 transition-colors w-fit"
-            >
-              <span className="size-1.5 rounded-full bg-status-danger" />
-              {t('quota.status.critical')}
-            </button>
-          ) : snapshot.status === 'warning' ? (
-            <button
-              type="button"
-              onClick={() => onManualClick && onManualClick(provider)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-status-warning/30 bg-status-warning/10 px-2.5 py-0.5 text-xs font-mono text-status-warning hover:border-status-warning/60 transition-colors w-fit"
-            >
-              <span className="size-1.5 rounded-full bg-status-warning" />
-              {t('quota.status.warning')}
-            </button>
-          ) : isCodexLoggedInNoData ? (
-            <button
-              type="button"
-              onClick={() => onManualClick && onManualClick(provider)}
-              title="已登录 Codex · 完成一次对话后即可读取额度"
-              className="inline-flex items-center gap-1.5 rounded-full border border-status-success/30 bg-status-success/10 px-2.5 py-0.5 text-[11px] font-mono text-status-success hover:border-status-success/60 transition-colors w-fit"
-            >
-              <span className="size-1.5 rounded-full bg-status-success" />
-              {t('quota.status.codexNoData')}
-            </button>
-          ) : snapshot.status === 'healthy' ? (
-            <button
-              type="button"
-              onClick={() => onManualClick && onManualClick(provider)}
-              title={t('quota.action.connectedTitle')}
-              className="inline-flex items-center gap-1.5 rounded-full border border-status-success/30 bg-status-success/10 px-2.5 py-0.5 text-xs font-mono text-status-success hover:border-status-success/60 transition-colors w-fit"
-            >
-              <span className="size-1.5 rounded-full bg-status-success" />
-              {t('quota.status.connected')}
-            </button>
-          ) : isGeminiLoggedInNoQuota ? (
-            <button
-              type="button"
-              onClick={() => onManualClick && onManualClick(provider)}
-              title={t('quota.error.gemini.unsupported')}
-              className="inline-flex items-center gap-1.5 rounded-full border border-status-success/30 bg-status-success/10 px-2.5 py-0.5 text-[11px] font-mono text-status-success hover:border-status-success/60 transition-colors w-fit"
-            >
-              <span className="size-1.5 rounded-full bg-status-success" />
-              {t('quota.status.geminiNoQuota')}
-            </button>
-          ) : isGrokCliLoggedIn ? (
-            <button
-              type="button"
-              onClick={() => onManualClick && onManualClick(provider)}
-              title={t('quota.action.grokReauthTitle')}
-              className="inline-flex items-center gap-1.5 rounded-full border border-status-success/30 bg-status-success/10 px-2.5 py-0.5 text-[11px] font-mono text-status-success hover:border-status-success/60 transition-colors w-fit"
-            >
-              <span className="size-1.5 rounded-full bg-status-success" />
-              {t('quota.status.grokLoggedIn')}
-            </button>
-          ) : isGrokUnsupported ? (
-            <button
-              type="button"
-              onClick={() => onManualClick && onManualClick(provider)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-status-warning/40 bg-status-warning/10 px-2.5 py-0.5 text-[11px] font-mono text-status-warning hover:border-status-warning/70 transition-colors w-fit"
-            >
-              <span className="flex size-3.5 items-center justify-center rounded-full bg-status-warning/20 text-[10px] font-bold">?</span>
-              {t('quota.status.grokUnsupported')}
-            </button>
-          ) : snapshot.status === 'auth_error' ? (
-            <button
-              type="button"
-              onClick={() => onManualClick && onManualClick(provider)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-status-danger/30 bg-status-danger/10 px-2.5 py-0.5 text-xs font-mono text-status-danger hover:border-status-danger/60 transition-colors w-fit"
-            >
-              <span className="size-1.5 rounded-full bg-status-danger" />
-              {t('quota.status.auth_error')} · {t('quota.action.reauth')}
-            </button>
-          ) : snapshot.status === 'not_configured' ? (
-            <button
-              type="button"
-              onClick={() => onManualClick && onManualClick(provider)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-eva-purple/40 bg-eva-purple/10 px-2.5 py-0.5 text-xs font-mono text-eva-purple hover:bg-eva-purple/20 transition-colors w-fit"
-            >
-              <span className="size-1.5 rounded-full bg-eva-purple" />
-              {t('quota.action.connect')}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onManualClick && onManualClick(provider)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-status-warning/30 bg-status-warning/10 px-2.5 py-0.5 text-xs font-mono text-status-warning hover:border-status-warning/60 transition-colors w-fit"
-            >
-              <span className="size-1.5 rounded-full bg-status-warning" />
-              {t(`quota.status.${snapshot.status}` as never)}
-            </button>
-          )}
-
-          {snapshot.stale && snapshot.lastSuccessAt && (
-            <span className="text-[10px] font-mono text-status-warning">
-              {t('quota.staleNote', { time: formatClock(snapshot.lastSuccessAt) })}
-            </span>
-          )}
-          <span className="text-[10px] font-mono leading-snug text-eva-text-dim">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
+        <div className="min-w-0 lg:w-56 lg:shrink-0">
+          <div className="flex items-start gap-2.5">
+            <ProviderBrandIcon provider={provider} className="size-8 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="text-sm font-semibold text-workbench-text">{name}</span>
+                <button
+                  type="button"
+                  onClick={() => onManualClick?.(provider)}
+                  title={statusLabel}
+                  className={`inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40 ${statusClass}`}
+                >
+                  <span className={`size-1.5 shrink-0 rounded-full ${statusTone === 'neutral' ? 'bg-workbench-text-muted' : 'bg-current'}`} />
+                  <span className="truncate">{statusLabel}</span>
+                </button>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-workbench-text-muted">
+                <span className="truncate">{accountText}</span>
+                {wallet && (
+                  <span className="inline-flex items-center gap-1 rounded-md border border-workbench-border/70 bg-workbench-sidebar px-1.5 py-0.5 font-mono text-[11px] text-status-success">
+                    {translate(`quota.wallet.${wallet.label}` as never, lang) || (lang === 'zh' ? '钱包' : 'Wallet')} {formatAmount(wallet.balance, wallet.currency)}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-workbench-text-muted">
             {metaItems.join(' · ')}
-          </span>
-          {err && (
-            <span className="text-[10px] font-mono leading-snug text-status-warning">
+            {staleWithData && snapshot.lastSuccessAt ? ` · ${t('quota.staleNote', { time: formatClock(snapshot.lastSuccessAt) })}` : ''}
+          </p>
+          {err && snapshot.error?.code !== snapshot.status && (
+            <p className="mt-1 text-[11px] leading-relaxed text-status-warning">
               {t('quota.meta.error', { error: err })}
-            </span>
+            </p>
           )}
           {snapshot.retryAfterAt && snapshot.retryAfterAt > now && (
-            <span className="text-[10px] font-mono leading-snug text-status-warning">
+            <p className="mt-1 text-[11px] text-status-warning">
               {t('quota.meta.retryAt', { time: formatTime(snapshot.retryAfterAt, lang) })}
-            </span>
+            </p>
           )}
           {canRetry && (
-            <button
-              type="button"
-              onClick={() => onRetry?.(provider)}
-              className="inline-flex w-fit items-center gap-1 rounded border border-eva-border/70 px-2 py-1 text-[10px] font-mono text-eva-text-dim hover:border-eva-purple/60 hover:text-eva-text"
-            >
+            <Button size="sm" variant="outline" className="mt-2" onClick={() => onRetry?.(provider)}>
               {t('quota.action.retryRefresh')}
-            </button>
+            </Button>
           )}
         </div>
 
-        {/* Column 4: 额度使用 / 操作 (Quota Usage / Action) */}
-        <div className="min-w-0">
-          {hasWindows ? (
-            <div className="space-y-2">
+        <div className="min-w-0 flex-1">
+          {snapshot.provider === 'workbuddy' && hasWindows ? (
+            <div>
+              <div className="grid grid-cols-3 gap-2">
+                {snapshot.windows.map((win) => {
+                  const label = windowLabel(win, lang)
+                  const used = typeof win.used === 'number' ? formatCreditNumber(win.used) : '—'
+                  const hint = spendHint(win, now, lang)
+                  return (
+                    <div key={win.id} className="min-w-0 rounded-lg border border-workbench-border/70 px-3 py-2">
+                      <div className="truncate text-[11px] text-workbench-text-muted" title={label}>{label}</div>
+                      <div className="mt-1 flex items-baseline gap-1">
+                        <span className="truncate font-mono text-sm font-medium tabular-nums text-workbench-text">{used}</span>
+                        <span className="shrink-0 text-[11px] text-workbench-text-muted">{t('quota.spend.credits')}</span>
+                      </div>
+                      <div className="mt-0.5 truncate text-[11px] leading-tight text-workbench-text-muted" title={hint}>{hint}</div>
+                    </div>
+                  )
+                })}
+              </div>
+              {snapshot.action?.url && (
+                <a
+                  href={snapshot.action.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="mt-2 inline-flex min-h-7 items-center text-[11px] font-medium text-workbench-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40"
+                >
+                  {t('quota.action.workbuddyCredits')}
+                </a>
+              )}
+            </div>
+          ) : hasWindows ? (
+            <div className="space-y-2.5">
               {snapshot.windows.map((win) => {
                 const percent = typeof win.usedPercent === 'number' ? win.usedPercent : undefined
                 const reset = formatReset(win.resetsAt, now, lang)
                 const colors = percentColor(percent)
-                const clamped = typeof percent === 'number' ? Math.max(2, Math.min(100, percent)) : 0
-
+                const clamped = typeof percent === 'number'
+                  ? percent <= 0 ? 0 : Math.max(2, Math.min(100, percent))
+                  : 0
                 const displayPercent = typeof percent === 'number' ? Math.round(percent) : undefined
+                const label = windowLabel(win, lang)
+                const valueText = typeof displayPercent === 'number'
+                  ? t('quota.used', { p: displayPercent })
+                  : typeof win.used === 'number' && typeof win.limit === 'number'
+                  ? t('quota.rawUsage', { used: win.used, limit: win.limit })
+                  : win.unit === 'credit' && typeof win.used === 'number'
+                  ? t('quota.creditsUsed', { used: win.used })
+                  : typeof win.limit === 'number'
+                  ? t('quota.rawUsage', { used: '—', limit: win.limit })
+                  : typeof win.used === 'number'
+                  ? t('quota.rawUsed', { used: win.used })
+                  : t('quota.noLimit')
 
                 return (
-                  <div
-                    key={win.id}
-                    className="grid grid-cols-[minmax(5.5rem,7.5rem)_minmax(3rem,1fr)_4.75rem_minmax(6.5rem,8.5rem)] items-center gap-x-2 text-xs"
-                  >
-                    {/* 窗口名称 */}
-                    <span className="truncate font-medium text-eva-text-dim" title={windowLabel(win, lang)}>
-                      {windowLabel(win, lang)}
-                    </span>
-
-                    {/* 进度条 */}
-                    {typeof displayPercent === 'number' ? (
-                      <>
+                  <div key={win.id} className="grid grid-cols-[6.75rem_minmax(0,1fr)] items-center gap-x-3 sm:grid-cols-[9rem_minmax(0,1fr)]">
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-medium text-workbench-text" title={label}>
+                        {label}
+                      </div>
+                      {reset && (
+                        <div className="mt-0.5 truncate text-[11px] leading-tight text-workbench-text-muted" title={reset}>
+                          {reset}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex min-w-0 items-center gap-3">
+                      {typeof displayPercent === 'number' && (
                         <div
                           role="progressbar"
-                          aria-label={`${name} ${windowLabel(win, lang)}`}
+                          aria-label={`${name} ${label}`}
                           aria-valuenow={displayPercent}
                           aria-valuemin={0}
                           aria-valuemax={100}
-                          className="h-1.5 min-w-[3rem] overflow-hidden rounded-full bg-eva-border/60"
+                          className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-eva-text/20"
                         >
                           <div
-                            className={`h-full rounded-full transition-all duration-300 ${colors.bar}`}
+                            className={`h-full rounded-full ${colors.bar}`}
                             style={{ width: `${clamped}%` }}
                           />
                         </div>
-
-                        {/* 百分比：整数、单行，避免「27.2% / 已用」折行 */}
-                        <span className={`whitespace-nowrap text-right font-mono font-medium tabular-nums ${colors.text}`}>
-                          {t('quota.used', { p: displayPercent })}
-                        </span>
-                      </>
-                    ) : typeof win.used === 'number' && typeof win.limit === 'number' ? (
-                      <span className="col-span-2 font-mono text-eva-text text-xs whitespace-nowrap">
-                        {t('quota.rawUsage', { used: win.used, limit: win.limit })}
-                      </span>
-                    ) : win.unit === 'credit' && typeof win.used === 'number' ? (
-                      <span className="col-span-2 font-mono text-eva-text text-xs whitespace-nowrap">
-                        {t('quota.creditsUsed', { used: win.used })}
-                      </span>
-                    ) : (
-                      <span className="col-span-2 font-mono text-eva-text-dim text-xs">{t('quota.noLimit')}</span>
-                    )}
-
-                    {/* 重置倒计时 */}
-                    {reset && (
-                      <span className="whitespace-nowrap text-right font-mono text-[11px] text-eva-text-dim">
-                        {reset}
-                      </span>
-                    )}
+                      )}
+                      <div className={`shrink-0 text-right font-mono text-xs tabular-nums whitespace-nowrap ${typeof displayPercent === 'number' ? `font-medium ${colors.text}` : 'text-workbench-text-muted'}`}>
+                        {valueText}
+                      </div>
+                    </div>
                   </div>
                 )
               })}
@@ -448,7 +429,7 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
                   href={snapshot.action.url}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="pressable control-surface inline-flex items-center gap-1 px-3 py-1.5 text-xs font-mono text-eva-text hover:text-eva-text"
+                  className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-workbench-border px-3 text-xs font-medium text-workbench-text hover:bg-workbench-sidebar focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40"
                 >
                   {t('quota.action.openUrl')}
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-3">
@@ -460,7 +441,7 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
                 <button
                   type="button"
                   onClick={() => onManualClick(provider)}
-                  className="pressable control-surface inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-mono text-eva-purple hover:border-eva-purple/60"
+                  className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-workbench-accent/40 px-3 text-xs font-medium text-workbench-accent hover:bg-workbench-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40"
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-3">
                     <path d="M12 5v14M5 12h14" />
@@ -472,7 +453,7 @@ export function QuotaProviderRow({ snapshot, onRetry, onManualClick }: QuotaProv
                 <button
                   type="button"
                   onClick={() => onRetry(provider)}
-                  className="pressable control-surface inline-flex items-center px-3 py-1.5 text-xs font-mono"
+                  className="inline-flex min-h-8 items-center rounded-lg border border-workbench-border px-3 text-xs font-medium text-workbench-text hover:bg-workbench-sidebar focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40"
                 >
                   {t('quota.action.retryRefresh')}
                 </button>
@@ -490,15 +471,13 @@ export function QuotaProviderRowSkeleton({ provider }: { provider: string }) {
   const { lang } = useLang()
   const name = PROVIDER_NAMES[provider]?.[lang] ?? provider
   return (
-    <div className="py-3.5 px-4 sm:px-6" data-provider={provider}>
-      <div className="grid grid-cols-1 gap-y-2 sm:grid-cols-[130px_150px_160px_1fr] sm:items-center sm:gap-x-4">
-        <div className="flex items-center gap-2.5">
-          <span className="size-7 shrink-0 animate-pulse rounded-lg bg-eva-border/50" />
-          <span className="text-sm font-semibold text-eva-text-dim">{name}</span>
+    <div className="px-4 py-4 sm:px-6" data-provider={provider}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="flex items-center gap-2.5 lg:w-56">
+          <span className="size-8 shrink-0 animate-pulse rounded-lg bg-workbench-border/70" />
+          <span className="text-sm font-semibold text-workbench-text-muted">{name}</span>
         </div>
-        <div className="h-4 w-20 animate-pulse rounded bg-eva-border/40" />
-        <div className="h-5 w-24 animate-pulse rounded-full bg-eva-border/30" />
-        <div className="h-4 w-3/4 animate-pulse rounded bg-eva-border/40" />
+        <div className="h-2 flex-1 animate-pulse rounded-full bg-workbench-border/60" />
       </div>
     </div>
   )

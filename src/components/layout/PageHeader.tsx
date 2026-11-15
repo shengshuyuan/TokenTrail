@@ -21,7 +21,7 @@ export function PageHeader({
     <header className={`mb-8 ${className}`}>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         {/* Title and Subtitle */}
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl sm:text-[28px] font-bold text-workbench-text tracking-tight leading-tight">
             {title}
           </h1>
@@ -29,6 +29,9 @@ export function PageHeader({
             <p className="text-sm text-workbench-text-muted mt-1 leading-normal">
               {subtitle}
             </p>
+          )}
+          {note && (
+            <p className="mt-1 text-xs text-workbench-text-muted">{note}</p>
           )}
         </div>
 
@@ -39,13 +42,6 @@ export function PageHeader({
           </div>
         )}
       </div>
-
-      {/* Optional metadata note */}
-      {note && (
-        <div className="flex justify-end mt-1 text-xs text-workbench-text-muted">
-          <span>{note}</span>
-        </div>
-      )}
     </header>
   )
 }

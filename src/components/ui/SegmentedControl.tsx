@@ -46,9 +46,9 @@ export function SegmentedControl<T extends string | number>({
             role="radio"
             aria-checked={isSelected}
             onClick={() => onChange(opt.value)}
-            className={`font-medium transition-all duration-200 select-none ${itemSizeClasses} ${
+            className={`font-medium transition-colors duration-200 select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40 ${itemSizeClasses} ${
               isSelected
-                ? 'bg-workbench-surface text-workbench-text font-semibold shadow-xs border border-black/[0.06] dark:border-white/[0.1] active:scale-[0.98]'
+                ? 'bg-workbench-surface text-workbench-text font-semibold shadow-xs border border-black/[0.06] dark:border-white/[0.1]'
                 : 'text-workbench-text-muted hover:text-workbench-text hover:bg-black/[0.02] dark:hover:bg-white/[0.04]'
             }`}
           >

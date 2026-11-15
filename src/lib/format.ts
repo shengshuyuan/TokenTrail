@@ -66,6 +66,32 @@ export function formatNumber(num: number): string {
   return num.toLocaleString('en-US')
 }
 
+/** 模型名末尾表示「力度 / 速度」的变体词，不改变底层模型，合并家族时去掉。 */
+const MODEL_VARIANT_SUFFIXES = new Set([
+  'fast', 'high', 'medium', 'low', 'minimal', 'xhigh', 'thinking', 'highspeed', 'preview', 'exp', 'latest',
+])
+
+/**
+ * 把一个模型名归到它的「家族」，用于用量页「按模型」合并变体：
+ * - 小写（`GLM-5.3-Flash` 与 `glm-5.3-flash` 合并）
+ * - 去掉 `provider/` 前缀（`kimi-code/k3` → `k3`）
+ * - 去掉末尾的力度 / 速度词（`claude-opus-5-5-medium-fast` → `claude-opus-5.5`、`grok-4.7-build-fast` → `grok-4.7-build`）
+ * - 版本号 `5-5` 统一成 `5.5`，不同来源对同一模型的写法才会对上
+ * flash / mini / pro / turbo 这类是不同档位的模型，不是变体，保留。
+ * e.g. modelFamily('claude-fable-5-1-thinking-high') → 'claude-fable-5.1'
+ */
+export function modelFamily(model: string): string {
+  let id = String(model || '').trim().toLowerCase()
+  if (!id) return id
+  const slash = id.lastIndexOf('/')
+  if (slash >= 0 && slash < id.length - 1 && !id.includes(':')) id = id.slice(slash + 1)
+  const parts = id.split('-')
+  while (parts.length > 1 && MODEL_VARIANT_SUFFIXES.has(parts[parts.length - 1])) parts.pop()
+  id = parts.join('-')
+  // 末尾的 `-5-5` / `-4-6` 这类分段版本号写成 `5.5` / `4.6`
+  return id.replace(/-(\d+)-(\d+)$/, '-$1.$2')
+}
+
 /**
  * Format a date string for display。
  * "2026-05-30" → "05/30"

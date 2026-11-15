@@ -210,6 +210,7 @@ export function ProviderBrandIcon({ provider, className = 'size-7' }: { provider
     case 'antigravity':
       return <AntigravityBrandIcon className={className} />
     case 'grok':
+    case 'cursor-grok-bot':
       return <GrokBrandIcon className={className} />
     case 'glm':
       return <GlmBrandIcon className={className} />

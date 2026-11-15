@@ -27,7 +27,9 @@
     "daemon-restart": "node bin/tokentrail.js daemon restart",
     "daemon-uninstall": "node bin/tokentrail.js daemon uninstall",
     "export-zcode": "node src/lib/zcode.js",
-    "verify-local": "node scripts/verify-local.js"
+    "verify-local": "node scripts/verify-local.js",
+    "deploy": "node scripts/deploy-local.js",
+    "calibrate": "node scripts/calibrate-workbuddy.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",

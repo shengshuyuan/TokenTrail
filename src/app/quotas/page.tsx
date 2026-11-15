@@ -8,6 +8,7 @@ import { usePreferences } from '@/lib/PreferencesContext'
 import { AppShell } from '@/components/layout/AppShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
+import { Notice } from '@/components/ui/Notice'
 import { QuotaProviderRow, QuotaProviderRowSkeleton } from '@/components/dashboard/QuotaProviderRow'
 import { QuotaManualModal } from '@/components/dashboard/QuotaManualModal'
 import { useLang } from '@/lib/LanguageContext'
@@ -169,29 +170,29 @@ export default function QuotasPage() {
 
       {/* Notice Banner if any */}
       {notice && (
-        <div className="mb-6 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-sm flex items-center justify-between">
-          <span>{notice}</span>
-          <button type="button" onClick={() => setNotice(null)} className="text-blue-600 font-bold">×</button>
-        </div>
+        <Notice tone="info" onDismiss={() => setNotice(null)} dismissLabel={lang === 'zh' ? '关闭' : 'Dismiss'}>
+          {notice}
+        </Notice>
       )}
 
       {loadError && (
-        <div className="mb-6 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center justify-between gap-3">
-          <span>
-            {data
-              ? lang === 'zh' ? `读取额度失败，下面是上一次的数据（${loadError}）` : `Failed to load quotas; showing previous data (${loadError})`
-              : lang === 'zh' ? `读取额度失败（${loadError}）` : `Failed to load quotas (${loadError})`}
-          </span>
-          <Button size="sm" variant="secondary" onClick={() => fetchQuotas()}>
-            {lang === 'zh' ? '重试' : 'Retry'}
-          </Button>
-        </div>
+        <Notice
+          action={
+            <Button size="sm" variant="secondary" onClick={() => fetchQuotas()}>
+              {lang === 'zh' ? '重试' : 'Retry'}
+            </Button>
+          }
+        >
+          {data
+            ? lang === 'zh' ? `读取额度失败，下面是上一次的数据（${loadError}）` : `Failed to load quotas; showing previous data (${loadError})`
+            : lang === 'zh' ? `读取额度失败（${loadError}）` : `Failed to load quotas (${loadError})`}
+        </Notice>
       )}
 
       {backgroundRefreshing && !refreshing && (
-        <div className="mb-6 p-3 rounded-lg bg-workbench-sidebar border border-workbench-border/80 text-workbench-text-muted text-sm">
+        <Notice tone="neutral">
           {lang === 'zh' ? '正在后台读取最新额度，完成后会自动更新…' : 'Fetching latest quotas in the background; this page will update automatically…'}
-        </div>
+        </Notice>
       )}
 
       {/* Quotas Summary Cards */}

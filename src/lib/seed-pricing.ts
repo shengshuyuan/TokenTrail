@@ -35,6 +35,10 @@ export function seedPricing() {
     { model_id: 'claude-opus-5-5-high-fast', display_name: "claude-opus-5-5-high-fast", provider: 'anthropic', input_price_per_1m: 4, cached_input_price_per_1m: 0.2, output_price_per_1m: 20, reasoning_price_per_1m: 20 },
     { model_id: 'claude-opus-5-5-medium', display_name: "claude-opus-5-5-medium", provider: 'anthropic', input_price_per_1m: 4, cached_input_price_per_1m: 0.2, output_price_per_1m: 20, reasoning_price_per_1m: 20 },
     { model_id: 'claude-opus-5-low', display_name: "Claude Opus 5 Low", provider: 'anthropic', input_price_per_1m: 5, cached_input_price_per_1m: 0.5, output_price_per_1m: 25, reasoning_price_per_1m: 25 },
+    // Cursor 本机追踪库（~/.cursor/ai-tracking）里的原始模型名，与 Cursor 官网接口的 claude-*-5-5-<档位> 同价
+    { model_id: 'claude-opus-5-5-medium-fast', display_name: "Claude Opus 5.5 Medium Fast", provider: 'anthropic', input_price_per_1m: 4, cached_input_price_per_1m: 0.2, output_price_per_1m: 20, reasoning_price_per_1m: 20 },
+    { model_id: 'claude-opus-5-5', display_name: "Claude Opus 5.5", provider: 'anthropic', input_price_per_1m: 4, cached_input_price_per_1m: 0.2, output_price_per_1m: 20, reasoning_price_per_1m: 20 },
+    { model_id: 'claude-sonnet-5-5', display_name: "Claude Sonnet 5.5", provider: 'anthropic', input_price_per_1m: 2, cached_input_price_per_1m: 0.1, output_price_per_1m: 10, reasoning_price_per_1m: 10 },
     { model_id: 'claude-opus-5.5', display_name: "Claude Opus 5.5", provider: 'anthropic', input_price_per_1m: 4, cached_input_price_per_1m: 0.2, output_price_per_1m: 20, reasoning_price_per_1m: 20 },
     { model_id: 'claude-sonnet-4-20250514', display_name: "Claude Sonnet 4", provider: 'anthropic', input_price_per_1m: 3, cached_input_price_per_1m: 0.3, output_price_per_1m: 15, reasoning_price_per_1m: 0 },
     { model_id: 'claude-sonnet-4-5', display_name: "Claude Sonnet 4.5", provider: 'anthropic', input_price_per_1m: 3, cached_input_price_per_1m: 0.3, output_price_per_1m: 15, reasoning_price_per_1m: 15 },
@@ -121,6 +125,7 @@ export function seedPricing() {
     { model_id: 'grok-4.5-build', display_name: "Grok 4.5 Build", provider: 'xai', input_price_per_1m: 2, cached_input_price_per_1m: 0.3, output_price_per_1m: 6, reasoning_price_per_1m: 6 },
     { model_id: 'grok-4.6', display_name: "Grok 4.6", provider: 'xai', input_price_per_1m: 2, cached_input_price_per_1m: 0.5, output_price_per_1m: 6, reasoning_price_per_1m: 6 },
     { model_id: 'grok-4.6-build', display_name: "Grok 4.6 Build", provider: 'xai', input_price_per_1m: 2, cached_input_price_per_1m: 0.5, output_price_per_1m: 6, reasoning_price_per_1m: 6 },
+    { model_id: 'grok-4.7-high', display_name: "Grok 4.7 High", provider: 'xai', input_price_per_1m: 2, cached_input_price_per_1m: 0.5, output_price_per_1m: 6, reasoning_price_per_1m: 6 },
     { model_id: 'grok-4.7', display_name: "Grok 4.7", provider: 'xai', input_price_per_1m: 2, cached_input_price_per_1m: 0.5, output_price_per_1m: 6, reasoning_price_per_1m: 6 },
     { model_id: 'grok-4.7-build-fast', display_name: "grok-4.7-build-fast", provider: 'xai', input_price_per_1m: 2, cached_input_price_per_1m: 0.5, output_price_per_1m: 6, reasoning_price_per_1m: 6 },
     // Cursor 套餐附带的 Grok Bot：只记用量，价目表与 cost 一律为 0

@@ -12,6 +12,7 @@ import { TimeRangeDropdown } from '@/components/dashboard/TimeRangeDropdown'
 import { ShareCard } from '@/components/dashboard/ShareCard'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { Notice } from '@/components/ui/Notice'
 import { usePreferences } from '@/lib/PreferencesContext'
 import { useLang } from '@/lib/LanguageContext'
 import { useLatestRequest, isAbortError } from '@/lib/useLatestRequest'
@@ -99,16 +100,17 @@ export default function OverviewPage() {
 
       {/* Main Content Body */}
       {error && stats && (
-        <div className="mb-6 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center justify-between gap-3">
-          <span>
-            {lang === 'zh'
-              ? `刷新失败，下面是 ${lastUpdatedDate} 的数据（${error}）`
-              : `Refresh failed; showing data from ${lastUpdatedDate} (${error})`}
-          </span>
-          <Button size="sm" variant="secondary" onClick={() => fetchStats()}>
-            {lang === 'zh' ? '重试' : 'Retry'}
-          </Button>
-        </div>
+        <Notice
+          action={
+            <Button size="sm" variant="secondary" onClick={() => fetchStats()}>
+              {lang === 'zh' ? '重试' : 'Retry'}
+            </Button>
+          }
+        >
+          {lang === 'zh'
+            ? `刷新失败，下面是 ${lastUpdatedDate} 的数据（${error}）`
+            : `Refresh failed; showing data from ${lastUpdatedDate} (${error})`}
+        </Notice>
       )}
 
       {error && !stats ? (

@@ -9,6 +9,7 @@ const glm = require('./glm.js')
 const kimi = require('./kimi.js')
 const cursor = require('./cursor.js')
 const kiro = require('./kiro.js')
+const workbuddy = require('./workbuddy.js')
 
 const fs = require('fs')
 
@@ -36,6 +37,7 @@ function createAdapters(overrides = {}) {
       kimi: kimi.fetchQuota,
       cursor: cursor.fetchQuota,
       kiro: kiro.fetchQuota,
+      workbuddy: workbuddy.fetchQuota,
     },
   }
 }

@@ -157,6 +157,12 @@ const PROVIDER_INFO: Record<ProviderId, { name: string; desc: string; authUrl?: 
     desc: 'Kiro CLI 按 credits 计费，TokenTrail 直接读取本机 ~/.kiro/sessions 会话记录，汇总今日 / 近 7 天 / 本月已消耗的 credits，无需任何 Key 或登录。',
     authDoc: '只要在本机使用过 Kiro CLI，点击「刷新额度」即可读取本地已消耗的 credits。Kiro 本地日志不含订阅上限，因此只展示已用量。',
   },
+  workbuddy: {
+    name: 'WorkBuddy',
+    desc: '读取本机 ~/.workbuddy 的官方扣费记录，汇总今日 / 近 7 天 / 本月已消耗的积分；剩余积分官方只在网页展示，TokenTrail 不推算。',
+    authUrl: 'https://www.workbuddy.cn/profile/credits-usage',
+    authDoc: '已消耗积分不用登录就能读。把官网上的剩余积分填在下面，卡片会从那个数开始，按本机之后的扣费往下减。',
+  },
 }
 
 export function QuotaManualModal({
@@ -185,6 +191,7 @@ export function QuotaManualModal({
   const [grokTeamId, setGrokTeamId] = useState('')
   const [kimiKey, setKimiKey] = useState('')
   const [codexKey, setCodexKey] = useState('')
+  const [workbuddyBalance, setWorkbuddyBalance] = useState('')
 
   // 快捷手动录入
   const [accountLabel, setAccountLabel] = useState('')
@@ -303,6 +310,37 @@ export function QuotaManualModal({
       } else {
         const manual = data.manualCommand ? `；也可在终端手动运行：${data.manualCommand}` : ''
         setMessage({ text: `${data.error || '授权校验失败，请检查凭证'}${manual}`, type: 'error' })
+      }
+    } catch {
+      setMessage({ text: '网络请求异常，请稍后再试', type: 'error' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const saveWorkbuddyBalance = async () => {
+    const value = Number(workbuddyBalance.trim())
+    if (!Number.isFinite(value) || value < 0) {
+      setMessage({ text: '请填写大于或等于 0 的积分余额', type: 'error' })
+      return
+    }
+    setMessage(null)
+    setLoading(true)
+    try {
+      const res = await fetch('/api/quotas/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          WORKBUDDY_CREDITS_BALANCE: String(value),
+          WORKBUDDY_CREDITS_BALANCE_AT: new Date().toISOString(),
+        }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        setMessage({ text: '余额已保存，与官网对齐', type: 'success' })
+        if (onSuccess) onSuccess()
+      } else {
+        setMessage({ text: data.error || '保存失败', type: 'error' })
       }
     } catch {
       setMessage({ text: '网络请求异常，请稍后再试', type: 'error' })
@@ -796,12 +834,42 @@ export function QuotaManualModal({
                 </div>
               )}
 
+              {selectedProvider === 'workbuddy' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block font-medium text-eva-text-dim">官网剩余积分：</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={workbuddyBalance}
+                      onChange={(e) => setWorkbuddyBalance(e.target.value)}
+                      placeholder="例如 8050"
+                      className="w-full rounded-lg border border-eva-border bg-eva-panel p-2.5 font-mono text-xs text-eva-text focus:border-eva-purple focus:outline-none"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void saveWorkbuddyBalance()}
+                    disabled={loading || !workbuddyBalance.trim()}
+                    className="pressable control-surface w-full py-2.5 text-center text-xs font-mono font-semibold disabled:opacity-50"
+                  >
+                    {loading ? '正在保存余额...' : '记下这个余额'}
+                  </button>
+                  {currentInfo.authUrl && (
+                    <a href={currentInfo.authUrl} target="_blank" rel="noreferrer noopener" className="inline-flex text-[11px] text-eva-purple hover:underline">
+                      打开官网查看剩余积分
+                    </a>
+                  )}
+                </div>
+              )}
+
               <div className="rounded border border-eva-border/60 bg-eva-panel/40 p-2.5 text-[11px] text-eva-text-dim flex items-center gap-2">
                 <span>🔒</span>
                 <span>API 密钥保存在 macOS 钥匙串；SQLite 只保存非敏感配置和额度快照。</span>
               </div>
 
-              {selectedProvider !== 'grok' && selectedProvider !== 'kimi' && selectedProvider !== 'codex' && selectedProvider !== 'gemini' && (
+              {selectedProvider !== 'grok' && selectedProvider !== 'kimi' && selectedProvider !== 'codex' && selectedProvider !== 'gemini' && selectedProvider !== 'workbuddy' && (
                 <button
                   type="button"
                   onClick={handleVerifyAuth}

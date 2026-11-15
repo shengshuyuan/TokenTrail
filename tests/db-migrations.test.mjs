@@ -66,6 +66,13 @@ describe('normalize_inclusive_v1 migration (hermes/grok)', () => {
     // Cursor Auto rows stored under the API's raw "default" name
     insert('cursor', 'default', { input: 10, output: 10 }, { request_id: 'cursor:1:conv:default' })
     insert('codex', 'default', { input: 10, output: 10 }, { request_id: 'mig-codex-default' })
+    // Legacy grok-bot rows written while Grok Bot still lived under source='cursor' (raw SQL: the
+    // insert helper now routes them to cursor-grok-bot itself). One raw event, one VibeCafé aggregate.
+    getDb().prepare(`
+      INSERT INTO usage_records (source, provider, project, model, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens, cost_usd, request_id, timestamp, is_aggregate)
+      VALUES ('cursor', 'xai', 'x', 'grok-bot-default', 100, 0, 50, 0, 0, 'cursor:2:conv-gb:grok-bot-default', ?, 0),
+             ('cursor', 'xai', 'x', 'grok-bot-automation', 100, 0, 50, 0, 0, 'vc:cursor:grok-bot-automation:2026-09-09T00:00:00.000Z', ?, 1)
+    `).run(NOW + 500, NOW + 501)
     upsertModelPricing({ model_id: 'default', display_name: 'default', provider: 'unknown', input_price_per_1m: 0, output_price_per_1m: 0 })
 
     runMigrations()
@@ -178,6 +185,37 @@ describe('cursor_default_to_auto_v1 migration', () => {
     const stats = getAggregatedStats({ startDate: row.timestamp, endDate: row.timestamp + 1 })
     assert.equal(stats.cursor_groups.own.count, 1)
     assert.equal(stats.cursor_groups.named.count, 0)
+  })
+
+  it('still counts an Auto row as Cursor-own after it was relabelled to the real model', () => {
+    const row = rowByRequestId('cursor:1:conv:default')
+    getDb().prepare("UPDATE usage_records SET model = 'grok-4.7-high' WHERE id = ?").run(row.id)
+    const stats = getAggregatedStats({ startDate: row.timestamp, endDate: row.timestamp + 1 })
+    assert.equal(stats.cursor_groups.own.count, 1)
+    assert.equal(stats.cursor_groups.named.count, 0)
+    getDb().prepare("UPDATE usage_records SET model = 'auto' WHERE id = ?").run(row.id)
+  })
+})
+
+describe('cursor_grok_bot_source_v1 migration', () => {
+  it('moves legacy grok-bot rows (raw and VibeCafé aggregates) to the cursor-grok-bot source, keeping request_id', () => {
+    assert.equal(rowByRequestId('cursor:2:conv-gb:grok-bot-default').source, 'cursor-grok-bot')
+    assert.equal(rowByRequestId('vc:cursor:grok-bot-automation:2026-09-09T00:00:00.000Z').source, 'cursor-grok-bot')
+    // Non grok-bot Cursor rows stay where they were
+    assert.equal(rowByRequestId('cursor:1:conv:default').source, 'cursor')
+  })
+
+  it('routes new grok-bot writes to cursor-grok-bot even when the writer says cursor', () => {
+    insert('cursor', 'grok-bot-cua', { input: 10, output: 10 }, { request_id: 'cursor:3:conv-gb2:grok-bot-cua' })
+    assert.equal(rowByRequestId('cursor:3:conv-gb2:grok-bot-cua').source, 'cursor-grok-bot')
+    assert.equal(rowByRequestId('cursor:3:conv-gb2:grok-bot-cua').cost_usd, 0)
+  })
+
+  it('keeps grok-bot in the Cursor groups panel so the three buckets still add up to the bill', () => {
+    const row = rowByRequestId('cursor:2:conv-gb:grok-bot-default')
+    const stats = getAggregatedStats({ startDate: row.timestamp, endDate: row.timestamp })
+    assert.equal(stats.cursor_groups.grok.count, 1)
+    assert.deepEqual(stats.by_source.map((s) => s.source), ['cursor-grok-bot'])
   })
 })
 

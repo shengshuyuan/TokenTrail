@@ -1,30 +1,12 @@
 import fs from 'fs'
 import path from 'path'
-import {
-  backfillProjectByRequestPrefix,
-  cleanAntigravityConversationRecords,
-  correctProjectByRequestId,
-  deleteAntigravityConversationRow,
-  getConfig,
-  getDb,
-  hasRawUsageOnLocalDay,
-  insertUsageRecord,
-  normalizeSource,
-  removeUnknownCodexUsageRecords,
-  replaceUsageRecordByRequestId,
-  synthesizeRequestId,
-} from '../../db'
+import { insertUsageRecord } from '../../db'
 import { calculateCost } from '../../pricing'
 import { getSyncFileStat, isUnchangedSyncedFile, markSyncedFile } from '../../sync-checkpoint'
 import {
   budgetExceeded,
-  emptySyncResult,
   ensureModelPricing,
-  extractCodexProject,
-  findAllJsonl,
   normalizeClaudeProjectName,
-  normalizeProjectName,
-  normalizeTimestamp,
   recordLineError,
   recordSyncError,
 } from '../shared'

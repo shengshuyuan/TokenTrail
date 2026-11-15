@@ -30,6 +30,7 @@ import { syncLocalUsageFiles } from './sources/local-usage'
 import { syncGrok } from './sources/grok'
 import { syncCursor } from './sources/cursor'
 import { syncTraeWork } from './sources/traework'
+import { syncWorkBuddy } from './sources/workbuddy'
 import { syncVibeCafe } from './sources/vibecafe'
 
 export type { SyncResult, SyncRunOptions } from './types'
@@ -116,6 +117,7 @@ export async function syncAll(options: SyncAllOptions = {}): Promise<SyncResult[
       ['antigravity', () => runLocal('antigravity', syncAntigravityTranscripts), false],
       ['grok', () => runLocal('grok', syncGrok), false],
       ['traework', () => runLocal('traework', syncTraeWork), true],
+      ['workbuddy', () => runLocal('workbuddy', syncWorkBuddy), true],
     ]
 
     for (const [name, fn, quiet] of localJobs) {

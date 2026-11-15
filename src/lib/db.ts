@@ -311,9 +311,21 @@ const SOURCE_ALIASES: Record<string, string> = {
   'codex-review': 'codex',
 }
 
-/** Lowercase + alias mapping; request_id synthesis must use the same form. */
-export function normalizeSource(source: string): string {
-  return SOURCE_ALIASES[source.toLowerCase()] || source
+/**
+ * Cursor 套餐附带的 Grok Bot（grok-bot-*）单独一个来源。它不是 IDE / 命令行对话，
+ * 本机没有对话存储，底层模型无从得知；和 Cursor 混在一起会淹没真正用的模型。
+ */
+export const CURSOR_GROK_BOT_SOURCE = 'cursor-grok-bot'
+
+/**
+ * Lowercase + alias mapping; request_id synthesis must use the same form.
+ * 传入 model 时，source='cursor' 且模型是 grok-bot-* 的记录会改到 cursor-grok-bot 来源，
+ * 这样同步、VibeCafé 汇总、手动上报写进来的都落在同一个来源名下。
+ */
+export function normalizeSource(source: string, model?: string): string {
+  const normalized = SOURCE_ALIASES[source.toLowerCase()] || source
+  if (normalized === 'cursor' && model && isCursorGrokBotModel(model)) return CURSOR_GROK_BOT_SOURCE
+  return normalized
 }
 
 // ─── 插入用量记录 ─────────────────────────────────────────────
@@ -367,7 +379,7 @@ export function insertUsageRecord(record: {
   timestamp: number
 }) {
   const db = getDb()
-  const source = normalizeSource(record.source)
+  const source = normalizeSource(record.source, record.model)
   const project = normalizeProjectName(record.project)
   const provider = record.provider || null
 
@@ -498,7 +510,7 @@ export function replaceUsageRecordByRequestId(record: {
     WHERE id = @id
   `).run({
     id: existing.id,
-    source: normalizeSource(record.source),
+    source: normalizeSource(record.source, record.model),
     provider: record.provider || null,
     project: normalizeProjectName(record.project),
     model: record.model,
@@ -531,6 +543,29 @@ export function removeUnknownCodexUsageRecords(): number {
  * not lost.
  */
 /**
+ * WorkBuddy 的 `session_usage.credit_json` 按 conversationRequestId 记的是
+ * **该回合的累计扣费**，会随 agent 循环持续增长（同一 id 可能从 0.67 涨到 11.98）。
+ * 因此同步时不能简单去重丢新值：新值更大就说明这一回合又扣了积分，必须抬高。
+ *
+ * 只更新 credits，其余列（时间、模型、项目）保持首次写入的值，避免时间漂移。
+ * 返回 true 表示确实抬高了（调用方据此计数）。
+ */
+export function raiseUsageRecordCredits(requestId: string, credits: number): boolean {
+  if (!requestId || !Number.isFinite(credits) || credits <= 0) return false
+  const db = getDb()
+  const existing = db.prepare('SELECT id, credits FROM usage_records WHERE request_id = ?').get(requestId) as
+    | { id: number; credits: number }
+    | undefined
+  if (!existing) return false
+  const current = Number(existing.credits) || 0
+  // 容差避免浮点抖动造成无意义的写
+  if (credits <= current + 1e-6) return false
+  db.prepare('UPDATE usage_records SET credits = ? WHERE id = ?').run(credits, existing.id)
+  invalidateStatsCache()
+  return true
+}
+
+/**
  * True when a non-aggregate row already covers this source, model, and local
  * day. VibeCafé daily buckets should not be inserted in that case.
  */
@@ -544,7 +579,7 @@ export function hasRawUsageOnLocalDay(source: string, model: string, timestamp: 
       AND model = ?
       AND ${localDayExpr('timestamp')} = ${localDayExpr('?')}
     LIMIT 1
-  `).get(source, model, timestamp) as { hit: number } | undefined
+  `).get(normalizeSource(source, model), model, timestamp) as { hit: number } | undefined
   return !!row
 }
 
@@ -764,20 +799,35 @@ export function getAggregatedStats(allFilters: FilterParams) {
     ORDER BY total_tokens DESC
   `).all(...estimateBase.params) as { source: string; total_tokens: number }[]
 
-  // Cursor model families, still measured rows only (estimated = 0).
-  const cursorModels = db.prepare(`
+  // 估算按模型：让「估算」里到底是哪些模型、各占多少一目了然（只展示，不进入主数字）
+  const estimatedByModel = db.prepare(`
     SELECT
       model,
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
+      COALESCE(SUM(cost_usd), 0) as cost_usd
+    FROM usage_records ${estimateBase.sql} AND estimated = 1
+    GROUP BY model
+    ORDER BY total_tokens DESC
+    LIMIT 6
+  `).all(...estimateBase.params) as { model: string; total_tokens: number; cost_usd: number }[]
+
+  // Cursor model families, still measured rows only (estimated = 0).
+  // Auto 路由的记录已改成真实模型名，靠 request_id（...:default 或 ...:default/<模型>）识别；
+  // grok-bot 在独立来源 cursor-grok-bot 里，这里一并计入，让三格之和仍等于 Cursor 账单全部。
+  const cursorModels = db.prepare(`
+    SELECT
+      model,
+      (request_id LIKE 'cursor:%:default' OR request_id LIKE 'cursor:%:default/%') AS via_auto,
+      COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
       COALESCE(SUM(cost_usd), 0) as cost_usd,
       COUNT(*) as count
-    FROM usage_records ${base.sql} AND source = 'cursor'
-    GROUP BY model
-  `).all(...base.params) as { model: string; total_tokens: number; cost_usd: number; count: number }[]
+    FROM usage_records ${base.sql} AND source IN ('cursor', '${CURSOR_GROK_BOT_SOURCE}')
+    GROUP BY model, via_auto
+  `).all(...base.params) as { model: string; via_auto: number; total_tokens: number; cost_usd: number; count: number }[]
 
   const cursorGroups = { named: emptyGroup(), own: emptyGroup(), grok: emptyGroup() }
   for (const row of cursorModels) {
-    const bucket = cursorModelGroup(row.model)
+    const bucket = cursorModelGroup(row.model, row.via_auto === 1)
     const target = cursorGroups[bucket]
     target.total_tokens += row.total_tokens
     target.cost_usd += row.cost_usd
@@ -795,6 +845,7 @@ export function getAggregatedStats(allFilters: FilterParams) {
     estimated_cost_usd: estimateOnly.estimated_cost_usd,
     estimated_requests: estimateOnly.estimated_requests,
     estimated_by_source: estimatedBySource,
+    estimated_by_model: estimatedByModel,
     cursor_groups: cursorGroups,
     avg_daily_tokens: Math.round(overall.total_tokens / activeDays),
     avg_daily_cost_usd: Math.round((overall.total_cost_usd / activeDays) * 100) / 100,
@@ -809,11 +860,15 @@ function emptyGroup(): { total_tokens: number; cost_usd: number; count: number }
   return { total_tokens: 0, cost_usd: 0, count: 0 }
 }
 
-/** auto / composer-* bill against Cursor's own pool; grok-bot-* is the included Grok subscription. */
-export function cursorModelGroup(model: string): 'own' | 'grok' | 'named' {
+/**
+ * auto / composer-* bill against Cursor's own pool; grok-bot-* is the included Grok Bot subscription.
+ * viaAuto：记录虽已改成真实模型名，但当初是 Auto 模式路由出来的，仍算 Cursor 自选（own）。
+ * 用户自己点选的 cursor-grok-* 是付费的具名模型，归 named，不和免费的 Grok Bot 混算。
+ */
+export function cursorModelGroup(model: string, viaAuto = false): 'own' | 'grok' | 'named' {
   const id = model.toLowerCase()
-  if (id === 'auto' || id.startsWith('composer')) return 'own'
-  if (id.startsWith('grok-bot') || id.startsWith('cursor-grok')) return 'grok'
+  if (id.startsWith('grok-bot')) return 'grok'
+  if (viaAuto || id === 'auto' || id.startsWith('composer')) return 'own'
   return 'named'
 }
 

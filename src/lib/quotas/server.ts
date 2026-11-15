@@ -21,6 +21,10 @@ const DB_CONFIG_KEYS = [
   'XAI_TEAM_ID',
   'ANTHROPIC_BASE_URL',
   'GOOGLE_CLOUD_PROJECT',
+  /** WorkBuddy 本地没有余额接口：用户在官网看到剩余积分后写进这里，只做展示。 */
+  'WORKBUDDY_CREDITS_BALANCE',
+  /** 上面那个余额的抓取时间；有它才能按本地扣费把余额往下滚。 */
+  'WORKBUDDY_CREDITS_BALANCE_AT',
 ]
 
 let legacySecretsMigrated = false

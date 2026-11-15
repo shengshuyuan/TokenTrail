@@ -3,9 +3,11 @@
 import React, { useState } from 'react'
 import Link from 'next/link'
 import { Sidebar } from './Sidebar'
+import { useLang } from '@/lib/LanguageContext'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const { lang } = useLang()
 
   return (
     <div className="relative flex min-h-screen bg-workbench-bg text-workbench-text selection:bg-workbench-accent/15 selection:text-workbench-accent">
@@ -46,7 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           type="button"
           onClick={() => setMobileNavOpen(!mobileNavOpen)}
           aria-label="Toggle menu"
-          className="p-1.5 rounded-lg text-workbench-text-muted hover:text-workbench-text hover:bg-black/5 active:scale-95 transition-all"
+          className="inline-flex size-11 items-center justify-center rounded-lg text-workbench-text-muted hover:text-workbench-text hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40"
         >
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             {mobileNavOpen ? (
@@ -81,7 +83,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Global Footer Note */}
         <footer className="w-full max-w-[1240px] mx-auto px-4 sm:px-8 lg:px-10 py-6 border-t border-workbench-border/60 text-xs text-workbench-text-muted flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>ⓘ 费用按模型价格估算，不代表实际账单。</span>
+          <span>{lang === 'zh' ? 'ⓘ 费用按模型价格估算，不代表实际账单。' : 'ⓘ Costs are estimated from model list prices and are not your actual bill.'}</span>
           <span className="text-[11px] text-workbench-text-muted/80">TokenTrail · Personal AI Usage Workbench</span>
         </footer>
       </main>

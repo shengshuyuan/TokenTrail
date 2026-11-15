@@ -162,7 +162,8 @@ async function refreshAll(deps, options = {}) {
 function snapshotSucceeded(snap) {
   if (snap.error || !['healthy', 'warning', 'critical', 'exhausted'].includes(snap.status)) return false
   return snap.windows.some((win) => Number.isFinite(win.usedPercent) ||
-    (Number.isFinite(win.used) && Number.isFinite(win.limit) && win.limit > 0)) ||
+    (Number.isFinite(win.used) && Number.isFinite(win.limit) && win.limit > 0) ||
+    (win.unit === 'credit' && Number.isFinite(win.used))) ||
     snap.wallets.some((wallet) => Number.isFinite(wallet.balance))
 }
 

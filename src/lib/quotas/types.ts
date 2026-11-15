@@ -3,10 +3,10 @@
 // 快照只允许包含规范化额度数据，严禁出现凭证（API Key / OAuth Token /
 // Cookie / Authorization 头）与账号隐私字段（邮箱、完整账号 ID、Team ID）。
 
-export type ProviderId = 'codex' | 'gemini' | 'grok' | 'glm' | 'kimi' | 'cursor' | 'kiro'
+export type ProviderId = 'codex' | 'gemini' | 'grok' | 'glm' | 'kimi' | 'cursor' | 'kiro' | 'workbuddy'
 
 /** 账号额度页面支持的 provider 列表（顺序即展示顺序）。 */
-export const QUOTA_PROVIDER_IDS: ProviderId[] = ['codex', 'gemini', 'grok', 'glm', 'kimi', 'cursor', 'kiro']
+export const QUOTA_PROVIDER_IDS: ProviderId[] = ['codex', 'gemini', 'grok', 'glm', 'kimi', 'cursor', 'kiro', 'workbuddy']
 
 /** provider id → 简短展示名（供总览卡片与设置开关复用）。 */
 export const QUOTA_PROVIDER_LABELS: Record<ProviderId, string> = {
@@ -17,6 +17,7 @@ export const QUOTA_PROVIDER_LABELS: Record<ProviderId, string> = {
   kimi: 'Kimi',
   cursor: 'Cursor',
   kiro: 'Kiro CLI',
+  workbuddy: 'WorkBuddy',
 }
 
 export type QuotaStatus =

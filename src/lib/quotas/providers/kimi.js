@@ -157,6 +157,7 @@ function mapLocalUsagePayload(payload) {
         minutes,
         used,
         limit,
+        remaining: row.remaining,
         resetAt: row.reset_at,
       })
     )
@@ -186,6 +187,8 @@ function mapDirectUsage(json) {
         minutes: 10080,
         used: usageUsed,
         limit: usageLimit,
+        // 有的响应只给 remaining，不给 used。交给 buildWindow 用上限减剩余。
+        remaining: usage.remaining,
         resetAt: usage.resetTime,
       })
     )

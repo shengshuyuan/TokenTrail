@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { StatusLabel } from '@/components/ui/StatusLabel'
 import { ProviderBrandIcon } from '@/components/dashboard/QuotaBrandIcons'
 import { usePreferences } from '@/lib/PreferencesContext'
@@ -135,70 +136,84 @@ export default function ConnectionsPage() {
     })
   }
 
-  // Pre-configured list of known supported tools
+  // Pre-configured list of known supported tools（说明文字跟随语言）
+  const L = (zh: string, en: string) => (lang === 'zh' ? zh : en)
   const KNOWN_TOOLS = [
     {
       id: 'codex',
       name: 'Codex / ChatGPT',
-      type: 'CLI / Session',
+      type: L('CLI / 会话', 'CLI / Session'),
       path: '~/.codex/sessions',
-      desc: '自动扫描本地会话文件中的 rate_limits 与 usage 事件',
+      desc: L('自动扫描本地会话文件中的 rate_limits 与 usage 事件', 'Scans local session files for rate_limits and usage events'),
     },
     {
       id: 'claude-code',
       name: 'Claude Code',
-      type: 'CLI 日志',
+      type: L('CLI 日志', 'CLI logs'),
       path: '~/.claude/logs',
-      desc: '扫描 Claude Code 本地对话生成的详细 turn-level token 日志',
+      desc: L('扫描 Claude Code 本地对话生成的详细 turn-level token 日志', 'Reads the per-turn token logs Claude Code writes for each local conversation'),
     },
     {
       id: 'kimi-code',
       name: 'Kimi Code',
-      type: 'CLI 日志',
+      type: L('CLI 日志', 'CLI logs'),
       path: '~/.kimi-code/logs',
-      desc: '解析 Kimi Code 本地 turn 级别 usage.record 与缓存用量',
+      desc: L('解析 Kimi Code 本地 turn 级别 usage.record 与缓存用量', 'Parses Kimi Code per-turn usage.record entries including cache usage'),
     },
     {
       id: 'grok',
       name: 'Grok CLI',
-      type: 'CLI 日志',
+      type: L('CLI 日志', 'CLI logs'),
       path: '~/.grok/logs',
-      desc: '扫描 Grok CLI 历史 inference_done 事件并区分项目',
+      desc: L('扫描 Grok CLI 历史 inference_done 事件并区分项目', 'Scans Grok CLI inference_done events and attributes them to projects'),
     },
     {
       id: 'cursor',
       name: 'Cursor',
-      type: '官方账单',
+      type: L('官方账单', 'Official billing'),
       path: 'cursor.com/dashboard',
-      desc: '复用本机 Cursor 登录态，拉取官方账单里每次调用的模型、token 与真实费用',
+      desc: L(
+        '复用本机 Cursor 登录态，拉取官方账单里每次调用的模型、token 与真实费用；Auto 模式的底层模型按本机对话记录还原',
+        'Reuses the local Cursor login to pull per-call model, tokens and billed cost from the official dashboard; the model behind Auto is resolved from local chat stores',
+      ),
+    },
+    {
+      id: 'cursor-grok-bot',
+      name: 'Cursor Grok Bot',
+      type: L('官方账单（套餐附带）', 'Official billing (included)'),
+      path: 'cursor.com/dashboard',
+      desc: L(
+        'Cursor 账单里的 grok-bot-*：不是 IDE 对话，底层模型不公开，只记 token、不计费。和 Cursor 同一次同步拉取，单独列出以免淹没真正用的模型',
+        'grok-bot-* rows on the Cursor bill: not IDE chats, underlying model not exposed, tokens only at $0. Fetched with Cursor but listed separately so it does not bury the models you actually used',
+      ),
     },
     {
       id: 'antigravity',
       name: 'Antigravity',
-      type: 'Local Workspace',
+      type: L('本地工作区', 'Local workspace'),
       path: '~/.gemini/antigravity-cli/brain',
-      desc: '解析 Antigravity 本地 transcripts 会话记录与模型切换事件',
+      desc: L('解析 Antigravity 本地 transcripts 会话记录与模型切换事件', 'Parses Antigravity local transcripts and model-switch events'),
     },
     {
       id: 'traework',
       name: 'TraeWork / Trae',
-      type: 'IDE 存储',
+      type: L('IDE 存储', 'IDE storage'),
       path: '~/Library/Application Support/Trae/User',
-      desc: '提取 Trae IDE 对话历史中的 token 消耗记录与估算数据',
+      desc: L('提取 Trae IDE 对话历史中的 token 消耗记录与估算数据', 'Extracts token usage and estimates from Trae IDE chat history'),
     },
     {
       id: 'openclaw',
       name: 'OpenClaw',
-      type: 'CLI 日志',
+      type: L('CLI 日志', 'CLI logs'),
       path: '~/.openclaw/workspace',
-      desc: '自动发现并同步 OpenClaw 任务执行期间记录的 JSONL 日志',
+      desc: L('自动发现并同步 OpenClaw 任务执行期间记录的 JSONL 日志', 'Discovers and syncs the JSONL logs OpenClaw writes while running tasks'),
     },
     {
       id: 'hermes',
       name: 'Hermes',
-      type: 'CLI 日志',
+      type: L('CLI 日志', 'CLI logs'),
       path: '~/.hermes/logs',
-      desc: '监控 Hermes Agent 本地会话与工具调用的模型消耗',
+      desc: L('监控 Hermes Agent 本地会话与工具调用的模型消耗', 'Tracks model usage of Hermes Agent sessions and tool calls'),
     },
   ]
 
@@ -334,7 +349,7 @@ export default function ConnectionsPage() {
                   <span className="truncate max-w-[200px]" title={tool.path}>{tool.path}</span>
                   {isConnected && health?.latest_record && (
                     <span className="shrink-0 text-emerald-700 dark:text-emerald-400 font-semibold">
-                      最近: {new Date(health.latest_record).toLocaleDateString()}
+                      {L('最近: ', 'Latest: ')}{new Date(health.latest_record).toLocaleDateString()}
                     </span>
                   )}
                 </div>
@@ -356,70 +371,27 @@ export default function ConnectionsPage() {
         </p>
 
         {/* Guide Navigation Tabs */}
-        <div className="flex flex-wrap gap-1.5 p-1 bg-workbench-sidebar border border-workbench-border rounded-lg mb-6 max-w-fit">
-          <button
-            type="button"
-            onClick={() => setActiveTab('quick')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              activeTab === 'quick'
-                ? 'bg-workbench-accent text-white shadow-2xs'
-                : 'text-workbench-text-muted hover:text-workbench-text'
-            }`}
-          >
-            快速同步
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('proxy')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              activeTab === 'proxy'
-                ? 'bg-workbench-accent text-white shadow-2xs'
-                : 'text-workbench-text-muted hover:text-workbench-text'
-            }`}
-          >
-            OpenAI 代理
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('codex')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              activeTab === 'codex'
-                ? 'bg-workbench-accent text-white shadow-2xs'
-                : 'text-workbench-text-muted hover:text-workbench-text'
-            }`}
-          >
-            Codex
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('claude')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              activeTab === 'claude'
-                ? 'bg-workbench-accent text-white shadow-2xs'
-                : 'text-workbench-text-muted hover:text-workbench-text'
-            }`}
-          >
-            Claude Code
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('kimi')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              activeTab === 'kimi'
-                ? 'bg-workbench-accent text-white shadow-2xs'
-                : 'text-workbench-text-muted hover:text-workbench-text'
-            }`}
-          >
-            Kimi Code
-          </button>
+        <div className="mb-6 max-w-full overflow-x-auto">
+          <SegmentedControl
+            size="sm"
+            value={activeTab}
+            onChange={(tab) => setActiveTab(tab)}
+            options={[
+              { value: 'quick', label: lang === 'zh' ? '快速同步' : 'Quick sync' },
+              { value: 'proxy', label: lang === 'zh' ? 'OpenAI 代理' : 'OpenAI proxy' },
+              { value: 'codex', label: 'Codex' },
+              { value: 'claude', label: 'Claude Code' },
+              { value: 'kimi', label: 'Kimi Code' },
+            ]}
+          />
         </div>
 
         {/* Tab Content */}
         {activeTab === 'quick' && (
           <div className="space-y-4">
             <div>
-              <h4 className="text-sm font-semibold text-workbench-text mb-1">单次手动同步</h4>
-              <p className="text-xs text-workbench-text-muted mb-2">扫描并导入所有已支持工具的最新历史记录：</p>
+              <h4 className="text-sm font-semibold text-workbench-text mb-1">{L('单次手动同步', 'One-off manual sync')}</h4>
+              <p className="text-xs text-workbench-text-muted mb-2">{L('扫描并导入所有已支持工具的最新历史记录：', 'Scan and import the latest history from every supported tool:')}</p>
               <div className="flex items-center justify-between p-3 rounded-lg bg-workbench-sidebar border border-workbench-border text-xs font-mono">
                 <code>node bin/tokentrail.js sync</code>
                 <Button
@@ -427,14 +399,14 @@ export default function ConnectionsPage() {
                   variant="outline"
                   onClick={() => copyToClipboard('node bin/tokentrail.js sync', 'quick-sync')}
                 >
-                  {copiedCode === 'quick-sync' ? '已复制 ✓' : '复制'}
+                  {copiedCode === 'quick-sync' ? L('已复制 ✓', 'Copied ✓') : L('复制', 'Copy')}
                 </Button>
               </div>
             </div>
 
             <div className="pt-3 border-t border-workbench-border/60">
-              <h4 className="text-sm font-semibold text-workbench-text mb-1">启动本地常驻服务</h4>
-              <p className="text-xs text-workbench-text-muted mb-2">在后台运行 TokenTrail 服务与仪表盘：</p>
+              <h4 className="text-sm font-semibold text-workbench-text mb-1">{L('启动本地常驻服务', 'Start the local service')}</h4>
+              <p className="text-xs text-workbench-text-muted mb-2">{L('在后台运行 TokenTrail 服务与仪表盘：', 'Run the TokenTrail service and dashboard in the background:')}</p>
               <div className="flex items-center justify-between p-3 rounded-lg bg-workbench-sidebar border border-workbench-border text-xs font-mono">
                 <code>npm start</code>
                 <Button
@@ -442,7 +414,7 @@ export default function ConnectionsPage() {
                   variant="outline"
                   onClick={() => copyToClipboard('npm start', 'quick-start')}
                 >
-                  {copiedCode === 'quick-start' ? '已复制 ✓' : '复制'}
+                  {copiedCode === 'quick-start' ? L('已复制 ✓', 'Copied ✓') : L('复制', 'Copy')}
                 </Button>
               </div>
             </div>
@@ -451,9 +423,9 @@ export default function ConnectionsPage() {
 
         {activeTab === 'proxy' && (
           <div className="space-y-4">
-            <h4 className="text-sm font-semibold text-workbench-text mb-1">本地透明代理 (Proxy Mode)</h4>
+            <h4 className="text-sm font-semibold text-workbench-text mb-1">{L('本地透明代理 (Proxy Mode)', 'Local transparent proxy (Proxy Mode)')}</h4>
             <p className="text-xs text-workbench-text-muted mb-2">
-              将任意支持 OpenAI 规范的应用（如 Cursor、Aider 等）的 Base URL 指向本地：
+              {L('将任意支持 OpenAI 规范的应用（如 Cursor、Aider 等）的 Base URL 指向本地：', 'Point any OpenAI-compatible app (Cursor, Aider, …) at this local Base URL:')}
             </p>
             <div className="p-3 rounded-lg bg-workbench-sidebar border border-workbench-border text-xs font-mono space-y-2">
               <div className="flex items-center justify-between">
@@ -463,22 +435,22 @@ export default function ConnectionsPage() {
                   variant="ghost"
                   onClick={() => copyToClipboard('http://127.0.0.1:3820/api/proxy/openai/v1', 'proxy-url')}
                 >
-                  {copiedCode === 'proxy-url' ? '已复制 ✓' : '复制'}
+                  {copiedCode === 'proxy-url' ? L('已复制 ✓', 'Copied ✓') : L('复制', 'Copy')}
                 </Button>
               </div>
               <code>http://127.0.0.1:3820/api/proxy/openai/v1</code>
             </div>
             <p className="text-[11px] text-workbench-text-muted leading-relaxed">
-              请求经过代理时会自动透明转发到官方并拦截记账，绝不在服务器存储你的 API Key。
+              {L('请求经过代理时会自动透明转发到官方并拦截记账，绝不在服务器存储你的 API Key。', 'Requests are forwarded to the provider unchanged and metered on the way through; your API key is never stored on the server.')}
             </p>
           </div>
         )}
 
         {activeTab === 'codex' && (
           <div className="space-y-4">
-            <h4 className="text-sm font-semibold text-workbench-text mb-1">Codex CLI 登录与额度读取</h4>
+            <h4 className="text-sm font-semibold text-workbench-text mb-1">{L('Codex CLI 登录与额度读取', 'Codex CLI login and quota reading')}</h4>
             <p className="text-xs text-workbench-text-muted mb-2">
-              Codex 使用官方 CLI 登录后，TokenTrail 将自动读取 ChatGPT 订阅限额：
+              {L('Codex 使用官方 CLI 登录后，TokenTrail 将自动读取 ChatGPT 订阅限额：', 'Once you log in with the official Codex CLI, TokenTrail reads your ChatGPT subscription limits:')}
             </p>
             <div className="flex items-center justify-between p-3 rounded-lg bg-workbench-sidebar border border-workbench-border text-xs font-mono">
               <code>codex login</code>
@@ -487,7 +459,7 @@ export default function ConnectionsPage() {
                 variant="outline"
                 onClick={() => copyToClipboard('codex login', 'codex-login')}
               >
-                {copiedCode === 'codex-login' ? '已复制 ✓' : '复制'}
+                {copiedCode === 'codex-login' ? L('已复制 ✓', 'Copied ✓') : L('复制', 'Copy')}
               </Button>
             </div>
           </div>
@@ -495,9 +467,9 @@ export default function ConnectionsPage() {
 
         {activeTab === 'claude' && (
           <div className="space-y-4">
-            <h4 className="text-sm font-semibold text-workbench-text mb-1">Claude Code 本地日志扫描</h4>
+            <h4 className="text-sm font-semibold text-workbench-text mb-1">{L('Claude Code 本地日志扫描', 'Claude Code local log scan')}</h4>
             <p className="text-xs text-workbench-text-muted mb-2">
-              在 Claude Code 完成对话后，TokenTrail 在执行同步时将自动扫描并记账：
+              {L('在 Claude Code 完成对话后，TokenTrail 在执行同步时将自动扫描并记账：', 'After a Claude Code conversation finishes, the next sync scans and records it:')}
             </p>
             <div className="flex items-center justify-between p-3 rounded-lg bg-workbench-sidebar border border-workbench-border text-xs font-mono">
               <code>node bin/tokentrail.js sync --source claude-code</code>
@@ -506,7 +478,7 @@ export default function ConnectionsPage() {
                 variant="outline"
                 onClick={() => copyToClipboard('node bin/tokentrail.js sync --source claude-code', 'claude-sync')}
               >
-                {copiedCode === 'claude-sync' ? '已复制 ✓' : '复制'}
+                {copiedCode === 'claude-sync' ? L('已复制 ✓', 'Copied ✓') : L('复制', 'Copy')}
               </Button>
             </div>
           </div>
@@ -514,9 +486,9 @@ export default function ConnectionsPage() {
 
         {activeTab === 'kimi' && (
           <div className="space-y-4">
-            <h4 className="text-sm font-semibold text-workbench-text mb-1">Kimi Code CLI 登录与日志</h4>
+            <h4 className="text-sm font-semibold text-workbench-text mb-1">{L('Kimi Code CLI 登录与日志', 'Kimi Code CLI login and logs')}</h4>
             <p className="text-xs text-workbench-text-muted mb-2">
-              运行官方 kimi 登录后，系统会自动提取 5h 窗口、周窗口与钱包余额：
+              {L('运行官方 kimi 登录后，系统会自动提取 5h 窗口、周窗口与钱包余额：', 'After logging in with the official kimi CLI, the 5h window, weekly window and wallet balance are read automatically:')}
             </p>
             <div className="flex items-center justify-between p-3 rounded-lg bg-workbench-sidebar border border-workbench-border text-xs font-mono">
               <code>kimi login</code>
@@ -525,7 +497,7 @@ export default function ConnectionsPage() {
                 variant="outline"
                 onClick={() => copyToClipboard('kimi login', 'kimi-login')}
               >
-                {copiedCode === 'kimi-login' ? '已复制 ✓' : '复制'}
+                {copiedCode === 'kimi-login' ? L('已复制 ✓', 'Copied ✓') : L('复制', 'Copy')}
               </Button>
             </div>
           </div>

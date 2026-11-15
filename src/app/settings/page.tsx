@@ -291,13 +291,13 @@ export default function SettingsPage() {
                 role="switch"
                 aria-checked={!showProjectNames}
                 onClick={() => setShowProjectNames(!showProjectNames)}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40 focus-visible:ring-offset-2 ${
                   !showProjectNames ? 'bg-workbench-accent' : 'bg-workbench-border'
                 }`}
               >
                 <span
                   aria-hidden="true"
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  className={`pointer-events-none inline-block size-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                     !showProjectNames ? 'translate-x-5' : 'translate-x-0'
                   }`}
                 />
@@ -381,13 +381,13 @@ export default function SettingsPage() {
                     aria-checked={visible}
                     aria-label={QUOTA_PROVIDER_LABELS[id]}
                     onClick={() => toggleQuotaProvider(id)}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-workbench-accent/40 focus-visible:ring-offset-2 ${
                       visible ? 'bg-workbench-accent' : 'bg-workbench-border'
                     }`}
                   >
                     <span
                       aria-hidden="true"
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      className={`pointer-events-none inline-block size-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                         visible ? 'translate-x-5' : 'translate-x-0'
                       }`}
                     />
@@ -458,7 +458,7 @@ export default function SettingsPage() {
                 </tr>
               ) : (
                 pricingPageModels.map((m) => (
-                  <tr key={m.model_id} className="text-xs font-mono hover:bg-black/[0.02]">
+                  <tr key={m.model_id} className="surface-row text-xs font-mono">
                     <td className="py-2.5 px-3 font-bold text-workbench-text font-sans">
                       {m.display_name || m.model_id}
                     </td>
