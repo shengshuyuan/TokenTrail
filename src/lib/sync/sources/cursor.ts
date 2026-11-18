@@ -22,6 +22,8 @@ interface OfficialCursorRow {
   is_internal: number
 }
 
+type CursorChatMap = Map<string, { models: Map<string, number>; updatedAtMs?: number; cwd?: string }>
+
 const {
   collectCursorUsageRecords,
   collectCursorLocalModelRecords,
@@ -35,10 +37,10 @@ const {
   CURSOR_GROK_BOT_SOURCE: string
   isCursorAutoRequestId: (requestId: string) => boolean
   isCursorAutoDerivedRequestId: (requestId: string) => boolean
-  readCursorChatModels: () => Map<string, { models: Map<string, number> }>
+  readCursorChatModels: () => CursorChatMap
   planCursorAutoResolution: (
     rows: OfficialCursorRow[],
-    chats: Map<string, { models: Map<string, number> }>,
+    chats: CursorChatMap,
   ) => {
     updates: Array<{ id: number; model: string; provider: string; is_internal: boolean }>
     derived: Array<{
@@ -56,7 +58,10 @@ const {
       timestamp: number
     }>
   }
-  collectCursorLocalModelRecords: (options?: { coveredConversationIds?: Set<string> }) => Array<{
+  collectCursorLocalModelRecords: (options?: {
+    coveredConversationIds?: Set<string>
+    chats?: Map<string, { models: Map<string, number>; updatedAtMs?: number; cwd?: string }>
+  }) => Array<{
     source: string
     provider: string
     project?: string
@@ -155,8 +160,10 @@ export async function syncCursor(_options?: SyncRunOptions): Promise<SyncResult 
     }
   }
 
-  resolveAutoModelsFromLocalChats(result)
-  supplementFromLocalModels(result)
+  // 同一次同步只扫一遍 ~/.cursor/chats，Auto 还原和本机估算补全都复用
+  const chats: CursorChatMap = readCursorChatModels()
+  resolveAutoModelsFromLocalChats(result, chats)
+  supplementFromLocalModels(result, chats)
 
   result.duration_ms = Date.now() - start
   return result
@@ -165,9 +172,9 @@ export async function syncCursor(_options?: SyncRunOptions): Promise<SyncResult 
 /**
  * 官方把 Auto 模式记成 "auto"，但本机对话存储里有底层真实模型。把能对上号的 Auto 记录改成真实模型；
  * 一个对话里 Auto 切换过多个模型时，原记录隐藏（is_internal=1，留作去重锚点）、按输出占比拆成派生记录。
- * 每次同步整体重算：派生记录是派生数据，不在本次计划里的旧派生行一律删掉。
+ * 每次同步整体重算：能对上本机对话的派生记录按新计划增改；本机暂时读不到的对话（目录被清、store 锁住）sticky 保留上次归因，绝不回退成 auto 再删派生行。
  */
-function resolveAutoModelsFromLocalChats(result: SyncResult) {
+function resolveAutoModelsFromLocalChats(result: SyncResult, chats: CursorChatMap) {
   try {
     const db = getDb()
     const rows = db
@@ -182,32 +189,41 @@ function resolveAutoModelsFromLocalChats(result: SyncResult) {
     const existingDerived = rows.filter((row) => isCursorAutoDerivedRequestId(row.request_id))
     if (!hasAuto && existingDerived.length === 0) return
 
-    const plan = planCursorAutoResolution(rows, hasAuto ? readCursorChatModels() : new Map())
+    const plan = planCursorAutoResolution(rows, chats)
 
-    let changed = 0
-    const update = db.prepare('UPDATE usage_records SET model = @model, provider = @provider, is_internal = @is_internal WHERE id = @id')
-    for (const u of plan.updates) {
-      ensureModelPricing(u.model)
-      update.run({ id: u.id, model: u.model, provider: u.provider, is_internal: u.is_internal ? 1 : 0 })
-      changed++
-    }
-
-    const keep = new Set(plan.derived.map((r) => r.request_id))
-    const dropStmt = db.prepare('DELETE FROM usage_records WHERE id = ?')
+    // 本机这次没读到的对话：保留其上一次的派生行（plan 也不会去改它们的锚点）
+    const stickyDerived = new Set<string>()
     for (const row of existingDerived) {
-      if (!keep.has(row.request_id)) {
-        dropStmt.run(row.id)
+      const conv = conversationIdFromOfficialRequestId(row.request_id)
+      if (conv && !chats.has(conv)) stickyDerived.add(row.request_id)
+    }
+    const keep = new Set<string>([...plan.derived.map((r) => r.request_id), ...stickyDerived])
+
+    for (const u of plan.updates) ensureModelPricing(u.model)
+    for (const record of plan.derived) ensureModelPricing(record.model)
+
+    const apply = db.transaction(() => {
+      let changed = 0
+      const update = db.prepare('UPDATE usage_records SET model = @model, provider = @provider, is_internal = @is_internal WHERE id = @id')
+      for (const u of plan.updates) {
+        update.run({ id: u.id, model: u.model, provider: u.provider, is_internal: u.is_internal ? 1 : 0 })
         changed++
       }
-    }
-    // 派生行只是把已入库的 Auto 用量重新归到真实模型名下，不是新用量：不计入 inserted，
-    // 否则第一次部署后会看到一次性的 +60「新增」。
-    for (const record of plan.derived) {
-      ensureModelPricing(record.model)
-      const written = replaceUsageRecordByRequestId(record)
-      if (written.success && !written.duplicate) changed++
-    }
-    if (changed > 0) invalidateStatsCache()
+      const dropStmt = db.prepare('DELETE FROM usage_records WHERE id = ?')
+      for (const row of existingDerived) {
+        if (!keep.has(row.request_id)) {
+          dropStmt.run(row.id)
+          changed++
+        }
+      }
+      // 派生行只是把已入库的 Auto 用量重新归到真实模型名下，不是新用量：不计入 inserted
+      for (const record of plan.derived) {
+        const written = replaceUsageRecordByRequestId(record)
+        if (written.success && !written.duplicate) changed++
+      }
+      return changed
+    })
+    if (apply() > 0) invalidateStatsCache()
   } catch (err) {
     recordSyncError(result, err)
   }
@@ -217,7 +233,7 @@ function resolveAutoModelsFromLocalChats(result: SyncResult) {
  * 官方接口没列出的对话（例如选了 Claude Opus / Sonnet 的对话），用 Cursor 对话存储里每段回复的
  * 真实模型补上，并标记为估算。官方接口之后若补上了同一对话，则删除本机估算，避免重复计数。
  */
-function supplementFromLocalModels(result: SyncResult) {
+function supplementFromLocalModels(result: SyncResult, chats: CursorChatMap) {
   try {
     const db = getDb()
     const covered = new Set<string>()
@@ -230,32 +246,37 @@ function supplementFromLocalModels(result: SyncResult) {
       if (id) covered.add(id)
     }
 
-    const records = collectCursorLocalModelRecords({ coveredConversationIds: covered })
+    const records = collectCursorLocalModelRecords({ coveredConversationIds: covered, chats })
 
     // 本机估算每次都是从对话存储整体重算出来的派生数据：不在这次结果里的旧行
     // （官方后来补上了该对话、模型识别被修正等）一律删掉，避免残留错误标签或重复计数。
+    // 若 chats 整体读空（目录暂时不可用），不要清空已有估算行。
+    if (chats.size === 0) return
+
     const keep = new Set(records.map((r) => r.request_id))
     const localRows = db
       .prepare("SELECT id, request_id FROM usage_records WHERE source = 'cursor' AND request_id LIKE 'cursor-local:%'")
       .all() as Array<{ id: number; request_id: string }>
-    const dropStmt = db.prepare('DELETE FROM usage_records WHERE id = ?')
-    let dropped = 0
-    for (const row of localRows) {
-      if (!keep.has(row.request_id)) {
-        dropStmt.run(row.id)
-        dropped++
-      }
-    }
-    if (dropped > 0) invalidateStatsCache()
 
-    for (const record of records) {
-      ensureModelPricing(record.model)
-      // 估算行金额由 collectCursorLocalModelRecords 统一记 $0（没把握就不报金额），这里不再按价格表折算
-      const cost_usd = 0
-      const written = replaceUsageRecordByRequestId({ ...record, cost_usd })
-      result.scanned++
-      if (!written.duplicate) result.inserted++
-    }
+    const apply = db.transaction(() => {
+      const dropStmt = db.prepare('DELETE FROM usage_records WHERE id = ?')
+      let dropped = 0
+      for (const row of localRows) {
+        if (!keep.has(row.request_id)) {
+          dropStmt.run(row.id)
+          dropped++
+        }
+      }
+      for (const record of records) {
+        ensureModelPricing(record.model)
+        // 估算行金额由 collectCursorLocalModelRecords 统一记 $0（没把握就不报金额），这里不再按价格表折算
+        const written = replaceUsageRecordByRequestId({ ...record, cost_usd: 0 })
+        result.scanned++
+        if (!written.duplicate) result.inserted++
+      }
+      return dropped
+    })
+    if (apply() > 0) invalidateStatsCache()
   } catch (err) {
     recordSyncError(result, err)
   }

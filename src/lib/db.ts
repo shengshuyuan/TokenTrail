@@ -315,6 +315,7 @@ const SOURCE_ALIASES: Record<string, string> = {
  * Cursor 套餐附带的 Grok Bot（grok-bot-*）单独一个来源。它不是 IDE / 命令行对话，
  * 本机没有对话存储，底层模型无从得知；和 Cursor 混在一起会淹没真正用的模型。
  */
+/** Must match the string exported by `src/lib/cursor.js` (kept separate to avoid a db↔cursor import cycle). */
 export const CURSOR_GROK_BOT_SOURCE = 'cursor-grok-bot'
 
 /**
@@ -821,9 +822,9 @@ export function getAggregatedStats(allFilters: FilterParams) {
       COALESCE(SUM(input_tokens + cached_input_tokens + output_tokens + reasoning_tokens), 0) as total_tokens,
       COALESCE(SUM(cost_usd), 0) as cost_usd,
       COUNT(*) as count
-    FROM usage_records ${base.sql} AND source IN ('cursor', '${CURSOR_GROK_BOT_SOURCE}')
+    FROM usage_records ${base.sql} AND source IN ('cursor', ?)
     GROUP BY model, via_auto
-  `).all(...base.params) as { model: string; via_auto: number; total_tokens: number; cost_usd: number; count: number }[]
+  `).all(...base.params, CURSOR_GROK_BOT_SOURCE) as { model: string; via_auto: number; total_tokens: number; cost_usd: number; count: number }[]
 
   const cursorGroups = { named: emptyGroup(), own: emptyGroup(), grok: emptyGroup() }
   for (const row of cursorModels) {

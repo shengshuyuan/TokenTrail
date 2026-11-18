@@ -389,6 +389,19 @@ describe('cursor local model supplement', () => {
     assert.deepEqual(plan, { updates: [], derived: [] })
   })
 
+  it('does not reset a previously resolved Auto row when the chat store is missing this run (sticky)', () => {
+    // 上次已经还原成 grok；这次 chats 读空（目录暂时不可用）→ 计划为空，绝不能推回 auto
+    const rows = [autoRow('conv-1', TS, { id: 9, model: 'grok-4.7-high', provider: 'xai' })]
+    const plan = planCursorAutoResolution(rows, new Map())
+    assert.deepEqual(plan, { updates: [], derived: [] })
+
+    // 上次多模型拆分：锚点 is_internal=1，本次 chats 缺这段对话 → 不解除隐藏、不产出空派生清单去删旧行
+    const split = [autoRow('conv-mix', TS, { id: 10, model: 'auto', is_internal: 1 })]
+    const planSplit = planCursorAutoResolution(split, new Map())
+    assert.deepEqual(planSplit.updates, [])
+    assert.deepEqual(planSplit.derived, [])
+  })
+
   it('reads chat store models for the planner (same source as the estimate supplement)', () => {
     seedChat('conv-store', [['grok-4.7-high', 3, 40], ['claude-opus-5-5-medium', 1, 40]])
     const chats = readCursorChatModels(home)

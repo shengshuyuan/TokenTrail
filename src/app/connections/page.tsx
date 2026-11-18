@@ -215,6 +215,26 @@ export default function ConnectionsPage() {
       path: '~/.hermes/logs',
       desc: L('监控 Hermes Agent 本地会话与工具调用的模型消耗', 'Tracks model usage of Hermes Agent sessions and tool calls'),
     },
+    {
+      id: 'kiro',
+      name: 'Kiro CLI',
+      type: L('CLI / Credits', 'CLI / Credits'),
+      path: '~/.kiro',
+      desc: L(
+        '同步 Kiro CLI 按 credits 计费的调用记录，并读取账号额度窗口',
+        'Syncs Kiro CLI credit-billed calls and reads account quota windows',
+      ),
+    },
+    {
+      id: 'workbuddy',
+      name: 'WorkBuddy',
+      type: L('本地 Trace / Credits', 'Local traces / Credits'),
+      path: '~/.workbuddy',
+      desc: L(
+        '读取 WorkBuddy traces 里的真实 token 用量与 credit_json 扣费，额度卡显示今天 / 近 7 天 / 本月已用积分',
+        'Reads real token usage from WorkBuddy traces and credit_json charges; the quota card shows credits spent today / last 7 days / this month',
+      ),
+    },
   ]
 
   // Map health from statusData

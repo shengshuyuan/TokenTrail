@@ -151,9 +151,9 @@ function moveCursorGrokBotToOwnSource(): void {
   const moved = db.transaction(() => {
     const result = db.prepare(`
       UPDATE usage_records
-      SET source = '${CURSOR_GROK_BOT_SOURCE}'
+      SET source = ?
       WHERE source = 'cursor' AND lower(model) LIKE 'grok-bot%'
-    `).run()
+    `).run(CURSOR_GROK_BOT_SOURCE)
     setConfig(CURSOR_GROK_BOT_SOURCE_MARKER, `${result.changes} usage@${new Date().toISOString()}`)
     return result.changes
   })()

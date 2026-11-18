@@ -195,6 +195,7 @@ const CURSOR_AUTO_RAW_MODEL = 'default'
  * grok-bot-*（Cursor 套餐附带的 Grok Bot）单独一个来源。它不是 IDE / 命令行对话，
  * 本机没有任何对话存储或全文，底层模型无从得知；混在 Cursor 里会把真正用的模型淹没。
  */
+/** Must match `CURSOR_GROK_BOT_SOURCE` in `src/lib/db.ts` (kept separate to avoid a db↔cursor import cycle). */
 const CURSOR_GROK_BOT_SOURCE = 'cursor-grok-bot'
 
 function displayCursorModel(rawModel) {
@@ -526,7 +527,8 @@ function countTranscriptOutputChars(file) {
 function collectCursorLocalModelRecords(options = {}) {
   const home = options.home || os.homedir()
   const covered = options.coveredConversationIds || new Set()
-  const chats = readCursorChatModels(home)
+  // 允许调用方传入已读好的 chats，避免同一次同步里再扫一遍 ~/.cursor/chats
+  const chats = options.chats || readCursorChatModels(home)
   if (chats.size === 0) return []
 
   const requestDays = readLocalRequestDays(home)
@@ -670,7 +672,9 @@ function splitAutoRow(row, resolved) {
  * @param chats Map(对话 id → { models: Map(模型名 → 输出字符数) })，来自 readCursorChatModels
  * @returns { updates, derived }
  *   - updates：需要改动的原记录 [{ id, model, provider, is_internal }]（已经正确的不出现）
- *   - derived：当前应当存在的全部派生记录；调用方按 request_id 增改，并删掉不在里面的旧派生记录
+ *   - derived：本次能对上本机对话的派生记录；调用方按 request_id 增改。
+ *     本机读不到的对话不会出现在 updates/derived 里——调用方必须 sticky 保留那些对话的旧派生行，
+ *     不能把「不在 derived 里」一律当成「该删」。
  */
 function planCursorAutoResolution(rows, chats) {
   const explicitByConv = new Map()
@@ -694,9 +698,16 @@ function planCursorAutoResolution(rows, chats) {
   for (const { row, conv } of autoRows) {
     if (!resolvedByConv.has(conv)) {
       const chat = chats && chats.get(conv)
-      resolvedByConv.set(conv, inferAutoModels(chat && chat.models, explicitByConv.get(conv)))
+      // 本机没有这段对话：保持库里现状（已还原的不回退成 auto，已拆分的由调用方 sticky 保留派生行）
+      // 绝不能在 chats 读失败 / 对话被清时把归因推回 "auto" 再删掉派生行
+      if (!chat) {
+        resolvedByConv.set(conv, null)
+      } else {
+        resolvedByConv.set(conv, inferAutoModels(chat.models, explicitByConv.get(conv)))
+      }
     }
     const resolved = resolvedByConv.get(conv)
+    if (resolved == null) continue
     let model = autoLabel
     let hidden = false
     if (resolved.length === 1) {
